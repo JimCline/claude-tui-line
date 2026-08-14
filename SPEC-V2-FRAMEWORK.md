@@ -1242,11 +1242,54 @@ the framework does not use, and is no longer evidence about the framework at all
   script, and telling a user to wrap their one-liner in a file is the kind of friction that
   makes a framework unused. The rule: `command` is an **array** normally; when `shell: true` is
   set, `command` is a **string** run as `sh -c "<string>"`. Both forms accepted, decided by the
-  `shell` flag rather than by sniffing the JSON type — a string `command` without `shell: true`
-  is a config error (silently suppressed per §7, reported by `--check` as an **`error`**, code
-  `command-shape` — the item is suppressed, so §9.4.1's test puts it in the deleted bucket).
-  Everything downstream
+  `shell` flag rather than by sniffing the JSON type. Everything downstream
   — stdin, env, cwd, timeout, cache key, stale-on-failure — is identical for both forms.
+
+  **The JSON type is not itself the fault, and `--check` must not report it as one.**
+  `CommandJsonConverter` normalizes both forms to a single argv list, so `"command": "date"` and
+  `"command": ["date"]` are the same value by the time anything runs, and both execute correctly.
+  A diagnostic on the *shape* would fire on a config that works — which §9.4 forbids more
+  strongly than it requires any diagnostic at all.
+
+  The config that cannot work is narrower, and it survives normalization: **an argv of exactly
+  one element whose text contains whitespace, with `shell` not `true`**. That is
+  `"command": "git status"` — normalized to `["git status"]` and exec'd as a binary literally
+  named `git status`, which does not exist. `["git status"]` written directly is the identical
+  value and the identical failure, so the check is on the **value**, not on the source shape,
+  and catching both is correct rather than a false positive. `--check` reports it as an
+  **`error`**, code `command-shape`: exec fails, §7 suppresses the item, and §9.4.1's test puts
+  a suppressed item in the deleted bucket.
+
+  Checking the value is also what keeps this a check-only change. The converter discards the
+  source shape deliberately — its own comment: *"so `PaneItemJsonConfig.Command` stays one plain
+  type end to end"* — and neither reviving that shape through a provenance field nor walking the
+  raw JSON a second time is warranted. Both recover a fact the check does not need.
+
+  **The mirror-image fault is real and worse.** `CommandProvider.RunAsync` passes `command[0]`
+  and nothing else to `sh -c`, so `shell: true` with `["echo", "hi"]` runs `sh -c "echo"` and
+  **silently discards every element after the first**. The item renders — it just renders the
+  output of a command the author did not write, with no error anywhere. `--check` reports an
+  array of **more than one element** under `shell: true` as an **`error`**, code
+  `command-shell-argv`.
+
+  This one also changes the **render** path, which no other diagnostic in this section does.
+  §7's contract is a pair: a bad config yields nothing at render time, and `--check` says why.
+  Rendering the *wrong output* is outside that pair — it is the single outcome the design has no
+  answer for, because the user gets no signal at all, not even an absence to notice. So
+  `CommandProvider` suppresses the item rather than spawning a command it knows is missing
+  arguments, which puts the fault back inside §7 where `--check` can explain it. `shell: true`
+  with `["kubectl", "config", "current-context"]` is an easy config to write by cargo-culting the
+  flag, and silently returning bare `kubectl`'s usage text is a bad way to find that out.
+
+  Two conditions, two codes, because the fixes differ: `command-shape` is repaired by adding
+  `shell: true` or by splitting the string into real argv, `command-shell-argv` by joining the
+  array into one string or by dropping the `shell` flag. Codes are cheap and §9.6 makes their
+  meanings permanent, so a consumer that wants to distinguish these should not have to parse
+  a message to do it.
+
+  The element count is load-bearing: a **single**-element array under `shell: true` is exactly
+  what the string form normalizes to, so it is correct and must not be reported. Only `> 1` is
+  detectable as a fault, and only `> 1` loses anything.
 - **stdin**: the command receives the *same session JSON* Claude Code sent us, verbatim. This
   is what makes user scripts first-class — they see everything the builtins see.
 - **env**: `COLUMNS` is exported and `CLAUDE_TUI_LINE_ITEM_ID` is set to the item id.

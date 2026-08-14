@@ -243,8 +243,22 @@ black   maroon  green   olive   navy    purple  teal    silver
 grey    red     lime    yellow  blue    fuchsia aqua    white
 ```
 
-They're theme-mapped — your terminal decides what `blue` actually looks like. `tools/colors.sh`
+These are theme-mapped — your terminal decides what `blue` actually looks like. `tools/colors.sh`
 prints them all rendered in your own terminal.
+
+Anywhere a colour is named you can also use a **256-palette name** (`deepskyblue1`, `orange3`) or
+a **hex literal** (`"#ff8800"`). How faithfully they render depends on the colour profile, which
+defaults to the conservative one:
+
+```json
+{ "colorSystem": "truecolor" }
+```
+
+`standard` (the default) renders everything through the 16 theme colours, so a hex literal is
+approximated by the nearest of them — it works, it just won't be the exact shade you asked for.
+`256` and `truecolor` widen that. The default is deliberate: the 16 are the only colours that
+follow the user's terminal theme, so a statusline built from them stays readable when the theme
+changes, and one built from hex does not.
 
 Colour can also be computed from a value. Define a named rule and reference it:
 

@@ -168,6 +168,7 @@ unplaced is a model to copy rather than replace. Colour-token `from` untested �
 assuming which side it lands on |
 | 12 | **An empty pane still renders its borders** | `{"items":[{"item":"repo"}]}` in this repo emits 674 bytes — top and bottom border, no content row. Collides with SPEC.md:353 *"no segments ⇒ zero output even with border enabled."* Separately, `repo` yielding nothing here may be correct de-duplication (repo name and directory name are both `claude-tui-line`) — that part is unconfirmed **Ruled** — §2.4 now carries it. SPEC.md:353 survives, applied at two levels: an empty *surface* emits zero bytes; an empty `content`/`fill` pane collapses with its gutter; an empty `fixed`/`percent` pane keeps extent and border, because the user named a number and §2.3's principle of not overruling explicit sizing applies here too. Queued behind defect 11. Whether `repo` yielding nothing here is correct de-duplication is still unconfirmed and tracked separately |
 | 13 | **`Columns112_LiveConfig_PackerInvocationCountStaysBounded` reads a racy process-global counter** — it reported 314 packer invocations against a `1..300` bound where a clean tree reported 45 | **Diagnosed: a test defect, not a sizer regression — there was never a 45 → 314 jump to explain.** `MinRowsPackerInvocationCount` (`SizeResolver.cs:324`) is a plain `static int`, incremented un-interlocked at `:501` by *every* min-rows render in the assembly; the test zeroes it at `MinRowsDistributeTests.cs:153` and reads it at `:155`. The repo has no `xunit.runner.json`, no `[CollectionDefinition]` and no `DisableTestParallelization`, so xUnit's default holds and test classes run **in parallel** — the test measures its own packer calls *plus whatever else was in flight*. 45 was a quiet scheduling window, 314 a busy one; defect 11's two new end-to-end `HyperlinkTests` perturbed the schedule, which is why it surfaced then. Being un-interlocked it can under-count as well as over-count | Diagnosed here, fix with the implementor: mark the counter `[ThreadStatic]` — sound *because* §5 resolve-once-per-render makes `SolveMinRows` synchronous, so the thread that zeroed the counter is the thread that reads it, and that precondition goes in a comment — plus a non-parallel `[CollectionDefinition]` for the instrumented class as belt-and-braces |
+| 14 | **`shell: true` with a multi-element argv silently drops every argument after the first** | `CommandProvider.RunAsync:74` passes `command[0]` and nothing else to `sh -c`, so `{"command":["kubectl","config","current-context"],"shell":true}` runs `sh -c "kubectl"` and renders bare kubectl's usage text. **The only defect found so far that renders *wrong output* rather than nothing** — §7's contract is "bad config yields nothing at render, `--check` says why", and this escapes that pair entirely: the user gets no signal, not even an absence to notice. Cargo-culting `shell: true` onto a working argv array is an easy way to reach it | Ruled, both halves specified in §4.1. Render: suppress the item instead of spawning. Check: `error`, code `command-shell-argv`, fires only at `count > 1` (a single-element array is what the string form normalizes to, so it is correct and must not be reported). Found while ruling on the implementor's `command-shape` question — not by looking for it |
 
 **The OSC-8-in-the-sizer hypothesis was wrong and is closed.** It predicted the sizing path counted escape bytes as width, which would have made the *layout* wrong rather than merely slow. Tested directly: two configs identical except one item carrying `link`, rendered through the built binary at COLUMNS 112, 90 and 70, compared byte-for-byte after stripping OSC 8 then CSI (that order — stripping CSI first leaves the URI payload looking like text). **Identical at all three widths**: same row counts, same pane widths, same bytes. Defect 1's fix holds in the sizing path as well as the render path. Recorded because the reasoning was sound and the conclusion still false — `RowCountAt` → `PaneRenderer.RenderLeaf` genuinely is a caller defect 1 was never checked against; that just wasn't where this went wrong.
 
@@ -319,14 +320,24 @@ The pass stopped being bookkeeping and started finding things.
 
 ### Open, and honest about it
 
-- **The colour system has a parser and no tests.** `colorSystem` (`standard` / `256` / `truecolor`)
-  parses in `Config.cs`, and `ColorResolution.ResolveLiteral` defers 256-palette and hex handling
-  to Spectre. Zero tests match `colorSystem`, `256`, or `hex`. So whether §6.1's three literal
-  forms and §6.2's down-conversion actually work is **unverified**, not known-good.
-- **README understates colours as "Sixteen named colours"**, where §6.1 specifies 16 names plus
-  256-palette names/indices plus hex. Deliberately not widened yet: the failure mode of
-  documenting a feature that turns out not to work is worse than the one of underselling a feature
-  that does, and the line above is why that is a live possibility rather than a formality.
+- **The colour system has tests for none of what makes it a colour system.** Narrowed from
+  "a parser and no tests" by reading the source. Two halves, and only one is still open:
+  - *Resolved by reading.* §6.1's three literal forms all parse: `ColorResolution.ResolveLiteral`
+    delegates to Spectre's `Style.TryParse`, which accepts standard-16 names, 256-palette names,
+    and `#rrggbb` alike — parsing was **never** limited to 16, and §6's "widen the palette" was
+    always a rendering-profile change, not a parsing one. `Config.cs:384` confirms the profile
+    side: `256` → `EightBit`, `truecolor` → `TrueColor`, everything else → `Standard`, wired into
+    the console at `Program.cs:58-61`. README widened accordingly.
+  - *Still open.* §6.2's **down-conversion** — what a hex literal actually looks like under the
+    default `standard` profile — remains unverified. Every one of the 11 `ColorSystemSupport`
+    references in the test suite pins `Standard`, and not one of those tests uses a hex or
+    256-palette literal, so the down-conversion path is exercised by nothing. Handed to the
+    implementor alongside `--colors` (§9), which is the natural place for it: the command has to
+    render each colour under the active profile anyway.
+
+  The general point, worth keeping: **a parser delegating to a library may already accept more
+  than the project's own documentation claims.** Here the code was ahead of the docs, and reading
+  it turned a feature-gap into a documentation-gap.
 
 ## Standing constraints
 
