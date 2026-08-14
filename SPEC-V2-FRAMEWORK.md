@@ -1679,6 +1679,90 @@ reasonable thing to write, and suppressing would delete behaviour the author cho
 opposite call from defect 14's `shell: true` argv fault, and deliberately: there the config has no
 defined meaning, whereas here it has one and the value simply happens to be empty.
 
+#### 4.2.1 Inheriting a vocabulary inherits the member that makes no sense here
+
+"The same `{}` / `{other-id}` vocabulary §3.2 already defines" is the right design and it carries
+one member across that does not survive the trip. In a link template `{}` means *this item's own
+value*. A `command` item's own value is **what the command prints**, which does not exist until
+the command has run, so `{"command": ["tool", "{}"]}` asks to be given its own output as an
+argument. There is no answer to substitute.
+
+**Bare `{}` in a `command` item's argv is an error (`placeholder-self-reference`).** It is a
+declaration fault, visible without executing anything, and therefore inside §9.1.1's boundary.
+
+The second inherited problem is that argv entries are far more likely than link templates to
+contain braces meaning nothing at all. `jq '{name: .name}'` is an ordinary argv entry, and under a
+naive reading it is a placeholder naming `name: .name`, which resolves to nothing, which this
+section makes an **error** — so a working command becomes a config the framework refuses. The
+grammar has to distinguish, and guessing is not available: `jq '{a}'` is valid jq shorthand *and*
+a well-formed placeholder reference.
+
+So, stated once and shared with §3.2:
+
+- `{{` is a literal `{`; `}}` is a literal `}`.
+- Otherwise `{` … `}` is a placeholder **only if** its contents are empty or match the item-id
+  charset. `{name: .name}` contains a space, a colon and a dot, so it is literal and needs no
+  escaping — which is what keeps the common case from requiring the author to know any of this.
+- Anything else passes through unchanged.
+- A placeholder-shaped reference naming no known id is `unknown-item-id`, as already ruled.
+
+`jq '{a}'` therefore errors, and that is the correct outcome rather than a regrettable one: it is
+genuinely ambiguous, `--check` catches it before it ever ships, and the diagnostic can name the
+repair (`'{{a}}'`). An ambiguity resolved silently in either direction would instead be found by
+someone wondering why their filter stopped matching.
+
+#### 4.2.2 An unavailable source is not an empty one
+
+The empty-value ruling above covers an item that answered with nothing. It does not cover an item
+that **did not answer** — §4 distinguishes `absent` from `unavailable` precisely because a command
+that timed out or exited nonzero has told us nothing, and §2.11.2 exists because collapsing the two
+turns a timing accident into a layout decision.
+
+Substituting the empty string for an `unavailable` source collapses them again, one section away
+from where the distinction was made, and does it at the worst point: the value is handed to another
+process, which cannot tell "there is no branch" from "git did not finish in 150ms" and will act on
+the first reading. The result is a command that runs, exits 0, and reports something untrue.
+
+**A `command` item with a placeholder naming an `unavailable` source is itself `unavailable`, and
+is not spawned.** Same call as §4's, not a new policy — and it also declines to pay for a subprocess
+whose input is already known to be wrong. Like the empty case, `--check` cannot see this: it is a
+runtime condition, and §9.1.1's boundary holds.
+
+#### 4.2.3 `shell: true` moves an input out of the cache key
+
+This is the security ruling above colliding with §5, and it is silent in both directions.
+
+§5 keys the value cache on `id` + hash of the **resolved argv** + `cwd`. For the argv path that is
+complete: placeholder values are *in* the argv, so a different model or branch is a different key.
+For `shell: true` the framework deliberately substitutes nothing — the argv is the same `sh -c
+'…'` string on every render, and the values arrive through the environment instead. **So the key
+no longer covers them.** A script reading `$CLAUDE_TUI_LINE_VAL_MODEL` is cached under a key that
+ignores the model: switch models and it keeps reporting the old one for up to `ttlSeconds`, with
+nothing anywhere reporting that it did.
+
+The security fix caused it. Moving an input from argv to the environment was correct and necessary,
+and it removed that input from a key defined by *which channel* an input travels in rather than by
+*what the child can see*. `CLAUDE_TUI_LINE_PANE_WIDTH` is in the same position and always was — it
+is exported to every `command` item, so a script that formats itself to the pane width caches one
+answer and reuses it at every other width, which defeats the exact feature the variable exists to
+provide.
+
+**The cache key covers every input the child process can see**: the resolved argv, `cwd`, and every
+environment variable the framework sets for it — each exported `CLAUDE_TUI_LINE_VAL_*` and
+`CLAUDE_TUI_LINE_PANE_WIDTH`. Stated as a property rather than as a list of channels, so the next
+input added is covered by the rule instead of needing to be remembered.
+
+The cost is real and worth naming: because the width is exported unconditionally, **a resize is a
+cache miss for every `command` item**, and the tick after a resize pays every command's cost at
+once. That is correct — the alternative is rendering values computed for a width that is no longer
+the width. If it ever becomes unacceptable, the lever is to export the width *only to items that
+ask for it*, not to drop it from the key. Dropping it from the key restores the silent-wrong; the
+export condition is where the cost actually lives.
+
+(§5.0.1's first-tick-after-resize rule makes this slightly cheaper than it sounds: the width is
+**absent** at that tick, and absent is one key shared by every terminal width, so the miss lands on
+the tick after rather than during the drag.)
+
 ## 5. Execution model — the hard part
 
 The process is spawned **every second**. Naive shelling out per item per tick would destroy
@@ -1723,9 +1807,13 @@ custom item is a map lookup, not a fork.
 
 - Cache location: `$XDG_CACHE_HOME/claude-tui-line/items/`, else
   `~/.cache/claude-tui-line/items/`. Overridable by `CLAUDE_TUI_LINE_CACHE` for tests.
-- Cache key: `id` + hash of the resolved argv + `cwd`. `cwd` is in the key because a command
-  like `git status --short` means different things in different sessions, and the cache is
-  shared by every session on the machine.
+- Cache key: `id` + `cwd` + a hash of **every input the child process can see** — the resolved
+  argv and every environment variable the framework sets for it (each `CLAUDE_TUI_LINE_VAL_*`,
+  `CLAUDE_TUI_LINE_PANE_WIDTH`). `cwd` is in the key because a command like `git status --short`
+  means different things in different sessions, and the cache is shared by every session on the
+  machine. **The rest is stated as a property rather than as "the argv"** — see §4.2.3, where
+  keying on the argv alone silently stopped covering a `shell: true` item's placeholder values
+  the moment §4.2 moved them into the environment for security reasons.
 - **One file per cache key**, named for the key — *not* a single `items.json` holding every
   entry. This is load-bearing, not filesystem taste. With one shared file, two sessions
   refreshing two different items each read-modify-write the whole map, and last-write-wins
@@ -2653,6 +2741,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `placeholder-derived-source` | argv `{id}` placeholder naming a derived item | error | 4.2 |
 | `placeholder-command-source` | argv `{id}` placeholder naming another `command` item | error | 4.2 |
 | `placeholder-env-collision` | two ids mangling to one `CLAUDE_TUI_LINE_VAL_<ID>` under `shell: true` | error | 4.2 |
+| `placeholder-self-reference` | bare `{}` in a `command` item's argv — an item asking for its own not-yet-produced output | error | 4.2.1 |
 | `part-source-count` | a compound part with zero, or more than one, source | error | 3.3 |
 | `part-forbidden-key` | a compound part carrying `parts` or `link` | error | 3.3 |
 | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |

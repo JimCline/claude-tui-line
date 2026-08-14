@@ -1371,6 +1371,53 @@ written about a character, so the guard exists for one and not the other and nob
 the test. Filed as task #20, both paths, since both cut and only the wrap path is usually
 remembered.
 
+### §4.2 walked — a security fix that quietly emptied the cache key
+
+Walked ahead of building it (task #5), which is the right order: everything below would otherwise
+have been decided by whoever wrote the code first. Four rulings.
+
+**§4.2.3 is the one that matters.** §5 keys the value cache on `id` + hash of the **resolved argv**
++ `cwd`. That is complete for the argv path, because placeholder values are *in* the argv. For
+`shell: true` §4.2 deliberately substitutes nothing — the argv is the identical `sh -c '…'` string
+every render and the values arrive through the environment — so **the key no longer covers them.**
+A script reading `$CLAUDE_TUI_LINE_VAL_MODEL` is cached under a key that ignores the model: switch
+models and it reports the old one for up to `ttlSeconds`, silently.
+
+The security fix caused it, and correctly. Moving an input from argv into the environment was
+necessary, and it removed that input from a key defined by *which channel* an input travels in
+rather than by *what the child can see*. `CLAUDE_TUI_LINE_PANE_WIDTH` was always in the same
+position — exported to every `command` item, absent from the key — so a script formatting itself to
+the pane width caches one answer and reuses it at every other width, defeating the exact feature the
+variable exists to provide.
+
+Ruled: **the key covers every input the child process can see** — resolved argv, `cwd`, every
+`CLAUDE_TUI_LINE_VAL_*`, and the pane width — stated as a property so the next input added is
+covered by the rule rather than by someone remembering. §5's bullet now says that and cites §4.2.3
+rather than restating it. The cost is named too: a resize becomes a cache miss for every `command`
+item, which is correct, and if it ever hurts, the lever is exporting the width only to items that
+ask for it — **not** dropping it from the key. Naming the right lever matters, because the wrong one
+is the one that looks like a performance fix.
+
+Three more:
+
+- **§4.2.1, bare `{}`.** "The same `{}` / `{other-id}` vocabulary §3.2 defines" carries across one
+  member that does not survive the trip: `{}` means *this item's own value*, and a `command` item's
+  own value is what it prints, which does not exist yet. New error `placeholder-self-reference`.
+- **§4.2.1, literal braces.** `jq '{name: .name}'` is an ordinary argv entry that a naive reading
+  turns into a placeholder naming nothing — which this section makes an *error*, so a working
+  command becomes a config the framework refuses. Guessing is unavailable, since `jq '{a}'` is
+  valid jq shorthand *and* a well-formed reference. Grammar ruled: `{{` and `}}` are literal
+  braces; `{…}` is a placeholder only if empty or matching the id charset, so the common case
+  needs no escaping and the author never has to learn any of this; everything else passes
+  through. `'{a}'` errors, correctly — genuinely ambiguous, caught by `--check` before it ships,
+  and the diagnostic can name the repair.
+- **§4.2.2, an unavailable source is not an empty one.** The empty-placeholder rule covers an item
+  that answered with nothing, not one that *did not answer*. Substituting empty for an
+  `unavailable` source collapses §4's distinction one section after it was made, and does it at the
+  worst point — handing it to a process that cannot tell "no branch" from "git didn't finish in
+  150ms" and will act on the first reading. A `command` item whose placeholder names an
+  `unavailable` source is itself `unavailable` and is not spawned.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
