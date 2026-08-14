@@ -1628,6 +1628,61 @@ Two rulings the implementor asked for, both now in §9.6:
   rather than a verdict about the config. A caller testing `exit == 0` is right by accident; one
   switching on the four falls through the bottom exactly when it should be loudest.
 
+### §9.3.1 and §9.6.2.1 — two gaps that were blocking `--items`, both mine to fill
+
+The implementor stopped and reported rather than freehanding, which was right: both were missing
+spec content that ships to users as documentation, not code questions.
+
+- **§9.3 mandated a fixed synthetic `StatusInput` and never said what is in it.** "A fixed
+  non-randomised payload" is not a value; two people implementing that sentence produce two
+  fixtures, and this one is shared with `--preview` precisely so the two can't disagree. §9.3.1 now
+  gives it as a literal, with four rules that each rule out a fixture someone would otherwise write:
+  **every field populated** (real payloads omit `pr` and `vim`, and an item whose example renders
+  empty reads as an item that produces nothing — completeness beats realism here); **redundant
+  fields must agree** (34% *is* 68k of 200k; nothing enforces it, and an inconsistent fixture
+  depicts a state Claude Code cannot produce, which `--preview` then renders faithfully);
+  **deliberately away from thresholds** — the implementor's instinct was to sit `context` at ~82% so
+  the example exercises the colour ladder, and I went the other way, because this is the resting
+  baseline users compare against and `--colors`/`--preview` are where the ladder belongs; and
+  **visibly synthetic**, since §9.3's "admit it is invented" goes to stderr, the stream most likely
+  to be discarded.
+- **`reports` was required on all sixteen items and demonstrated on one.** §9.6.2.1 writes all
+  sixteen. The three `Semantic` ones carry a second sentence naming what drives the colour, because
+  for those three the colour *is* information: `rate-limits` follows the **higher** of its two
+  windows, `engram` is a state rather than a magnitude. Both change what a sensible `thresholds`
+  override looks like and were otherwise only learnable by reading the implementation.
+- Recorded alongside it: **`example` is rendered, never stored** — the `"⎇ main"` in §9.6.2's shape
+  is `BuildDefaultSegment`'s output, not a table entry, so that field needed zero hand-authored
+  values. And **a builder disagreeing with a `reports` string is a finding, not a string to
+  reword** — rewording converts behavioural drift into documentation.
+
+### §13.3 closed — four dangling references, three different fixes, and a CI check
+
+Task #28 done. `tools/check-citations.sh` compares every cited `§N.M` against the document's own
+headings; **68 of 68 resolve**, and it was proven able to fail by injecting a `§99.9` into a copy
+before being trusted. Wired into a new `.github/workflows/ci.yml` (the repo had no CI at all),
+running ahead of build and test so a broken reference is still reported when the build is red.
+
+Two things worth keeping from closing the four:
+
+- **The remedy was not uniform, which "four dangling references" conceals.** §7 and §2.9 had
+  content and no heading → promoted in place. §4.3 had content under the *wrong* heading — derived
+  items were introduced inside §3.2's hyperlink example, reading as part of linking rather than as
+  one of §9.6.2's four item kinds → promoted to a real §4.3, which is what the single citation was
+  already describing.
+- **§10.6 reversed my own earlier ruling.** The first draft of §13.3 said to promote §10's bullets
+  to subsections rather than rewrite the citations, on the principle that bullets renumber silently
+  while headings are visible when they move. The principle holds; the application was wrong —
+  **§10.1 already exists as a heading and is not bullet 1**, so promoting would have given `§10.1`
+  two meanings in one document. That converts a dangling reference into an *ambiguous* one, which
+  is strictly worse: a dangling reference at least fails when followed. Citations now read "§10
+  requirement 6", §10 says so explicitly, and the general rule keeps a precondition — promote when
+  the number is free.
+- The script itself shipped a bug worth noting: `sed 's/x\+//'` is a GNU extension that BSD sed
+  accepts and silently does not apply, so the first run reported all 69 citations dangling. Loud,
+  and therefore harmless. The same mistake in the other direction reports clean forever, which is
+  why the script now refuses to run if it extracts zero headings.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

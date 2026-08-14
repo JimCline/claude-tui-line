@@ -419,7 +419,7 @@ level of two algorithms rather than one value.
 State it as the property rather than as the branch: **exactly one width-resolution policy runs per
 split.** A second policy applied to the first one's output is not a refinement of it.
 
-One consequence to fix rather than record: §10.6's three fixpoint tests reach the resolver through
+One consequence to fix rather than record: §10 requirement 6's three fixpoint tests reach the resolver through
 a `measureOverride` seam that the greedy path threads and the min-rows path does not take at all.
 So the pass-cap test, the monotone-clamp test, and the convergence test **cannot be run against
 `min-rows`**, and the paragraph above is the argument for why they would fail if they could be.
@@ -941,9 +941,9 @@ the loop can produce, which is exactly what the banner-to-text fallback used to 
 source of.
 
 Read directly from those paths; what that reading does **not** establish is the end-to-end
-number. §10.6's fixpoint tests drive the loop through `measureOverride`, so they certify the
+number. §10 requirement 6's fixpoint tests drive the loop through `measureOverride`, so they certify the
 monotone clamp and the pass cap against a stub, not that the *real* measurement frees six
-columns at `COLUMNS=112`. That assertion is still owed, and §10.6's rule applies to it — assert
+columns at `COLUMNS=112`. That assertion is still owed, and §10 requirement 6's rule applies to it — assert
 that the sibling gains what the anchor gives up, not that `right == 32`.
 
 **These integers are measured, not asserted.** They come from rendering the config above at those
@@ -1401,17 +1401,16 @@ columns early and §2.4's rectangle invariant breaks. Three rules, none optional
    a truncated one emits the closing `\e]8;;\e\\` before the ellipsis. An unterminated OSC 8
    leaks: the terminal keeps hyperlinking subsequent output, including the user's next prompt.
 
-**Derived items** cover the case where the thing to link is not an item but a fragment of one:
+**Derived items** (§4.3) cover the case where the thing to link is not an item but a fragment of
+one — which is the motivating case for them, though not the only one:
 
 ```json
 { "id": "issue", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+", "case": "upper",
   "link": "https://linear.app/example/issue/{}", "color": "blue" }
 ```
 
-`from` names a source item, `extract` is a regex whose first match becomes the value, and an
-empty match suppresses the item under the existing missing-field rule (§3). This is deliberately
-one general mechanism rather than a registry row per tracker: an issue id scraped from a branch
-name and any future scraped fragment cost a config row, not a code change — the §1 rule.
+An empty match suppresses the item under the existing missing-field rule (§3), so a branch with no
+issue id in it produces no link rather than a link to nothing.
 
 `remote-url` is a new registry row: origin normalized to https, `git@host:path` rewritten,
 `.git` stripped. It probes via `git remote get-url origin` rather than reading git config
@@ -1461,11 +1460,6 @@ the visible text between them and measures the row far too narrow.
 - **A `{other-id}` that does not resolve drops the link, not the item.** The text still renders,
   plainly. The missing-field rule governs an item's own `{}` value; a decoration's unmet
   dependency must not delete information.
-- **`from` names a real registry or command id only.** Pointing it at another derived item does
-  not resolve and suppresses the item. The alternative — a single order-dependent pass — makes
-  config line order silently load-bearing, so reordering two lines loses a link with no error.
-  Chaining can be added later behind a topological sort; order-dependence cannot be withdrawn
-  once configs rely on it.
 - **A truncated linked segment closes the link before the ellipsis and keeps its colour.** The
   ellipsis is the pane's artifact, not part of the target; clicking `…` must never navigate.
 
@@ -2036,6 +2030,53 @@ export condition is where the cost actually lives.
 (§5.0.1's first-tick-after-resize rule makes this slightly cheaper than it sounds: the width is
 **absent** at that tick, and absent is one key shared by every terminal width, so the miss lands on
 the tick after rather than during the drag.)
+
+### 4.3 Derived items
+
+A derived item takes another item's value and reshapes it. It runs no process and reads no payload
+field of its own: its entire input is one other item's resolved value.
+
+```json
+{ "id": "issue", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+", "case": "upper" }
+```
+
+- **`from`** names the source item's id — required, and the thing that makes this kind a kind.
+- **`extract`** is a regex applied to the source's value. The **first capture group** becomes the
+  result, or the whole match when the pattern has none.
+- **`case`** is `"upper"` or `"lower"`; anything else passes the text through unchanged.
+- **`format`**, **`color`**, **`overflow`**, and **`link`** then apply exactly as they do to any
+  other item.
+
+The pipeline is `from → extract → case → format`, in that order, and **`extract` sees the raw
+provider value rather than the rendered text.** That ordering is the whole design: a regex written
+against `⎇ feature/ABC-123` and one written against `feature/ABC-123` are different regexes, and
+the second is the one an author can write without knowing what glyph the builder chose. Putting
+`extract` after `format` would make every derived item's pattern depend on a decoration it does not
+control.
+
+**The source does not have to be displayed.** §5's resolution set is the set of *referenced* ids,
+not the set of shown ones, so `from: "git-branch"` resolves the branch whether or not `git-branch`
+appears in any pane. That is the feature, not a leak: it is how you show a scraped fragment without
+also showing what it was scraped from.
+
+**`from` names a real registry or command id only.** Pointing it at another derived item does not
+resolve and suppresses the item — `from-derived-source`, an error under §9.4 rather than a warning,
+because the result is a construct that never renders. The tempting alternative is a single
+order-dependent pass, which would make chains work whenever the author happened to declare them in
+the right order. That makes config line order silently load-bearing: reorder two lines and a link
+disappears with nothing reported. Chaining can be added later behind a topological sort;
+order-dependence cannot be withdrawn once configs rely on it.
+
+**Why one general mechanism rather than a registry row per source.** An issue id scraped from a
+branch name, a hostname pulled out of a remote URL, a ticket prefix — each would otherwise be a
+code change and a new builtin. Here each is a config row. That is the §1 rule applied to the item
+model, and it is why `extract` is a regex rather than a fixed set of named extractions.
+
+This section exists because `derived` is one of §9.6.2's four item kinds and had no definitional
+home: its keys were introduced inside §3.2's hyperlink worked example, where they read as part of
+linking rather than as a kind of item. §9.6.2 cited it as `§4.3` — a section that did not exist —
+which is §13.3's finding, and the fix that section prescribes: give the content the heading the
+citations already assumed.
 
 ## 5. Execution model — the hard part
 
@@ -3564,6 +3605,10 @@ Three rulings on the shape, each closing a way this could have become the thing 
 The v1 lesson was expensive and is now policy. Read **§10.1 first** — it states a property every
 assertion in this list has to satisfy, and four of them do not satisfy it as written.
 
+**The numbered items below are cited as "§10 requirement N", never as "§10.N".** §10.1 is a
+heading, it is not requirement 1, and the two series would otherwise collide — see §13.3, where
+that collision is what stopped these bullets from being promoted to subsections.
+
 1. **Parity gate for iteration 1** (§2.7): byte-identical to the pre-pane build across the
    full width sweep, border on and off. This is the whole justification for landing panes as a
    no-op first.
@@ -4266,7 +4311,8 @@ Walking §2 turned up `§2.9` cited nine times with no such section, which promp
 | `§10.6` | 3 | bullet 6 of §10's list, cited in subsection form |
 | `§4.3` | 1 | derived items — `from` / `extract` / `case` |
 
-`§7` and `§2.9` are fixed in place; the other two are open.
+All four are now closed, and they needed three different fixes — which is the first thing worth
+recording, because "four dangling references" reads as one problem with one remedy.
 
 **This is §9.6.1's registry rule, which the document applies to diagnostic codes and does not
 apply to itself.** "A code that is not in it does not exist" is exactly as true of a section
@@ -4281,13 +4327,29 @@ constantly is one every reader already knows the meaning of, so nobody follows i
 it goes nowhere. Frequency of citation is *negatively* correlated with the chance anyone checks.
 The single-citation dangle, `§4.3`, is the one a reader would most likely have caught.
 
-Two riders:
+**How each was closed, and why the remedy is not uniform:**
 
-- **`§10.6` is a different fault from the other three.** §10's tests are a bullet list, and
-  citations refer to bullet 6 as `§10.6` — a subsection numbering the document never adopted. Fix
-  it by promoting §10's bullets to numbered subsections, not by rewriting the citations: three
-  places already cite them positionally, so the numbering is in use and only the headings are
-  missing. Bullets renumber silently when one is inserted; headings are visible when they move.
+- **`§7` and `§2.9` — the content existed and had no heading.** Promoted in place. This is the
+  default fix and the one the general rule prescribes.
+- **`§4.3` — the content existed, had a heading, and was under the wrong one.** `from`/`extract`/
+  `case` were introduced inside §3.2's hyperlink worked example, where they read as part of linking
+  rather than as one of §9.6.2's four item kinds. The single citation was not wrong about where it
+  *should* be. Promoted to a real §4.3 and the worked example now points at it, which is the fix
+  the citation was already describing.
+- **`§10.6` — the citation was wrong and had to be rewritten.** This reverses what an earlier draft
+  of this section prescribed, and the reversal is the useful part. That draft said to promote §10's
+  bullets to subsections rather than rewrite the citations, on the general principle that bullets
+  renumber silently while headings are visible when they move. The principle is right and the
+  application was wrong: **§10.1 already exists as a heading, and it is not bullet 1.** Promoting
+  the bullets would have produced two different meanings for `§10.1` in the same document —
+  converting a dangling reference into an ambiguous one, which is strictly worse, since a dangling
+  reference at least fails when followed. The three citations now read "§10 requirement 6", and §10
+  says outright that its numbered items are cited that way.
+
+  The general rule survives with a precondition: promote content to headings **when the number is
+  free**. When a section already numbers its subsections on a different axis, a positional list
+  inside it cannot join that series, and the citations are what must change.
+
 - **Check this mechanically, not by reading.** Every instance here survived many careful readings
   of the surrounding prose, because prose citing a section reads correctly whether or not the
   section exists — the sentence carries the meaning and the number is decoration until someone
