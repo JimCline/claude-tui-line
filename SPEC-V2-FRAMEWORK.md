@@ -2018,6 +2018,22 @@ under `256`. "Approximated to the nearest of the sixteen" is simply false in the
 a diagnostic whose stated reason does not apply to the input that triggered it is how authors
 learn to disbelieve the ones that do.
 
+**"Attributes never fire" is a property check, not a fourth name list.** `Style.TryParse` does not
+reject `default`, `dim` or `bold` — it accepts them as decoration-only specs and `ResolveLiteral`
+returns **`Color.Default`** for each (established by reflecting over 0.57.2, not assumed). So the
+implementation does not need to recognise the attribute names: a literal resolving to
+`Color.Default` carries no palette entry, is therefore outside this diagnostic's predicate
+entirely, and is exempt by construction. Matching on the three names instead would be a fourth
+enumeration of a closed set — the thing §4's registry rule and §9.4.1's predicate rule both exist
+to prevent — and it would go stale the moment Spectre accepts a fourth decoration.
+
+**`null` and `Color.Default` must not collapse into one branch**, tempting as it is now that both
+mean "not a palette colour". `null` is *failed to parse*, which is §6.2.1's entire subject: it
+renders as no colour, silently, and is the case a warning has to reach. `Color.Default` is *parsed
+successfully and names no colour on purpose*. One is a fault, the other is a valid config, and the
+predicate that separates them is the difference between the diagnostic firing on `dim` — the most
+common value in the document — and never firing on the typo it was written for.
+
 **A hex literal that happens to land exactly on a 256-palette entry still fires under `256`.**
 This is deliberate, and it is not the false positive it looks like. Suppressing it would mean
 shipping a table of 256 RGB triples whose correctness nothing in this project would ever check —
