@@ -52,6 +52,17 @@ public sealed class BorderConfig
     /// property deserialization (deliberately no <see cref="JsonPropertyNameAttribute"/>).
     /// </summary>
     public string? Shorthand { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 2: whether adjacent panes' shared edges draw as one line
+    /// (§2.10's compositor border grid) instead of two. Legal only on
+    /// <see cref="SurfaceConfig.Border"/> — present here on the shared <see cref="BorderConfig"/>
+    /// shape purely so <c>collapse</c> declared anywhere else (<see cref="UserConfig.Border"/>, any
+    /// <see cref="PaneConfig.Border"/>) is visible to <c>ConfigChecker</c>'s <c>collapse-not-surface-level</c>
+    /// diagnostic rather than being silently dropped by a converter that never binds it.
+    /// </summary>
+    [JsonPropertyName("collapse")]
+    public bool? Collapse { get; set; }
 }
 
 /// <summary>SPEC-V2-FRAMEWORK.md §2.10: an explicit per-edge <c>border.edges</c> declaration; an omitted field defaults to <c>true</c> (§2.9's "default is bordered" philosophy applied per edge).</summary>
@@ -84,6 +95,11 @@ public sealed class SurfaceConfig
 
     [JsonPropertyName("pane")]
     public PaneConfig? Pane { get; set; }
+
+    /// <summary>SPEC-V2-FRAMEWORK.md §2.10.1 rule 2: the only legal home for <c>collapse</c>.</summary>
+    [JsonPropertyName("border")]
+    [JsonConverter(typeof(BorderConfigConverter))]
+    public BorderConfig? Border { get; set; }
 }
 
 public sealed class PaneConfig
@@ -384,7 +400,8 @@ public sealed record ResolvedConfig(
     int ChromeReserve,
     ColorSystemSupport ColorSystem,
     IReadOnlyDictionary<string, ColorResolution.ColorRule> Colors,
-    int SurfaceMaxRows = ConfigLoader.DefaultSurfaceMaxRows);
+    int SurfaceMaxRows = ConfigLoader.DefaultSurfaceMaxRows,
+    bool Collapse = false);
 
 public static class ConfigLoader
 {
@@ -449,8 +466,9 @@ public static class ConfigLoader
         var colorSystem = ParseColorSystem(config?.ColorSystem);
         var colors = ParseColorTable(config?.Colors);
         var surfaceMaxRows = config?.Surface?.MaxRows ?? DefaultSurfaceMaxRows;
+        var collapse = config?.Surface?.Border?.Collapse ?? false;
 
-        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows);
+        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows, collapse);
     }
 
     private static readonly (string Token, ColorSystemSupport Value)[] ColorSystemAccepted =
