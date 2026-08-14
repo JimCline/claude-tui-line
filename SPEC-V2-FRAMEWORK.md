@@ -2926,6 +2926,20 @@ Unchanged by any of this: notes go to stderr in the human form and to `notes[]` 
 (§9.8.1), `rows[].text` stays plain and stays the form built for diffing, and `--preview --json` is
 unstyled like every other JSON output (§9).
 
+**The fourth bare form was audited and needs no ruling, which is worth recording so nobody reopens
+it.** Bare `--check` writes its diagnostics to stdout — they are its payload, not commentary on it,
+so §9.8.1's stderr split does not reach here — and on a clean config it prints **nothing** and
+exits 0. Silence is the correct answer and not an omission: it is what a validator is expected to
+do, and the ambiguity a reader might fear — "clean, or did it fail to run?" — is not reachable by
+the callers that would be hurt by it. §12.3 and §12.4 both invoke `--check --json`, which answers
+`ok: true` explicitly. The bare form's consumer is a person at a terminal, for whom an empty
+response after a validation command has exactly one meaning.
+
+So the rule this subsection argues for is *audit* every bare form, not *rule on* every bare form.
+Three of the four needed a decision and one did not, and the difference was only visible after
+looking. Adding output to this one to match the others would be symmetry bought at the cost of the
+convention every tool on the machine already teaches.
+
 ### 9.4 Exit codes and severities
 
 | exit | meaning |
