@@ -512,6 +512,28 @@ and the answer was one caller, while the *sibling* function had another, taking 
 §9.8's rule was written about a checker transcribing the renderer's arithmetic; this is the same
 drift with both copies inside the renderer, where no checker/renderer boundary suggests looking.
 
+### The audit caught one of mine (§9.3 / §9.6.2)
+
+Moving on to `--preview` and reading §9.3 turned up a duplication **I had introduced two commits
+earlier**. §9.6.2 said `--items`' `example` renders "against one canned synthetic `ItemContext`
+fixture" — and §9.3 already specifies a fixed, non-randomised synthetic payload for `--preview`.
+Two synthetic payloads, for the same purpose, written into the same document within an hour, one
+of them inside the section correcting a duplication.
+
+Fixed in both places: **one `StatusInput` constant**, which `--items` wraps with canned
+`GitBranch`/`Engram`/`RemoteUrl` — the only fields `ItemContext` adds beyond the payload, and they
+need constants because they come from probing the machine, which `--items` must not do.
+
+Worth recording plainly rather than quietly repairing. The consequence was not hypothetical: an
+`example` built from a different payload would show an item one way under `--items` and another
+under `--preview`, and `/migrate` reads both as authority in the same session with no way to
+notice they came from different inputs. **Two authorities disagreeing is worse than either being
+wrong alone**, because a single wrong answer is at least consistently wrong.
+
+The transferable bit is that knowing the failure mode by name did not prevent committing it. What
+caught it was the mechanical habit — read the neighbouring section before specifying against it —
+and not the understanding.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

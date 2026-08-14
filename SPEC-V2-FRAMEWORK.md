@@ -1901,6 +1901,13 @@ failing.
 
 The synthetic payload is a fixed constant, not randomised, so two previews are comparable.
 
+**It is also the only synthetic payload in the binary.** `--items` needs one too, for §9.6.2's
+`example` field, and it uses this one rather than defining its own — wrapped in an `ItemContext`
+with canned `GitBranch`/`Engram`/`RemoteUrl`, since those come from probing the machine rather
+than from stdin. Two constants would let `--items` and `--preview` disagree about what an item
+looks like, which is worse than either being wrong alone: `/migrate` consults both in the same
+session and has no way to notice they were built from different inputs.
+
 `--columns N` sets the width. Absent, use `COLUMNS`, then a default of 100. The usable width
 is still `N - chromeReserve`; preview must not quietly render 3 columns wider than reality, or
 it will disagree with the statusline exactly at the width where wrapping starts to matter.
@@ -2200,9 +2207,20 @@ would mean introducing a format-string layer under every builder so that a CLI f
 to name, which is the CLI dictating the render architecture to serve its own output. `example`
 replaces it and answers the question an authoring tool actually has — *do I need to add a `format`
 of my own, or does this item already carry its own decoration?* — which a template would answer
-only indirectly. `--items` has no stdin payload, so the example is rendered against one canned
-synthetic `ItemContext` fixture, and that fixture is the reason the field is honest: it is the
-same `BuildDefaultSegment` the renderer calls, not a string re-typed into a table.
+only indirectly. `--items` has no stdin payload, so the example is rendered against a canned
+`ItemContext`, and that is the reason the field is honest: it is the same `BuildDefaultSegment`
+the renderer calls, not a string re-typed into a table.
+
+**That `ItemContext` is built on §9.3's synthetic payload and must not be a second constant.**
+This paragraph originally said "one canned synthetic `ItemContext` fixture" and left it there,
+which was this document's own §1 failure committed inside the section correcting one — §9.3
+already defines a fixed, non-randomised synthetic `StatusInput` for `--preview`, and an `example`
+built from a different one would show an item one way under `--items` and another under
+`--preview`, with `/migrate` reading both as authority in the same session. So: **one
+`StatusInput` constant**, and `--items` wraps it with canned values for the fields `ItemContext`
+adds beyond the payload — `GitBranch`, `Engram`, `RemoteUrl`. Those three are the only new
+constants, and they exist because those values come from probing the machine rather than from
+stdin, which `--items` must not do.
 
 **Two fields the old list omitted.** `reports` and `default` were both missing and are both
 load-bearing. `reports` is the description, and it belongs on `ItemDefinition` as a **required**
