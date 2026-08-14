@@ -316,9 +316,16 @@ comments. [STATUS.md](STATUS.md) tracks what is built.
 ```bash
 dotnet build src/ClaudeTuiLine/ClaudeTuiLine.csproj
 dotnet test  tests/ClaudeTuiLine.Tests/ClaudeTuiLine.Tests.csproj
+./tools/check-citations.sh
 ```
 
 There is no solution file, so build and test commands name their project explicitly.
+
+`check-citations.sh` verifies that every `§N.M` the spec cites resolves to a heading in the spec.
+That sounds like housekeeping and is not: four references were cited and undefined — one of them
+27 times — and every one had survived many careful readings, because prose citing a missing section
+reads perfectly well. The sentence carries the meaning; the number is decoration until someone
+tries to follow it. Run it after editing the spec. CI runs all three.
 
 ## Licence
 

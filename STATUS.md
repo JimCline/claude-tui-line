@@ -1683,6 +1683,40 @@ Two things worth keeping from closing the four:
   and therefore harmless. The same mistake in the other direction reports clean forever, which is
   why the script now refuses to run if it extracts zero headings.
 
+### Open, and needs Jim: GitHub Actions is billing-blocked
+
+The CI workflow is correct and has never run. Both jobs on `088a759` were refused before starting:
+
+> The job was not started because recent account payments have failed or your spending limit needs
+> to be increased.
+
+So `main` now shows a red ✗ that says nothing about the code — which is the failure class this
+document spends its time on, a signal that cannot mean what it appears to mean. It resolves in the
+Billing & plans settings, and the workflow will work unchanged once it does; nothing about it is
+worth rewriting in the meantime, and deleting it would discard correct work over a one-minute fix.
+
+Branch protection does **not** require status checks, so this does not block pushes — verified by
+the fact that the push carrying it succeeded.
+
+In the meantime `./tools/check-citations.sh` runs locally in under a second and is now documented
+in the README's contributing section, so the check has value today rather than only after billing
+is sorted.
+
+### Audits run tonight that found nothing
+
+Both recorded because a clean result is only worth having if it is written down — otherwise the
+next person re-runs it, or worse, assumes it was never checked.
+
+- **Every CLI flag the plugin commands and README invoke is defined in §9.** `--check`, `--json`,
+  `--items`, `--colors`, `--preview`, `--columns`, `--config`, `--version` — all present. The only
+  other flags in the docs are git's own, inside a config example.
+- **§12.6 is fully specified, not merely mandated.** Checked specifically for the gap that blocked
+  `--items` twice tonight — a section that requires something to exist without saying what it is.
+  §12.6 has a wire contract, an environment ruling, per-tool rows, CAS for concurrent writes, an
+  explicit allowlist of files a tool may write, and version reporting. It is implementable as
+  written. Worth knowing given it is cited 26 times, which by §13.3's own finding makes it the
+  least likely thing in the document to have been checked.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
