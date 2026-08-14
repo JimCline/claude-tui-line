@@ -11,7 +11,7 @@ if (args.Length == 0)
 
 return await RunCli(args);
 
-static async Task<int> RunAsync()
+static async Task<int> RunAsync(string? explicitConfigPath = null)
 {
     try
     {
@@ -31,7 +31,17 @@ static async Task<int> RunAsync()
         // it overlaps the config load, the Engram telemetry read, and segment building below.
         var gitProbeTask = GitBranch.ProbeAsync(input.Cwd);
 
-        var (topLevel, pane) = SafeLoadAll();
+        var (topLevel, pane, configPath, unreadableReason) = LoadRenderConfig(explicitConfigPath);
+
+        // SPEC-V2-FRAMEWORK.md §9.2.1: an asserted config that can't be read draws the reason,
+        // not the config and not the defaults — the render path's only output channel is this
+        // one row, so nothing below it (items, git probe, borders) runs.
+        if (unreadableReason is not null)
+        {
+            var diagnosticWidth = SurfaceLayout.ComputeWidth(Environment.GetEnvironmentVariable("COLUMNS"), chromeReserve: 0);
+            Console.Out.WriteLine(ConfigUnreadableMessage.Format(configPath!, unreadableReason, diagnosticWidth));
+            return 0;
+        }
 
         EngramResult? engram;
         try
@@ -498,14 +508,19 @@ static async Task<int> RunCli(string[] args)
         return WriteUsageError(json, "--check, --version, --items, --colors, and --preview are mutually exclusive");
     }
 
+    // SPEC-V2-FRAMEWORK.md §9.2.1: render is the mode selected when none of the others is — the
+    // only way a bare `--config <path>` (asserted, but no --check/--preview) reaches the render
+    // path, which is where §9.2.1's own worked example lives. RunAsync is the same function the
+    // no-argv shortcut above calls, parameterized by the config path instead of a second
+    // implementation of "load config, render."
     if (modeCount == 0)
     {
-        return WriteUsageError(json, "no recognized subcommand (expected --check, --items, --colors, --preview, or --version)");
+        return await RunAsync(configPath);
     }
 
-    // §9.4.4: --json, --columns, and --config are modifiers, not modes. A modifier the selected
-    // mode does not read is a usage error rather than being silently accepted — accepting
-    // `--version --json` would tell the caller their flag did something it did not.
+    // §9.4.4: --json and --columns are modifiers, not modes. A modifier the selected mode does
+    // not read is a usage error rather than being silently accepted — accepting `--version
+    // --json` would tell the caller their flag did something it did not.
     if (version && json)
     {
         return WriteUsageError(json, "--version has no --json form");
@@ -514,11 +529,6 @@ static async Task<int> RunCli(string[] args)
     if (columns is not null && !preview)
     {
         return WriteUsageError(json, "--columns is only valid with --preview");
-    }
-
-    if (configPath is not null && !check && !preview)
-    {
-        return WriteUsageError(json, "--config is only valid with --check or --preview");
     }
 
     if (version)
@@ -715,29 +725,70 @@ static StatusInput ParseInput(string? raw)
     }
 }
 
-static (ResolvedConfig TopLevel, Pane RootPane) SafeLoadAll()
+// SPEC-V2-FRAMEWORK.md §9.2.1: the render path's config-loading step. An explicit --config, or a
+// config found by the §5 search order, that turns out unreadable (missing when asserted, or
+// present but unparseable) is reported via UnreadableReason rather than silently replaced by
+// defaults; only "no --config, nothing at any searched path" (row 1) is a legitimate default.
+static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? UnreadableReason) LoadRenderConfig(string? explicitConfigPath)
 {
+    var configPath = explicitConfigPath ?? ConfigLoader.ResolveConfigPath();
+    UserConfig? config = null;
+
+    if (configPath is not null)
+    {
+        var result = ConfigLoader.ReadConfigForCheck(configPath);
+
+        if (result.Status == ConfigReadStatus.ParseError)
+        {
+            var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
+            return (fallbackTopLevel, fallbackPane, configPath, result.ErrorMessage ?? "could not be parsed");
+        }
+
+        if (result.Status == ConfigReadStatus.NoFile)
+        {
+            if (explicitConfigPath is not null)
+            {
+                var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
+                return (fallbackTopLevel, fallbackPane, configPath, "no such file");
+            }
+
+            configPath = null; // §9.2.1 row 1: nothing at the searched path, and none asserted.
+        }
+        else
+        {
+            config = result.Config;
+        }
+    }
+
     try
     {
-        return ConfigLoader.LoadAll(ConfigLoader.ResolveConfigPath());
+        var topLevel = ConfigLoader.ResolveTopLevel(config);
+        var rootPane = ConfigLoader.ResolveRootPane(config, topLevel);
+        return (topLevel, rootPane, configPath, null);
     }
     catch
     {
-        var fallbackTopLevel = new ResolvedConfig(
-            new ColorResolution.ColorExpr.Literal("grey"),
-            BoxBorder.Rounded,
-            ConfigLoader.DefaultChromeReserve,
-            ColorSystemSupport.Standard,
-            new Dictionary<string, ColorResolution.ColorRule>());
-        var fallbackPane = new Pane(
-            PaneSplit.None,
-            Array.Empty<Pane>(),
-            "auto",
-            new PaneBorder(fallbackTopLevel.BorderColor, fallbackTopLevel.Style),
-            null,
-            ConfigLoader.DefaultEllipsis,
-            null,
-            Array.Empty<PaneItem>());
-        return (fallbackTopLevel, fallbackPane);
+        var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
+        return (fallbackTopLevel, fallbackPane, configPath, null);
     }
+}
+
+static (ResolvedConfig TopLevel, Pane RootPane) BuildFallbackConfig()
+{
+    var fallbackTopLevel = new ResolvedConfig(
+        new ColorResolution.ColorExpr.Literal("grey"),
+        BoxBorder.Rounded,
+        ConfigLoader.DefaultChromeReserve,
+        ColorSystemSupport.Standard,
+        new Dictionary<string, ColorResolution.ColorRule>());
+    var fallbackPane = new Pane(
+        PaneSplit.None,
+        Array.Empty<Pane>(),
+        "auto",
+        new PaneBorder(fallbackTopLevel.BorderColor, fallbackTopLevel.Style),
+        null,
+        ConfigLoader.DefaultEllipsis,
+        null,
+        Array.Empty<PaneItem>());
+    return (fallbackTopLevel, fallbackPane);
 }
