@@ -3983,6 +3983,35 @@ Merged cleanly (git auto-merged `Pane.cs`/`SizeResolver.cs`, no conflicts), inde
 verified via task-gopher both pre-merge on the worktree and post-merge on `main`. Full suite:
 1256/1256 passed. Landed as merge commit `4e09333` (branch tip `894e4ea`), pushed.
 
+### #49: `--preview --json` `rows[].width` reuses `PaneRow.Width` (§9.3.4)
+
+Problem: `--preview --json`'s non-panel rowsJson branch computed `rows[].width` independently as
+`text.Length` on the final rendered line, while `rows[].contentWidth` reused the layout's own
+`PaneRow.Width` — two computations of the same metric on the same row that could drift apart.
+
+Scope correction: the task was originally issued as "fix `rows[].width` to use display width
+instead of UTF-16 code-unit length," which the implementor caught and stopped on before writing
+any code — SPEC-V2-FRAMEWORK.md §2.4 rule 3 and §13/§13.1 deliberately keep wcwidth measurement
+out of scope for v2 and mandate `Plain.Length` as the width metric everywhere, including for CJK,
+ZWJ sequences, and combining marks; reversing that would touch §2.7's parity baseline and §10
+bullet 3, not just this call site. Redirected to the actual defect within scope: `rows[].width`
+and `rows[].contentWidth` should agree, both as `Plain.Length`, since they're describing the same
+row.
+
+Fix: `rows[].width` now reuses `row.Width` (`new PreviewRowJson(text, row.Width, row.Width)`)
+instead of recomputing `text.Length`. The three Panel-branch `text.Length` sites
+(`jsonRenderingPanel == true`) are untouched — no `PaneRow` exists for Spectre's Panel-drawn
+border decoration there.
+
+Side finding, not fixed here: while investigating, `--preview`'s rendered pane structure turned
+out to be unaffected by the config's `pane` (split/children/items) section — split config, a
+minimal single-item config, and `"{}"` all render the identical single-bordered panel, differing
+only in item values. Logged as new backlog item #54; not part of this fix.
+
+Merged cleanly (git auto-merged `Program.cs`, no conflicts), independently verified via
+task-gopher post-merge on `main`. Full suite: 1256/1256 passed. Landed as merge commit `3d1f8c3`
+(branch tip `ff93889`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
