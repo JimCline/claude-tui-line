@@ -3598,6 +3598,41 @@ happens once at parse time (`Config.cs:537`, the only such site in the codebase)
 a deliberate product boundary or an accident of how rules were built. Not blocking #37; flagged for a
 future task if it turns out to matter.
 
+### #38: the nine hand-copied enum-value arrays became eight per-kind registries, one exemption
+
+§1.1.1's own inventory (`ConfigCheck.cs:289–297`) was the next instance of the pattern #37 had just
+been fixed for elsewhere: nine hand-written token lists, each a second copy of a set a `switch`
+already encoded, agreeing today only because nothing forced them to keep agreeing. `cdtui-implementor`
+rebuilt eight of the nine (`border.style`, `valign`, `align`, `overflow`, `case`, `split`,
+`distribute`, `colorSystem`) into a `static readonly Accepted` collection colocated with each kind's
+own parser — `Config.cs`, `Pane.cs`, `OverflowMode.cs`, `ItemValueResolver.cs` — so the parser becomes
+a lookup against the same object the diagnostic reads, closing the drift both directions §1.1.1 warns
+about by construction rather than discipline. `size` stays hand-maintained and exempt, per §1.1.1's own
+ruling: its list mixes literals with described forms (`an integer`, `a percentage`) and has no
+closed-set parser to unify with. `ConfigCheck.cs`'s ten `UnknownEnumValue` call sites now read the
+cross-class `AcceptedTokens` properties; only `SizeValues` remains local.
+
+Verified independently before approving: `dotnet build` clean, 1158/1158 tests, `tools/check-all.sh`
+exit 0, `check-citations` 112 sections resolving.
+
+One design choice the implementor disclosed rather than assumed: registries colocated per-kind with
+each parser's own file, not consolidated into one shared registry file. Approved as-is — this is the
+same shape as `ItemValueResolver.cs:177-180`'s existing "two enumerable kinds, two registries" rule
+(colour-token references and item-id references are kept apart because a shared `Kind` field would
+mean two different things depending on context). One registry per enumerable kind is the standing
+convention here; consolidating eight kinds into one file would be that anti-pattern in reverse.
+
+Two prose staleness items the implementor correctly flagged rather than fixed (their instruction was
+scoped to the two citation tables, not narrative prose): §1.1.1's intro sentence still claimed nine
+*live* hand-written lists, and the border-row paragraph cited `Config.cs:625` (now `:652`) and quoted
+a source comment ("through the exact same switch the loader uses") that #38's own refactor reworded to
+"accepted-token lookup." Fixed directly rather than routed anywhere — past-tensed both passages, scoped
+the "all nine agree" line down to the one kind (`size`) it still describes, and credited #38 by number.
+`check-docs.sh` green afterward, same 112 sections, no drift from the prose-only edit.
+
+Landed as two commits: `7a30bfb` (the implementor's registry rebuild, five source files) and `30dd9c1`
+(the prose fix, spec-only), both pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
