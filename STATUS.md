@@ -4451,6 +4451,26 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 and post-merge on `main` (1320/1320, build 0 warnings/0 errors, `check-all.sh` all five checks
 green, 20 doc tokens checked, 0 disagree). Landed as merge commit `faec247`, pushed.
 
+### #48: RunPreview non-happy-path test coverage
+
+#35 established a subprocess-CLI test pattern for `--preview --json` but only exercised the happy
+path. Added `tests/ClaudeTuiLine.Tests/PreviewCliTests.cs` (same `RunCli`/`WriteTempConfig` pattern
+as `PreviewJsonRowsTests.cs`), closing 7 previously-untested `RunPreview` branches (`Program.cs:269-478`):
+config parse-error → exit 3 (both `--json` and bare stderr), `--config` pointing at a missing file →
+exit 3 (both forms), bare non-JSON output shape (rendered rows to stdout, the "preview at N columns"
++ synthetic-stdin note to stderr), and the `--columns`-omitted fallback chain (`COLUMNS` env var,
+then default 100 when that's also unset — `RunCli` gained an optional env-override dict to make this
+deterministic against the host's own `COLUMNS`). No `RunPreview` behavior changed — tests only.
+
+Flagged, not chased: `RunPreview`'s real (non-synthetic) stdin path (`Program.cs:296-346`,
+`ParseInput`/`StatusInput`) is still untested — `RunCli` always closes stdin immediately, so covering
+it needs a new subprocess helper that writes to the child's stdin plus `StatusInput`'s JSON shape.
+Filed separately as #63 rather than folding into #48's scope.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1327/1327)
+and post-merge on `main` (1327/1327, build 0 warnings/0 errors, `check-all.sh` all five checks
+green, 20 doc tokens checked, 0 disagree). Landed as merge commit `54d20a4`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
