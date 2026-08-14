@@ -1728,7 +1728,49 @@ This is safe for the §2.3 fixpoint for the reason §5 gives — colour affects 
 and never `Segment.Plain`, which is the width metric — but the fixpoint's safety is not why
 the ordering is specified. It is specified because one resolution point beats two.
 
-## 7. Failure semantics
+### 6.6 Defect 15: border colour has two resolvers, and they do not accept the same language
+
+§6.5 ends "one resolution point beats two." Border colour has two, one layer below where that
+sentence was looking, and they disagree about what a colour *is*.
+
+| | pane-tree path | single-pane path |
+|---|---|---|
+| call site | `PaneTreeRenderer.cs:76` | `Program.cs:145` |
+| resolver | `ColorResolution.Resolve` | `ColorResolution.ResolveBorderColor` → `ResolveLiteral` |
+| produces | a **spec string**, used as a markup tag | a Spectre **`Color`**, via `Style.TryParse(...).Foreground` |
+| consumed by | `PaneBorderRenderer.Wrap` | `Panel.BorderStyle(new Style(...))` |
+| fallback | `?? "grey"` | `?? Color.Grey` |
+
+Both are live in production; which one runs is decided by the shape of the user's config, not by
+anything the user can see. Item colour has no such split — `PaneAssembler.cs:66` calls `Resolve`
+and the spec goes into markup, which is why this stayed invisible: the divergence exists only on
+the border key.
+
+**The consequence is a capability gap, not just a duplication.** A markup tag carries decorations;
+a `Color` cannot. `ResolveLiteral` takes `.Foreground` off the parsed style and discards everything
+else, so a decoration-only spec — `dim` and `bold`, both of which §6.1 documents and both of which
+`Style.TryParse` accepts — survives one path and is dropped by the other. `border.color: "dim"` is
+therefore expected to render dim in a split config and undim in a single-pane one, with no
+diagnostic on either, because both paths *succeeded*.
+
+> **Unverified, and it must be checked before the fix is written:** the claim that
+> `Style.TryParse("dim")` returns a style whose `Foreground` is `Color.Default` is inferred from
+> the signature, not observed. Assert it directly. The defect stands either way — two resolvers
+> with two fallbacks for one key is the defect — but the *symptom* named above is a prediction
+> about Spectre's behaviour, and §9.4's lesson applies to spec prose as much as to diagnostics.
+
+**Fix: one resolver, and `ResolveLiteral`'s return type is the actual bug.** `ColorResolution.Resolve`
+becomes the sole border-colour resolver, as it already is for items. `ResolveBorderColor` stays,
+but only as a thin adapter over it, and it must return a **`Style`** rather than a `Color` —
+`Style.TryParse(spec)` whole, not `.Foreground` — so decorations survive into
+`Panel.BorderStyle`. The two fallbacks collapse into the one constant they only coincidentally
+agree on today.
+
+The general form is §9.8's rule, which was written about a checker transcribing the renderer's
+arithmetic: **two expressions of one thing drift silently.** This is the same failure with both
+copies inside the renderer, which is worse, because there is no checker/renderer boundary to
+suggest looking. It was found by asking what `--colors` is allowed to print — a question about a
+CLI flag that had nothing to do with borders.
 
 Inherited from v1 and non-negotiable: **the statusline never errors, never pollutes stdout,
 always exits 0.** A misconfigured item, a missing binary, a script that writes garbage, a

@@ -169,6 +169,7 @@ assuming which side it lands on |
 | 12 | **An empty pane still renders its borders** | `{"items":[{"item":"repo"}]}` in this repo emits 674 bytes — top and bottom border, no content row. Collides with SPEC.md:353 *"no segments ⇒ zero output even with border enabled."* Separately, `repo` yielding nothing here may be correct de-duplication (repo name and directory name are both `claude-tui-line`) — that part is unconfirmed **Ruled** — §2.4 now carries it. SPEC.md:353 survives, applied at two levels: an empty *surface* emits zero bytes; an empty `content`/`fill` pane collapses with its gutter; an empty `fixed`/`percent` pane keeps extent and border, because the user named a number and §2.3's principle of not overruling explicit sizing applies here too. Queued behind defect 11. Whether `repo` yielding nothing here is correct de-duplication is still unconfirmed and tracked separately |
 | 13 | **`Columns112_LiveConfig_PackerInvocationCountStaysBounded` reads a racy process-global counter** — it reported 314 packer invocations against a `1..300` bound where a clean tree reported 45 | **Diagnosed: a test defect, not a sizer regression — there was never a 45 → 314 jump to explain.** `MinRowsPackerInvocationCount` (`SizeResolver.cs:324`) is a plain `static int`, incremented un-interlocked at `:501` by *every* min-rows render in the assembly; the test zeroes it at `MinRowsDistributeTests.cs:153` and reads it at `:155`. The repo has no `xunit.runner.json`, no `[CollectionDefinition]` and no `DisableTestParallelization`, so xUnit's default holds and test classes run **in parallel** — the test measures its own packer calls *plus whatever else was in flight*. 45 was a quiet scheduling window, 314 a busy one; defect 11's two new end-to-end `HyperlinkTests` perturbed the schedule, which is why it surfaced then. Being un-interlocked it can under-count as well as over-count | Diagnosed here, fix with the implementor: mark the counter `[ThreadStatic]` — sound *because* §5 resolve-once-per-render makes `SolveMinRows` synchronous, so the thread that zeroed the counter is the thread that reads it, and that precondition goes in a comment — plus a non-parallel `[CollectionDefinition]` for the instrumented class as belt-and-braces |
 | 14 | **`shell: true` with a multi-element argv silently drops every argument after the first** | `CommandProvider.RunAsync:74` passes `command[0]` and nothing else to `sh -c`, so `{"command":["kubectl","config","current-context"],"shell":true}` runs `sh -c "kubectl"` and renders bare kubectl's usage text. **The only defect found so far that renders *wrong output* rather than nothing** — §7's contract is "bad config yields nothing at render, `--check` says why", and this escapes that pair entirely: the user gets no signal, not even an absence to notice. Cargo-culting `shell: true` onto a working argv array is an easy way to reach it | Ruled, both halves specified in §4.1. Render: suppress the item instead of spawning. Check: `error`, code `command-shell-argv`, fires only at `count > 1` (a single-element array is what the string form normalizes to, so it is correct and must not be reported). Found while ruling on the implementor's `command-shape` question — not by looking for it |
+| 15 | **Border colour resolves two different ways, and the two do not accept the same language** | `PaneTreeRenderer.cs:76` calls `ColorResolution.Resolve` and gets a **spec string** used as a markup tag (fallback `"grey"`); `Program.cs:145` calls `ResolveBorderColor` → `ResolveLiteral` and gets a Spectre **`Color`** via `Style.TryParse(...).Foreground` (fallback `Color.Grey`). Both are live; which runs depends on the shape of the user's config. A markup tag carries decorations and a `Color` cannot, so `dim`/`bold` — documented in §6.1, accepted by `Style.TryParse` — are **predicted** to render on the tree path and vanish on the single-pane path, with no diagnostic, because both paths *succeed*. Item colour has no such split (`PaneAssembler.cs:66` uses `Resolve`), which is why it stayed invisible. Directly contradicts §6.5's own closing line, "one resolution point beats two" | Ruled in §6.6, task #15. `Resolve` becomes the sole border resolver; `ResolveBorderColor` survives as a thin adapter but returns a **`Style`**, not a `Color` — `ResolveLiteral`'s return type is the actual bug. **Step 1 is verifying the symptom**, not fixing: that `Style.TryParse("dim")` yields `Foreground == Color.Default` is inferred from the signature, never observed, and must not enter a test as an assumption. Found by asking what `--colors` may print, then listing `ResolveLiteral`'s callers — nobody was auditing borders |
 
 **The OSC-8-in-the-sizer hypothesis was wrong and is closed.** It predicted the sizing path counted escape bytes as width, which would have made the *layout* wrong rather than merely slow. Tested directly: two configs identical except one item carrying `link`, rendered through the built binary at COLUMNS 112, 90 and 70, compared byte-for-byte after stripping OSC 8 then CSI (that order — stripping CSI first leaves the URI payload looking like text). **Identical at all three widths**: same row counts, same pane widths, same bytes. Defect 1's fix holds in the sizing path as well as the render path. Recorded because the reasoning was sound and the conclusion still false — `RowCountAt` → `PaneRenderer.RenderLeaf` genuinely is a caller defect 1 was never checked against; that just wasn't where this went wrong.
 
@@ -469,6 +470,47 @@ weigh it against a user who explicitly wants a specific shade instead of merely 
 (theme-mapped, same behaviour as before), but a *specific* shade in the original maps to a 256 name
 or hex, with `colorSystem` flagged in the report — reproducing a truecolor escape by nearest name
 is a downgrade, and the old instruction mandated it.
+
+**And tracing `ResolveLiteral`'s callers to write that section found defect 15** — see below. The
+`--colors` question had nothing to do with borders.
+
+### Defect 15 — two border-colour resolvers, found sideways (§6.6, task #15)
+
+§6.5 closes with "one resolution point beats two." Border colour has two, one layer below where
+that sentence was looking:
+
+- `PaneTreeRenderer.cs:76` → `ColorResolution.Resolve` → a **spec string** used as a markup tag,
+  falling back to `"grey"`.
+- `Program.cs:145` → `ResolveBorderColor` → `ResolveLiteral` → a Spectre **`Color`** via
+  `Style.TryParse(...).Foreground`, falling back to `Color.Grey`.
+
+Both live in production; which runs depends on the shape of the user's config. Item colour has no
+such split — `PaneAssembler.cs:66` calls `Resolve` like the tree path does — and that is exactly
+why this stayed invisible, since the divergence exists on one key only.
+
+**It is a capability gap, not just duplication.** A markup tag carries decorations; a `Color`
+cannot. `ResolveLiteral` takes `.Foreground` and discards the rest, so `dim` and `bold` — both
+documented in §6.1, both accepted by `Style.TryParse` — are predicted to render on one path and
+vanish on the other, with no diagnostic, because both paths *succeeded*. The two fallbacks agree
+in appearance today by coincidence, not construction.
+
+**Recorded as unverified where it is unverified.** That `Style.TryParse("dim")` yields
+`Foreground == Color.Default` is inferred from the signature, not observed, and §6.6 says so in a
+block quote rather than burying it. The defect holds either way — two resolvers and two fallbacks
+for one key is the defect — but the symptom is a prediction about a third-party library, and
+§9.4's lesson (a claim about the implementation goes stale, or was never checked) applies to spec
+prose exactly as it applies to diagnostics. Task #15 makes verifying it step 1, ahead of the fix,
+so it cannot enter a test as an assumption.
+
+**The fix is the project's usual shape:** `Resolve` becomes the sole border-colour resolver;
+`ResolveBorderColor` survives as a thin adapter but returns a **`Style`**, not a `Color`, so
+decorations reach `Panel.BorderStyle`. `ResolveLiteral`'s return type is the actual bug.
+
+**How it was found is the transferable part.** Nobody audited borders. The question was "what is
+`--colors` allowed to print?", which led to `ResolveLiteral`, which led to listing its callers —
+and the answer was one caller, while the *sibling* function had another, taking a different type.
+§9.8's rule was written about a checker transcribing the renderer's arithmetic; this is the same
+drift with both copies inside the renderer, where no checker/renderer boundary suggests looking.
 
 ### Open, and honest about it
 
