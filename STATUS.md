@@ -122,6 +122,15 @@ Recently landed, pending the last of its per-defect checks:
    `preview` returns rendered rows so the model checks its work by looking rather than by
    asserting. **Deliberately last**: it wraps the CLI, so it cannot be designed before the CLI
    exists. Stateless, and the renderer stays a one-shot AOT binary regardless.
+   **Spec now carries the wire contract** (§12.6.1–12.6.8): per-tool arguments and returns;
+   failures as readable results rather than JSON-RPC protocol errors, with `--check` diagnostics
+   passed through unflattened; the ruling that the server's environment is *not* the user's shell,
+   so §5's search order can silently resolve a different file — hence `configPath`/`source` on
+   every read and an explicit `configPath` override on every tool; `preview` never inferring a
+   width; unconfirmed `revert` returning the ledger instead of acting; compare-and-swap on
+   `set_config` so an interleaved hand edit is refused rather than clobbered; the three files a
+   tool may write and no others. Nothing here is implemented — it is unblocked design ahead of
+   the CLI landing.
 
 ## Open defects
 

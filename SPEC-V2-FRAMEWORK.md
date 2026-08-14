@@ -2006,6 +2006,124 @@ hard parts — an item that may not exist, a position in a tree, and colour *ins
 The user typed one sentence and never saw a config file. That is the bar for this surface: if a
 request of this shape needs the user to open an editor, the tools have not done their job.
 
+#### 12.6.1 The wire contract
+
+Every tool returns a JSON object. Failures come back as a **result the model can read**, not as a
+JSON-RPC protocol error:
+
+```json
+{ "ok": false, "code": "stale-revision", "message": "...", "diagnostics": [] }
+```
+
+Protocol errors stay reserved for genuine protocol faults — malformed request, unknown tool. The
+reason is that the model's recovery path runs through reading the failure, and many clients
+surface a protocol error to the user as an opaque box while handing the model nothing to act on.
+That converts a fixable typo into a dead end.
+
+`diagnostics` is `--check`'s array passed through **unchanged** — same `pointer`, same `code`,
+same `severity` (§9.6). A wrapper that flattens a diagnostic into a sentence destroys the only
+part that is actionable: §9.6 made `code` a compatibility surface, and the JSON Pointer is what
+tells a model *which key* it got wrong rather than that something is wrong.
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `list_items` | — | `items[]`, the §4.1 command-item schema, `cliVersion` |
+| `list_colors` | — | `colors[]` (§6) |
+| `get_config` | `configPath?` | `config`, `configPath`, `source`, `revision` |
+| `set_config` | `config`, `configPath?`, `baseRevision?` | `ok`, `diagnostics[]`, `revision`, `checkpoint` |
+| `validate` | `config` \| `configPath` | `ok`, `diagnostics[]` |
+| `preview` | `columns?`, `config?`, `configPath?` | `renders[]` — each `{ columns, rows[] }` |
+| `revert` | `confirm?`, `target?` | unconfirmed: `entries[]`. confirmed: `restored` |
+
+#### 12.6.2 The server's environment is not the user's shell
+
+This is the hazard most likely to produce a baffling bug report. MCP clients commonly spawn stdio
+servers with a minimal environment inherited at client start. `$CLAUDE_TUI_LINE_CONFIG` set in the
+user's shell may simply not be visible to the server — so §5's search order, run identically in
+both places, resolves to a *different file*. Nothing errors. The model edits a config, the user
+sees no change, and every layer honestly reports success.
+
+- Resolution runs **per call** and is never cached; §12.6's statelessness already requires this,
+  and this is the case that shows why it matters.
+- `get_config` returns `configPath` and `source` — `"env"`, `"default"`, or `"none"` — and the
+  model is expected to state the path when it reports what it changed.
+- Every tool that reads or writes config takes an optional explicit `configPath` that overrides
+  resolution outright. This is §9.2's `--config` at the tool layer and exists for the same reason:
+  without it, the only way to act on a specific file is to hope the search order agrees with you.
+
+#### 12.6.3 `preview` takes its width; it never infers one
+
+Same root cause as §12.6.2. `COLUMNS` in the server's environment describes nothing — the server
+has no terminal. A preview rendered at an inferred width is a faithful preview of a layout the
+user will never see, which is worse than no preview, because it will be believed.
+
+`preview` therefore takes `columns` explicitly. Given none, it renders at **80 and 60** and
+returns both, labelled — the widths where layout decisions actually become visible, and the same
+pair §12.4 step 7 requires of the slash command. It applies `chromeReserve` exactly as the
+renderer does (§9.3): a preview three columns wider than reality is a preview of a different
+layout.
+
+#### 12.6.4 `revert` without confirmation is the listing
+
+`revert` is the one ambient tool that can undo work the user did deliberately, and ambient means
+nobody watched a diff go by first.
+
+Called without `confirm: true`, it **writes nothing and returns the ledger** — every entry, its
+kind (`origin` / `checkpoint`), its timestamp, and what restoring it would do. Called with
+`confirm: true` and an explicit `target`, it restores.
+
+There is deliberately no separate `list_backups` tool. The cheapest call is the one that shows the
+options first, so a model cannot skip look-before-you-leap by reaching for a shorter one.
+
+#### 12.6.5 Concurrent writes: compare-and-swap, not last-writer-wins
+
+Ambient access means an MCP call, a slash command, and a hand edit in an editor can now interleave.
+Last-writer-wins silently discards whichever change was not last — and that is usually the user's,
+because the model writes faster.
+
+`get_config` returns a `revision`, a hash of the file's bytes as read. `set_config` takes an
+optional `baseRevision`; if supplied and no longer matching, the write is **refused** with
+`code: "stale-revision"` and the model re-reads instead of clobbering.
+
+It is optional rather than required so a first write to a machine with no config file works
+without ceremony. A model that read the config is expected to hand back what it was given; one
+that did not is writing blind, and the §12.2 checkpoint is what keeps that recoverable.
+
+#### 12.6.6 When the CLI is not there
+
+Every tool fails with `code: "cli-not-found"`, naming the paths searched. It **never** falls back
+to a remembered item list — §12.1's rule does not relax by moving to a different transport, and
+the failure mode it guards against (a remembered id that resolves to nothing, renders as nothing,
+and reports no error) is identical here. A model receiving `cli-not-found` should point the user
+at `/claude-tui-line:setup` rather than improvise.
+
+Whether the server spawns the CLI or links the core is left open by §12.6, and this rule survives
+either choice: if it spawns, it reports the paths it tried; if it links, `cli-not-found` cannot
+arise and the tool simply works.
+
+#### 12.6.7 The complete list of files an MCP tool may write
+
+Three, and no others:
+
+1. the config file, at the resolved or explicitly-given path — whole-file, atomically
+2. the ledger and its artifacts under `~/.claude/claude-tui-line/backups/` — append-only, per §12.2
+3. `~/.claude/settings.json` — **only** the `statusLine` key, **only** from `revert`, atomically,
+   preserving every other key and the file's formatting
+
+No temp files outside the target's own directory, since an atomic rename requires the same
+filesystem. No logs, no caches, no state directory. The server is stateless, and a state file is
+the first step toward exactly the drift §12.6 exists to prevent.
+
+#### 12.6.8 Version reporting, not version gating
+
+`list_items` reports `cliVersion` alongside the items. It does **not** refuse to operate on a
+mismatch.
+
+The skew is real — a plugin update can leave a rebuilt server pointed at a stale binary — but it
+is narrow, because `/claude-tui-line:setup` builds both from one tree. A gate that refuses to run
+is a worse outcome than the skew it prevents for a user whose statusline is working fine. Report
+it, and let the model raise it if something looks wrong.
+
 ## 13. Out of scope for v2
 
 - ~~True-color / 256-color palettes.~~ **Resolved — see §6.2.** The decision this bullet was
