@@ -694,6 +694,68 @@ have surfaced in a test, because in every case the code would have done somethin
 technique is now cheap enough to be routine: walk the rule over concrete cases, and ask who finds
 out when it is wrong.
 
+### Phase 6 walked — the backup that did not contain the file it was backing up
+
+With every pending spec walked, the last unaudited surface was Phase 6: the four prompt files that
+write `settings.json` and restore backups. Highest stakes in the project — a gap here loses the
+user's statusline — and unexercised, because they all gate on a CLI that does not exist yet. Six
+findings, one of them the worst thing found so far.
+
+**1. `/edit`'s checkpoint did not contain the file `/edit` modifies, and its recovery path was a
+no-op that reported success.** `/edit` changes `claude-tui-line.json` and nothing else. The ledger
+entry captures `settings.json` and, optionally, the user's original script — never the config. So
+step 7's "restore the checkpoint from step 4 and report the failure" restored a `statusLine` key
+nobody had touched, left the broken config exactly where it was, said it had recovered, and the
+pre-edit config was gone. Every individual instruction was followed correctly.
+
+What hid it was a scope line: the ledger opened "**Every command that writes to `settings.json`
+follows this**", and `/edit` does not write `settings.json`. By the ledger's own scope, `/edit`
+should never have been pointed at it — and the contradiction between that line and `/edit`'s step 4
+is exactly where the missing artifact lived. Fixed by widening the scope to both files and giving
+the entry a second artifact class (`configOriginalPath`/`configCopy`/`configSha256`), recorded
+whenever a config exists rather than only when the running command intends to change it — because
+the command that needs a backup is not the one that took it.
+
+**2. The hash check would have disabled the escape hatch permanently.** The ledger said "re-hash
+the **live file** and compare against the ledger entry", and `revert.md` said "re-hash the
+**artifacts the ledger entry points at**" — two documents, two different files, one shared
+rationale. Two authorities disagreeing again, the defect-15 shape.
+
+And the ledger's reading is not merely different, it is fatal: at revert time the live
+`settings.json` is *supposed* to differ from the backup, because claude-tui-line is installed now
+and was not then. A revert following it literally reports "the user hand-edited it" on every run
+and stops. The escape hatch refuses precisely when it is reached for. Replaced with a four-row
+table naming which files are checked and what a mismatch means for each.
+
+**3. The rationale in that instruction was true — about a file nobody was checking.** "A mismatch
+means the user hand-edited it since the backup" describes the user's **original script**, at its
+original path. `revert` restores a `statusLine` verbatim, which points at a *path*, not at
+contents. `revert.md` handled the script being **missing** and said nothing about it being
+**modified** — and modified is the silent one: the revert succeeds, the statusline renders, and it
+is simply not the statusline that was backed up. Now three cases, with the third asking the user.
+
+**4. `revert` checkpointed before it verified.** Step 3 appended a ledger entry (mutating); step 4
+verified hashes and could stop. In an append-only ledger that forbids removing an entry, an aborted
+revert left a permanent record of a change that never happened. Swapped, and the general form is
+now stated in the ledger procedure: every step that can abort comes before every step that writes.
+
+**5. Timestamp arguments would not have matched.** Ledger entries key on full ISO
+(`2026-08-13T04:12:07Z`); artifact filenames use the compact form (`20260813-041207`) — and the
+compact form is what the previous command *printed in its report*, so it is what the user pastes.
+Match liberally now: either form, or an unambiguous prefix.
+
+**6. `revert` and the config file needed an explicit non-interaction.** Now that entries carry a
+config copy, "restore everything" is a tempting reading. Ruled explicitly: revert does not restore
+the config. It answers "put my old statusline back", not "undo my layout work", and rolling
+someone's layout back as a side effect of unpointing `statusLine` destroys work they never asked
+about. `/edit` owns config rollback.
+
+**The generalisation, which is not about backups.** A procedure can be correct at every step and
+still not do its job, when the artifact it operates on is not the artifact the caller modifies. The
+check that catches it is one question asked of the call site rather than of the procedure: *does
+what this saves include what this command is about to change?* Nothing inside the ledger could have
+answered that, which is why it survived a careful reading of the ledger.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

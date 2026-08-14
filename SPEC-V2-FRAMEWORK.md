@@ -2694,8 +2694,8 @@ the user's Claude directory rather than plugin data, because a backup that a plu
 can delete is not a backup.
 
 `ledger.json` is append-only. Each entry records the UTC timestamp, the previous
-`statusLine.command` verbatim, a copy of any script that command referenced, the SHA-256 of
-each captured artifact, and a `kind`:
+`statusLine.command` verbatim, a copy of any script that command referenced, **a copy of
+`claude-tui-line.json` whenever one exists**, the SHA-256 of each captured artifact, and a `kind`:
 
 - **`origin`** — the state before claude-tui-line ever touched this machine. **Written exactly
   once, ever.** If an `origin` entry exists, no command may write another.
@@ -2726,7 +2726,17 @@ Three rules, none optional:
 3. **Only the `statusLine` key of `settings.json` is read or written.** Writes are atomic — temp
    file in the same directory, then rename, per §5 — and preserve unrelated keys and formatting.
    A recorded SHA-256 that no longer matches means the user edited it by hand since; that is
-   reported, and it is theirs to resolve, not the tool's to overwrite.
+   reported, and it is theirs to resolve, not the tool's to overwrite. **Which artifact that hash
+   check applies to is not obvious and is ruled in `docs/backup-ledger.md`** — the live
+   `settings.json` is *expected* to differ at revert time, so checking it there would make revert
+   refuse on every run.
+
+4. **An entry captures every artifact, not the one its command intends to change.** `/edit` writes
+   only `claude-tui-line.json`; `setup` writes only `settings.json`. An entry scoped to the caller
+   is a backup of the wrong file for whichever command later needs it, and the failure is silent:
+   the rollback runs, restores something real, reports success, and the damaged file is untouched.
+   The question to ask at each call site — and the one nothing inside the procedure can answer —
+   is **does what this saves include what this command is about to change?**
 
 ### 12.3 `/claude-tui-line:migrate`
 

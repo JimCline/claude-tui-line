@@ -61,6 +61,13 @@ Read and follow `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`, appending a **`ch
 the first edit of a session. Not an `origin` — `origin` is written exactly once ever and this is
 not it.
 
+**Confirm the entry you appended actually contains `configCopy` and `configSha256`.** This command
+changes `claude-tui-line.json` and nothing else, so an entry holding only `settings.json` is a
+backup of the one file `/edit` cannot break — and step 7's rollback would then restore a
+`statusLine` key nobody touched, leave the broken config exactly where it is, and report success.
+If the ledger procedure did not capture the config, **stop**: an unrecoverable edit is not worth
+one round trip.
+
 Once per session, not once per edit, is enough. The point is that undoing one bad idea should not
 require going all the way back to `origin`.
 
@@ -120,9 +127,15 @@ Then verify three things and report each honestly:
   layout working correctly, but the user should hear it from you rather than notice it later.
 - **Does it still degrade rather than break** at 80 and 60?
 
-If the binary now errors, or the change plainly did not work, **restore the checkpoint from step 4**
-and report the failure. Do not leave a broken statusline in place while you explain what went
-wrong — it will run once a second the entire time.
+If the binary now errors, or the change plainly did not work, roll back and report the failure. Do
+not leave a broken statusline in place while you explain what went wrong — it will run once a
+second the entire time.
+
+**Rolling back means copying step 4's `configCopy` back over the config file** — the artifact this
+command modified. It does *not* mean restoring that entry's `statusLine`, which was never changed
+and whose restoration would fix nothing while looking exactly like a fix. Then re-run
+`--preview` and confirm the rollback actually took, for the same reason step 7 exists at all: a
+recovery reported on the strength of having written a file is not a recovery.
 
 ## 8. Show
 

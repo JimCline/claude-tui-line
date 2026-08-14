@@ -25,9 +25,12 @@ honest state.
   claude-tui-line ever touched the machine, and it stays reachable no matter how many migrates and
   edits have happened since. Do not substitute "the most recent checkpoint" as a convenience; the
   newest backup is frequently claude-tui-line's own command, and restoring that is not a revert.
-- **An argument** → the `checkpoint` whose timestamp matches. If none matches, list the available
-  entries with their timestamps and their recorded `statusLine.command`, and ask. Do not guess at
-  the nearest one.
+- **An argument** → the `checkpoint` whose timestamp matches. Match liberally: the full ISO
+  timestamp (`2026-08-13T04:12:07Z`), the compact form the artifact filenames use
+  (`20260813-041207`), or an unambiguous prefix of either. The two forms differ, and the compact
+  one is what the previous command printed in its report, so it is what the user will paste. If
+  none matches, or a prefix matches more than one, list the available entries with their timestamps
+  and their recorded `statusLine.command`, and ask. Do not guess at the nearest one.
 - **No `origin` entry exists** (possible if the ledger was created by an older version) → say so,
   list every `checkpoint` with its timestamp and command, and let the user choose. Flag which ones
   point at a `claude-tui-line` binary, so they are choosing between recognisable things rather than
@@ -35,7 +38,21 @@ honest state.
 
 Show the user which entry you are about to restore, and its recorded command, before restoring it.
 
-## 3. Checkpoint the current state first
+## 3. Verify the backup — before writing anything
+
+Re-hash the **backup copies** in the backup directory and compare against the entry's recorded
+SHA-256. This asks one question: is our own store intact? A mismatch means the backup is damaged.
+**Stop, report both hashes, and do not restore from it.**
+
+Do **not** hash the live `settings.json` against the entry. It is *supposed* to differ —
+claude-tui-line is installed now and was not when the backup was taken — so that check fails every
+single time and would turn the escape hatch into a command that never runs. See the table in
+`docs/backup-ledger.md`.
+
+This step comes before step 4 deliberately. Everything that can abort happens before anything that
+writes, so an aborted revert leaves no trace in an append-only ledger that forbids removing one.
+
+## 4. Checkpoint the current state
 
 Yes, even now — and this is required, not a courtesy. Reverting is itself a change: follow the
 ledger procedure and append a **`checkpoint`** for the state you are about to replace, so reverting
@@ -46,15 +63,6 @@ This never consumes or removes the `origin`. The `origin` entry survives every o
 If the checkpoint cannot be written, ask the user whether to proceed anyway rather than deciding
 for them.
 
-## 4. Verify before restoring
-
-Re-hash the artifacts the ledger entry points at and compare against the recorded SHA-256.
-
-**On a mismatch, stop and report it.** Do not proceed, and do not overwrite anything to make the
-numbers agree. A mismatch means the file changed since it was captured — the whole reason the hash
-was recorded is to notice this, and silently proceeding discards the only information the check
-produced. Show the user both hashes and let them decide.
-
 ## 5. Restore
 
 Restore the entry's `statusLine` value verbatim into `~/.claude/settings.json` — **only** that key,
@@ -62,9 +70,19 @@ written atomically, every other key and the file's formatting preserved. Never c
 settings file wholesale over the live one; the user may have changed unrelated settings since, and
 a wholesale copy silently reverts those too.
 
-If the entry recorded a script and that script is **missing** from its original path, restore the
-copy there as well, and say that you did. A restored command pointing at a file that no longer
-exists leaves the user with no statusline and no obvious cause.
+**A restored `statusLine` points at a path, not at contents.** So check the script the entry
+recorded, at its original path, and handle three cases rather than one:
+
+- **Missing** → restore the copy there as well, and say that you did. A restored command pointing
+  at a file that no longer exists leaves the user with no statusline and no obvious cause.
+- **Present, hash matches `scriptSha256`** → nothing to do. This is the ordinary case.
+- **Present, hash differs** → the user has edited that script since the backup. Do not overwrite
+  it and do not proceed silently. Say the script has changed, and ask whether they want the live
+  version or the backed-up copy restored alongside the command.
+
+The third case is the one worth spelling out, because it is the only one with no symptom: the
+revert succeeds, the statusline renders, and it is simply not the statusline that was backed up.
+Nothing about the result says so.
 
 If the entry's `statusLine` was `null` — there genuinely was no statusline before — remove the key.
 That is the correct restoration of that state.
@@ -72,7 +90,13 @@ That is the correct restoration of that state.
 ## 6. Leave claude-tui-line's own things alone
 
 Do **not** delete `~/.claude/claude-tui-line.json`. It is the user's work, it costs nothing to
-keep, and it is what makes coming back cheap. Do not delete the built binary either. Tell them both
+keep, and it is what makes coming back cheap.
+
+Ledger entries now carry a copy of that config as well, and **revert deliberately does not restore
+it.** The two artifacts move independently: this command answers "put my old statusline back", not
+"undo my layout work", and rolling their configuration back as a side effect of unpointing
+`statusLine` would destroy work they never asked you to touch. `/claude-tui-line:edit` owns config
+rollback. Say the copy exists, so they know the option is there. Do not delete the built binary either. Tell them both
 are still there and that re-pointing `statusLine.command` at the binary brings it all back.
 
 Do not delete anything in the backup directory, ever.
