@@ -21,6 +21,17 @@ public static class LeafContent
 
     private static readonly Regex LinkPlaceholder = new(@"\{([^{}]*)\}", RegexOptions.Compiled);
 
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §5: the id names a <c>link</c> template's <c>{other-id}</c>
+    /// placeholders reference, so <see cref="ItemValueResolver"/> can add them to its up-front
+    /// resolution set — the same placeholder syntax <see cref="TryBuildLink"/> expands, not a
+    /// second parser. <c>{}</c> (the item's own value) is not a reference and is excluded.
+    /// </summary>
+    internal static IEnumerable<string> LinkPlaceholderIds(string template) =>
+        LinkPlaceholder.Matches(template)
+            .Select(match => match.Groups[1].Value)
+            .Where(name => name.Length > 0);
+
     public static ItemDecision Decide(LeafItems.ResolvedItem resolved, IReadOnlyDictionary<string, string?> values)
     {
         var text = resolved.Display!.Plain;

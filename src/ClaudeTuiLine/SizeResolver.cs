@@ -320,7 +320,16 @@ public static class SizeResolver
     /// Test-only diagnostic: counts calls to <see cref="RowCountAt"/> — one packer invocation
     /// each — so a test can assert the actual cost of a min-rows resolve instead of reasoning
     /// about it. Production callers never read this.
+    ///
+    /// <see cref="ThreadStaticAttribute"/> is sound here specifically because §5 resolves once
+    /// per render, synchronously: nothing on the min-rows path (<see cref="SolveMinRows"/>
+    /// included) ever awaits, so the thread that zeroes this counter is guaranteed to be the same
+    /// thread that later reads it, even though xUnit runs other test classes concurrently on
+    /// other threads. If sizing ever gains an <c>await</c>, that guarantee breaks and this
+    /// attribute becomes wrong rather than merely redundant — re-check this reasoning before
+    /// introducing one on the min-rows path.
     /// </summary>
+    [ThreadStatic]
     internal static int MinRowsPackerInvocationCount;
 
     // Structurally mirrors AllocateWithDrop's drop-retry loop rather than sharing it: the two

@@ -272,6 +272,123 @@ public class HyperlinkTests
     }
 
     [Fact]
+    public void EndToEnd_LinkTemplateReferencesUnplacedItem_RealPipelineStillResolvesIt()
+    {
+        // Defect 11 (§5): CollectIds only ever swept a colour token's `from` and a pane's own
+        // placed items, so a link template's `{other-id}` resolved only when the referenced item
+        // also happened to be placed somewhere else — the configuration nobody writes. remote-url
+        // here is referenced ONLY through the link template and never appears in `items`; a
+        // config that also places it would pass over the unfixed CollectIds just as easily, so
+        // this deliberately does not.
+        const string remoteUrl = "https://github.com/example/repo";
+        const string configJson = """
+        {
+          "surface": {
+            "pane": {
+              "items": [ { "item": "git-branch", "link": "{remote-url}/tree/{}" } ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, configJson);
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var ctx = new ItemContext(new StatusInput(), gitBranch: "feature/thing", engram: null, remoteUrlProbe: () => remoteUrl);
+        var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
+
+        Assert.Equal(remoteUrl, values.GetValueOrDefault("remote-url"));
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values);
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors);
+
+        var writer = new StringWriter();
+        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.Yes,
+            ColorSystem = ColorSystemSupport.Standard,
+            Interactive = InteractionSupport.No,
+            Out = new AnsiConsoleOutput(writer),
+        });
+        console.Profile.Width = int.MaxValue / 2;
+
+        foreach (var row in rendered.Buffer.Rows)
+        {
+            console.MarkupLine(OscHyperlink.EscapeForRender(row.Markup));
+        }
+
+        var raw = writer.ToString();
+        var expectedUrl = $"{remoteUrl}/tree/{values["git-branch"]}";
+        var openPrefix = OscHyperlink.Close[..^2];
+        var st = OscHyperlink.Close[^2..];
+        var expectedOpen = $"{openPrefix}{expectedUrl}{st}";
+
+        var openIndex = raw.IndexOf(expectedOpen, StringComparison.Ordinal);
+        var closeIndex = raw.IndexOf(OscHyperlink.Close, StringComparison.Ordinal);
+
+        Assert.True(openIndex >= 0, $"expected the exact OSC 8 open sequence for '{expectedUrl}' (remote-url resolved though never placed) in rendered output: {raw}");
+        Assert.True(closeIndex > openIndex, $"expected the OSC 8 close sequence after the open sequence in rendered output: {raw}");
+    }
+
+    [Fact]
+    public void ColorToken_FromNamesUnplacedItem_StillResolves()
+    {
+        // §6.3: a colors-table token's `from` is fetched "even when it is never displayed in any
+        // pane." agent here is referenced only via the token's `from`, never placed as an item —
+        // confirming CollectIds' colour-token extractor (unchanged by the defect-11 refactor)
+        // still covers this after CollectIds was restructured into ReferenceExtractors.
+        const string configJson = """
+        {
+          "colors": {
+            "agent-accent": {
+              "from": "agent",
+              "match": [ { "contains": "cdtui", "color": "aqua" } ],
+              "default": "red"
+            }
+          },
+          "surface": {
+            "pane": {
+              "items": [ { "item": "context", "color": "@agent-accent" } ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, configJson);
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var input = new StatusInput { Agent = new AgentInfo { Name = "cdtui-implementor" }, ContextWindow = new ContextWindowInfo { UsedPercentage = 42 } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+        var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
+
+        Assert.Equal("cdtui-implementor", values.GetValueOrDefault("agent"));
+
+        var color = ColorResolution.Resolve(new ColorResolution.ColorExpr.TokenRef("agent-accent"), values, topLevel.Colors);
+        Assert.Equal("aqua", color);
+    }
+
+    [Fact]
     public void CommandItemSegment_UnterminatedRawAnsiColor_ResetPrecedesNextSegmentInRenderedOutput()
     {
         var redSegment = SegmentBuilder.BuildItemSegment("[31mHello", null);

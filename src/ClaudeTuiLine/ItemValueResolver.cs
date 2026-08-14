@@ -8,13 +8,20 @@ namespace ClaudeTuiLine;
 /// <see cref="LeafItems"/>, <see cref="SizeResolver"/>, and <see cref="ColorResolution"/> alike so
 /// nothing downstream re-fetches or re-derives a value. An id is collected — and therefore
 /// resolved — whether or not a pane actually places it: a <c>colors</c>-table token's <c>from</c>
-/// (§6.3), an inline rule's explicit <c>from</c>, or a derived item's <see cref="PaneItem.From"/>
-/// may name a builtin no pane displays. A builtin resolves through <see cref="ItemRegistry"/>
-/// regardless of placement; a <c>command</c> item resolves only when some placed
-/// <see cref="PaneItem"/> actually carries it, since a command has no registry entry to drive it
-/// independent of placement. A derived item (§8: <see cref="PaneItem.From"/>/
-/// <see cref="PaneItem.Extract"/>/<see cref="PaneItem.Case"/>) resolves in a final pass, once every
-/// builtin/command value above is settled.
+/// (§6.3), an inline rule's explicit <c>from</c>, a derived item's <see cref="PaneItem.From"/>, or
+/// a link template's <c>{other-id}</c> placeholder (§3.2) may name a builtin no pane displays. A
+/// builtin resolves through <see cref="ItemRegistry"/> regardless of placement; a <c>command</c>
+/// item resolves only when some placed <see cref="PaneItem"/> actually carries it, since a
+/// command has no registry entry to drive it independent of placement. A derived item (§8:
+/// <see cref="PaneItem.From"/>/<see cref="PaneItem.Extract"/>/<see cref="PaneItem.Case"/>)
+/// resolves in a final pass, once every builtin/command value above is settled.
+///
+/// §5: "any future construct that names an item by id is incomplete until it is added to this
+/// list" — <see cref="ReferenceExtractors"/> is that list, kept as data rather than as inline
+/// <c>foreach</c> bodies, so a new reference form (§4.2's argv placeholders, §3.3's compound-item
+/// parts) is appended to the array instead of edited into <see cref="CollectIds"/>'s body. Defect
+/// 11 was exactly this shape gone wrong: an enumeration that looked exhaustive until the config
+/// surface grew past it.
 /// </summary>
 public static class ItemValueResolver
 {
@@ -112,42 +119,59 @@ public static class ItemValueResolver
         }
     }
 
+    private readonly record struct ScanContext(
+        List<(PaneItem Item, bool Eligible)> Items,
+        List<ColorResolution.ColorExpr> ColorExprs,
+        IReadOnlyDictionary<string, ColorResolution.ColorRule>? Tokens);
+
+    // §5's reference forms, one extractor per form. Each returns the ids that form's config keys
+    // name; CollectIds just unions every extractor's output. Adding a form (§4.2's argv
+    // placeholders, §3.3's compound-item parts) means appending here, not editing CollectIds.
+    private static readonly IReadOnlyList<Func<ScanContext, IEnumerable<string>>> ReferenceExtractors = new Func<ScanContext, IEnumerable<string>>[]
+    {
+        // A placed item's own id.
+        ctx => ctx.Items
+            .Select(entry => entry.Item.Id ?? entry.Item.Item)
+            .Where(id => id is { Length: > 0 })!,
+
+        // A derived item's `from` (§8).
+        ctx => ctx.Items
+            .Select(entry => entry.Item.From)
+            .Where(from => from is { Length: > 0 })!,
+
+        // A link template's `{other-id}` placeholders (§3.2); `{}` is the item's own value, not a
+        // reference, and is already excluded by LeafContent.LinkPlaceholderIds.
+        ctx => ctx.Items
+            .Where(entry => entry.Item.Link is { Length: > 0 })
+            .SelectMany(entry => LeafContent.LinkPlaceholderIds(entry.Item.Link!)),
+
+        // An inline colour rule's explicit `from` (§6.4).
+        ctx => ctx.ColorExprs
+            .OfType<ColorResolution.ColorExpr.Inline>()
+            .Select(inline => inline.Rule.From)
+            .Where(from => from is { Length: > 0 })!,
+
+        // A `colors`-table token's `from` (§6.3) — required on every token, so this widens id
+        // collection regardless of whether the token is ever referenced via `@name`.
+        ctx => (ctx.Tokens?.Values
+            .Select(rule => rule.From)
+            .Where(from => from is { Length: > 0 })
+            ?? Enumerable.Empty<string>())!,
+    };
+
     private static IReadOnlyList<string> CollectIds(
         List<(PaneItem Item, bool Eligible)> items,
         List<ColorResolution.ColorExpr> colorExprs,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens)
     {
+        var ctx = new ScanContext(items, colorExprs, tokens);
         var ids = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var (item, _) in items)
+        foreach (var extractor in ReferenceExtractors)
         {
-            if ((item.Id ?? item.Item) is { } id)
+            foreach (var id in extractor(ctx))
             {
                 ids.Add(id);
-            }
-
-            if (item.From is { Length: > 0 } from)
-            {
-                ids.Add(from);
-            }
-        }
-
-        foreach (var expr in colorExprs)
-        {
-            if (expr is ColorResolution.ColorExpr.Inline { Rule.From: { Length: > 0 } from })
-            {
-                ids.Add(from);
-            }
-        }
-
-        if (tokens is not null)
-        {
-            foreach (var rule in tokens.Values)
-            {
-                if (rule.From is { Length: > 0 } from)
-                {
-                    ids.Add(from);
-                }
             }
         }
 

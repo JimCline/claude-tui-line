@@ -2,6 +2,18 @@ using Xunit.Abstractions;
 
 namespace ClaudeTuiLine.Tests;
 
+// SizeResolver.MinRowsPackerInvocationCount is [ThreadStatic], which already keeps
+// Columns112_LiveConfig_PackerInvocationCountStaysBounded's reset-render-read sequence isolated
+// from every other test class regardless of xUnit's default cross-collection parallelism —
+// this collection is belt-and-braces on top of that, not the fix itself. Keeps the isolation
+// intact even if a future change (sizing going async, the counter losing [ThreadStatic]) would
+// otherwise reopen the cross-test contamination that a shared, unsynchronized counter once
+// produced here.
+[CollectionDefinition("MinRowsDiagnostics", DisableParallelization = true)]
+public class MinRowsDiagnosticsCollection
+{
+}
+
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §2.3.1: <c>distribute: "min-rows"</c> against the same two-pane config
 /// <see cref="SplitAcceptanceTests"/> exercises for <c>greedy</c>, with <c>"distribute": "min-rows"</c>
@@ -9,6 +21,7 @@ namespace ClaudeTuiLine.Tests;
 /// brute-force, the allocation this returns must equal the best found by exhaustively laying out
 /// every legal width."
 /// </summary>
+[Collection("MinRowsDiagnostics")]
 public class MinRowsDistributeTests
 {
     private const string ConfigJson = """
