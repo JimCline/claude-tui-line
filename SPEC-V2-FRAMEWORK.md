@@ -387,7 +387,8 @@ survives the pane rewrite and it applies at two levels, differently:
   in exchange for no information, which is strictly worse than absence.
 - **An empty `content` or `fill` pane collapses**, taking its gutter with it, and its siblings
   divide the extent it released. Rendering a two-column box around nothing is the same trade as
-  above, in miniature.
+  above, in miniature. **§2.11 defines which emptiness counts** — not every empty pane qualifies,
+  and the one that does not is the one the sizing loop emptied itself.
 - **An empty `fixed` or `percent` pane keeps its extent and its border.** The user named a
   number, and the same principle that keeps those panes out of `min-rows` candidacy (§2.3)
   keeps them here: an explicit instruction is not overruled because the framework judged the
@@ -783,12 +784,33 @@ split with `N` children and interior dividers on:
 
 ```
 collapse: true    avail = splitInnerWidth − (N − 1)              // one column per boundary
-collapse: false   avail = splitInnerWidth − (N − 1) × (g + 2)    // two edges plus the gutter
 ```
 
-and the second line is the arithmetic in force today, which is why `borderReserve` reads 4 per
-pane in §2.9's worked example. The two formulas are the whole sizing difference between the
-models; nothing else in §2.3 changes.
+**`collapse: false` is not a parent-side boundary formula at all, and an earlier draft of this
+section was wrong to write one.** It said `avail = splitInnerWidth − (N − 1) × (g + 2)` and
+claimed that was the arithmetic in force. It is neither.
+
+It is not what the code does. `SizeResolver` charges the split's own border once to the split,
+subtracts a flat `gutter × (N − 1)`, and lets each child's own border cost ride inside that
+child's recursive floor and request. Border reserve is **per pane**, not per boundary.
+
+And it does not add up. Under `collapse: false` the panes are separate boxes, so `N` children own
+`2N` edge columns; `(N − 1) × (g + 2)` charges only `2(N − 1)` of them. It drops the outermost
+pair — the leftmost child's left edge and the rightmost child's right edge — and under-reserves by
+exactly 2 columns at every `N`. A surface built on it emits rows two columns too wide, which is
+the §2.4 ragged-row violation, arriving from the sizing model rather than from a rendering bug.
+
+So: **under `collapse: false` the boundary cost is the gutters alone, `gutter × (N − 1)`, and each
+pane's edges are its own `reserve(p)`, accounted where that pane is measured.** That is what the
+renderer already does. This section introduces one new formula — the `collapse: true` line above —
+and changes nothing else about §2.3.
+
+**Nothing outside `SizeResolver` may restate this arithmetic, including this document.** The
+formula above is here to explain the model, not to be transcribed: the boundary cost lives in one
+named function that the renderer calls, and §9.8's structural checks call **that same function**
+rather than a copy. Two expressions of one arithmetic is how the draft above came to be wrong
+without anything noticing, and it is the §1 rule with the serial numbers filed off — when
+`collapse` lands, the renderer changes and a checker holding its own copy silently does not.
 
 Under `collapse: true` the divider **occupies the gutter**: `gutter` must be ≥ 1 and defaults to
 1; a `gutter` greater than 1 centres the line with blanks either side (`  │  `). Everything else
@@ -820,9 +842,19 @@ is a defect in the reserve decomposition, not an expected consequence.
 
 ### 2.11 An empty pane collapses — but only the kind of empty that is knowable before sizing
 
-Defect 12: a pane holding nothing still draws its border, so a surface split into "git things"
-and "model things" shows an empty box eating twenty columns the moment you `cd` out of a
-repository. The box is not the bug; claiming the width is.
+§2.4 already rules this: an empty `content` or `fill` pane collapses and takes its gutter with it;
+an empty `fixed` or `percent` pane keeps its extent and its border, because the author named a
+number and reserving declared space is often the intent. **That division stands and this section
+does not touch it** — at `refreshInterval: 1` a fixed pane that collapsed and re-expanded as you
+moved in and out of a repository would make the whole line jump once a second, and `content` is
+already how an author asks for the other behaviour.
+
+Defect 12 is that the renderer does not implement §2.4's half of it: a `content`-sized pane
+holding nothing still draws its border, so a surface split into "git things" and "model things"
+shows an empty box eating twenty columns the moment you `cd` out of a repository. The box is not
+the bug; claiming the width is.
+
+What §2.4 leaves unsaid is **which** emptiness qualifies, and that is the part with a trap in it.
 
 **A pane becomes empty two ways, and conflating them does not terminate.**
 
@@ -842,11 +874,10 @@ breaks. A pane the ladder emptied keeps its border. If the right answer there is
 pane entirely, that is a rung the ladder should own, decided with the width in hand, not a
 side-effect of a collapse rule reaching into the loop.
 
-**What collapsing does**, for the structural case:
+**What collapsing does**, for the structural case, on the `content` and `fill` panes §2.4 makes
+eligible:
 
-- The pane occupies **no width** and draws **no border**, whatever its `size` says. A `size: "24"`
-  pane with nothing in it still collapses — a fixed-width empty box is the defect in its purest
-  form, not an exemption from it.
+- The pane occupies **no width** and draws **no border**.
 - **The parent drops the corresponding boundary with it.** §2.10's cost is a function of the child
   count, so a collapsed child means `N − 1`, not `N` with one child rendered blank. Leaving the
   gutter or divider behind is how a collapse turns into a visible seam with nothing on either side
@@ -1983,12 +2014,20 @@ terminal width can resolve.
   — where bounded means the parent is itself fixed, or carries a `maxSize`.
   Code: `fixed-sizes-exceed-parent`.
 
-  **The boundary cost is §2.10's, not a sum of gutters and border reserve.** Those are not
-  independent addends: under `collapse: true` the divider *occupies* the gutter, so charging both
-  double-counts and the check reports a config that fits as one that cannot. A false `error` is
-  the worst outcome available here, because exit 1 sends the user to fix something that works.
-  Take the figure from §2.10 — `(N − 1)` under `collapse: true`, `(N − 1) × (g + 2)` under
-  `collapse: false` — and per-pane `reserve(p)` wherever §2.3 reads `borderReserve`.
+  **The check calls `SizeResolver`'s own boundary-cost function. It does not compute one, and it
+  does not transcribe a formula out of §2.10.** That rule earns its keep twice over. Gutters and
+  border reserve are not independent addends — under `collapse: true` the divider *occupies* the
+  gutter — so a hand-written sum double-counts and reports a config that fits as one that cannot,
+  and a false `error` is the worst outcome available here, because exit 1 sends the user to fix
+  something that already works. And §2.10 itself carried a wrong `collapse: false` formula for
+  some time, under-reserving by 2 columns at every `N`; a checker that had been built from the
+  prose would have inherited the error and disagreed with the renderer in the one tool whose job
+  is to agree with it.
+
+  So the width the check compares against is the renderer's, computed by the renderer's code, with
+  the parent's **declared** size or `maxSize` standing in for the terminal width. That substitution
+  is what keeps this width-independent: same function, a number from the config rather than from
+  `COLUMNS`.
 
   This is computable without a width because §2.10 makes edges **static config**, never derived
   from a provider value. That rule was written for the §2.3 fixpoint's convergence argument, and
