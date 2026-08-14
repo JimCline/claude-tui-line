@@ -3828,6 +3828,41 @@ Non-fast-forward merge (main had moved with the §2.10.2 amendment/fix spec comm
 meantime; auto-merged cleanly, no conflicts — spec-only vs. src/tests-only diffs). Landed as merge
 commit `421f6bc` (branch tip `d19e7fa`), pushed. Unblocks #8b (task #52).
 
+### #29: §2.8 height ladder owns both row budgets, border suppressed under 3 rows
+
+Implemented the §2.8.1 deterministic degrade ladder (measure → demote wrap→truncate in reverse
+declaration order → drop trailing items → clip) and folded §2.8.2's under-3-rows border suppression
+into the same pass. `ClipRows`/`ItemsEmptied` moved off `Pane` onto a new `ResolvedPane`/per-render
+side structure, keyed by tree path rather than by `Pane` reference — required by §2.5.1 (leaf
+rendering must stay a pure function of `(items, innerWidth)`, so a render-time clip budget can't
+reach it through the `Pane` config record) and §5.0.1 (data with different lifetimes must not share
+a record; a `Dictionary<Pane,_>` would also collide on record value-equality between two
+structurally-identical panes, e.g. two empty bordered spacers).
+
+Architect review (second look after "tests pass," per established pattern) caught two real defects
+before merge, not just spec-silence: a tie-break direction risk and a termination-invariant break
+from the default-segments fallback (rung 4 could clip a higher rung's growth, making the proof's
+"every rung strictly reducing" argument fail silently). Both fixed. Spec gained a new §2.8.1 rule:
+a pane whose last item rung 3 dropped renders **zero content rows**, not `RenderDefaultRows`'s
+"author declared nothing" fallback — declared-empty and emptied-by-degradation share a
+representation but must not share a rendering outcome. Border suppression stays keyed on row
+budget only, never on emptiness — an emptied pane keeps its box unless §2.8.2 independently
+suppresses it. "Declaration order" was also spec-disambiguated at §2.8.1: the ladder compares
+panes with no common parent, so it means reverse pre-order document order over the whole tree, not
+§2.3 step 4's sibling-scoped sense of the same term.
+
+Merge hit the same class of issue as #8a warned about: `task-29` branched before #8a merged and
+still referenced the old `PaneBorderRenderer.BorderReserve` constant #8a had replaced with
+`SizeResolver.OwnBorderReserve`/`OwnRowReserve`. git's line-merge auto-resolved with no reported
+conflict twice in a row — first leaving a stale `BorderReserve` reference in
+`PaneBorderRenderer.cs` plus (after the implementor's own pre-empt fix) a duplicate
+`OwnBorderReserve(PaneBorder)` overload in `SizeResolver.cs` colliding with main's #8a version —
+and a post-merge build was the only thing that caught either one. Fixed directly as
+merge-integration cleanup (implementor fixed `PaneBorderRenderer.cs` plus their own overload;
+orchestrator removed the duplicate overload and a stale `HeightLadderTests.cs` reference to the
+removed `BorderReserve` constant). Full suite green at **1235/1235** after cleanup. Landed as merge
+commit `e8c9afd` plus fixup commit `5d1ee89`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
