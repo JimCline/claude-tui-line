@@ -990,6 +990,48 @@ what raising it actually does.
 repo. Checked because a dangling pointer in the sentence defining per-render config reload would
 be worth knowing about.
 
+### §5 walked — the cache had a genuine multi-terminal defect (§5.0.1)
+
+"The hard part", and the first walk tonight to find something that would misbehave at runtime
+rather than mislead a reader.
+
+**`paneWidth` was stored in the value cache entry.** The value is keyed by `id` + argv + `cwd`
+and deliberately shared by every session on the machine — that is the whole design. The pane
+width is a property of one terminal. So two sessions in the same repo at different terminal
+widths collide on a record where last-write-wins is *not* correct: each overwrites the other's
+width every second, and each spawn is handed the other terminal's width. A `command` item that
+adapts its output to the space available then formats for a pane it is not in — present,
+plausible, wrong, with nothing in the render suggesting it. Two terminals open on one repo is not
+an exotic setup.
+
+What makes it a good find is that **§5 already contains the argument that forbids it.** The
+"one file per cache key, not one shared `items.json`" bullet reasons exactly this way about two
+sessions read-modify-writing one map. The same reasoning one level down says the value and the
+width cannot share a record either, and the section did not follow its own rule to the next
+granularity. Generalised in §5.0.1: **data with different sharing scopes must not share a
+last-write-wins record.**
+
+Fix: a separate `widths/` store keyed by the cache key **plus `COLUMNS`** — two sessions at the
+same terminal width agree, so between those two last-write-wins is correct, which is the test §5
+already applies to values. And **written only when the width changes**, which incidentally
+repairs a claim §5 made and then contradicted four bullets later: "the steady-state cost of a
+custom item is a map lookup, not a fork" was false while every command item rewrote a file every
+second. Steady state is now zero writes.
+
+**Two interlocks that were missing.**
+
+- §5's stale-on-failure said a command with no cached value "is suppressed", flatly. §2.11.2 —
+  written last night — needs that suppression *marked unavailable*, because a pane holding an
+  unavailable item must not collapse. Left flat, the two states merge one layer down and a
+  command that is 200 ms slow on one tick silently restructures the statusline: pane collapses,
+  neighbours resize, everything reflows, on a timing accident, with no diagnostic. The marker is
+  what stops a transient failure being read as a layout instruction.
+- "Exit code is always 0 and stdout is always valid" was written absolutely, and §9.4 defines
+  exit codes 0/1/2/3. Not actually a contradiction — one is the render path, the other the CLI —
+  but nothing said so, and §9.4 is being implemented right now. Scoped explicitly: same binary,
+  two callers, and the contract belongs to the caller. §9.1's "the render path is untouched" is
+  this same boundary drawn from the other side.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

@@ -1702,14 +1702,46 @@ custom item is a map lookup, not a fork.
   a busy machine thrashes forever without ever erroring. Per-key files make last-write-wins
   correct *per item*, which is the granularity the value actually has. Reading five keys is
   five opens — microseconds against a 13ms budget.
-- Entry: `{ value, capturedAt, exitCode, paneWidth }`. `paneWidth` is the inner width this
-  item's pane resolved to on the render that wrote the entry, and is what feeds
-  `CLAUDE_TUI_LINE_PANE_WIDTH` on the next spawn (§4). It is written on every render, including
-  cache hits where no process was spawned, so it tracks a resize rather than going stale with
-  the value.
+- Entry: `{ value, capturedAt, exitCode }`.
 - Writes are atomic: temp file in the same directory, then rename. Concurrent statusline
   processes will still race on the *same* key; there last-write-wins is genuinely correct and
   no locking is used. A torn or unparsable cache file is treated as empty, never an error.
+
+#### 5.0.1 `paneWidth` cannot live in the value entry
+
+The obvious design puts `paneWidth` in the entry beside the value — the inner width this item's
+pane resolved to on the last render, fed to `CLAUDE_TUI_LINE_PANE_WIDTH` on the next spawn (§4),
+because the spawn happens *before* sizing and the previous render's width is the only estimate
+available. It has to be rewritten on every render, cache hits included, or it goes stale with
+respect to a resize.
+
+**That is wrong, and it is wrong for the reason the per-key-file rule already establishes one
+level up.** The value and the width have *different sharing scopes*. A value keyed by
+`id` + argv + `cwd` is legitimately shared by every session on the machine — that is the point.
+The pane width is a property of one terminal. Two sessions in the same repo at different terminal
+widths therefore collide on a record where last-write-wins is *not* correct: each overwrites the
+other's width every second, and each spawn receives the other terminal's width. The command
+formats itself for a pane it is not in, output that is present, plausible and wrong, with nothing
+in the render to suggest it (§7.1).
+
+The rule generalises past this instance: **data with different sharing scopes must not share a
+last-write-wins record.** §5's own argument for one file per key is the same argument at the
+granularity above this one, and it does not stop being true here.
+
+So:
+
+- The width lives in a **separate store**, `widths/`, keyed by the cache key **plus `COLUMNS`**.
+  Two sessions at the same terminal width resolve the same pane widths, so between *those* two
+  last-write-wins is genuinely correct — which is the test §5 already applies to the value store.
+- **Write only when the resolved width differs from what is stored.** In the steady state — no
+  resize — that is zero writes, which is what makes "the steady-state cost of a custom item is a
+  map lookup, not a fork" true. Rewriting a file every second for every command item was the
+  claim's counterexample, and it was in the same section as the claim.
+- A missing width record is not an error — it is the ordinary state on an item's first render,
+  before any pane has been sized for it. Omit `CLAUDE_TUI_LINE_PANE_WIDTH` entirely rather than
+  passing a guess: a command that adapts to width can detect an unset variable and fall back,
+  and cannot detect a plausible wrong number.
+- Same atomic write, same tolerance for a torn file: treat it as absent, never as an error.
 
 **Timeouts and concurrency.** On a cache miss, all due commands are spawned **concurrently**
 and awaited with an individual `timeoutMs` (default 150). Total added latency is therefore one
@@ -1720,8 +1752,25 @@ timeout window, not the sum. On timeout the process is killed with its whole tre
 expired**, so a flaky command degrades to a slightly old value instead of flickering out. If
 there is no cached value at all, the item is suppressed. The next tick retries.
 
+**That suppression must be marked `unavailable`, not merely empty.** §2.11.2 draws the
+distinction and depends on it: an item that resolved to nothing is *absent*, an item that timed
+out or errored is *unavailable*, and a pane holding an unavailable item does not collapse for
+that render. Suppress it flatly and the two become the same state one layer down, so a command
+that is 200 ms slow on one tick silently restructures the statusline — a pane collapsing, its
+neighbours resizing, everything reflowing — on a timing accident, with no diagnostic anywhere and
+nothing the next tick does to explain what the user just saw. The marker is what keeps a
+transient failure from being read as a layout instruction.
+
 **Never block the render.** A pathological command cannot exceed its timeout, and the render
-proceeds with whatever is available. Exit code is always 0 and stdout is always valid.
+proceeds with whatever is available. **On the render path** the exit code is always 0 and stdout
+is always valid — Claude Code runs this once a second and has nowhere to show a failure, so
+there is no such thing as a useful nonzero exit here.
+
+That is a statement about the render path only, and §9.4's exit codes (0/1/2/3) are not an
+exception to it. The CLI subcommands are invoked by a person or a tool that reads the code and
+acts on it; the statusline hook is invoked by a supervisor that would only render the failure as
+a blank line. Same binary, two callers, and the contract belongs to the caller — §9.1's "the
+render path is untouched" is the same boundary drawn from the other side.
 
 ### 5.1 Built-in probes are cached in the same store, not a second one
 
