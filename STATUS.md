@@ -1284,18 +1284,46 @@ Two smaller repairs, both to bullets that existed:
   the rendered row, because the failure being guarded against is `CLAUDE_TUI_LINE_PANE_WIDTH` being
   present and wrong — which nothing about the row can see.
 
-### §11 touched ahead of its own walk
+### §11 walked — the phase list stopped being updated and nothing noticed
 
-Two one-line defects of the same class already fixed elsewhere tonight, not worth leaving in place
-to preserve a walk boundary:
+Started as two one-line fixes, turned into the section's own walk. **Phase 5 enumerated the CLI
+surface as three flags** where §9 specifies five, and the two it omitted (`--colors`, `--version`)
+are the two §12's commands need in order to offer the user a choice rather than guess at one.
+**Phase 7 was missing entirely**, so the phasing section and the task list disagreed about how many
+phases this project has.
 
-- **Phase 5 enumerated the CLI surface as three flags**, where §9 specifies five. A second
-  registry, and it had already gone stale — the two it omitted (`--colors`, `--version`) are the
-  two §12's commands need in order to offer the user a choice rather than guess at one. The line
-  now cites §9 instead of repeating it, and says why.
-- **Phase 7 was missing entirely.** §12.6 specifies the MCP tools and the tracker has carried them
-  as a task since they were requested, so the phasing section and the task list disagreed about how
-  many phases this project has.
+Pulling on that produced §11.1. Phases 2, 3 and 4 each enumerated their features and **every one
+of those enumerations is stale**: §2.8's `height: "content"`, §2.10's per-edge borders and
+`border.collapse`, §2.11's collapse rule, §3.2's hyperlinks, §3.3's compound items, §4.2's argv
+placeholders, §5.0.1's widths store and §5.1's probe caching are all specified and **no phase
+mentions any of them**. Read literally, Phase 4 is "item registry + command providers, cache, TTL,
+timeouts" and is therefore done, while three of those eight sections are unbuilt work sitting
+inside its boundary.
+
+The proof it is not load-bearing: **§3.2 shipped anyway.** Hyperlinks were specified, built, tested
+and merged with no phase ever assigned, and nothing anywhere noticed. That answers the question of
+whether this list is what sequences the work.
+
+So the rule this document already applies to the item registry and to the CLI surface, now applied
+to itself — **a phase names a capability boundary and cites the sections inside it; it does not
+enumerate features.** Phases 2, 3 and 4 rewritten accordingly: 2 is the single-pane surface
+(§2.1–§2.8), 3 is splits and everything that exists only because there is more than one pane
+(§2.9's re-measurement, §2.10's border grid, §2.11's collapse), 4 is the whole item layer (§3, §4,
+§5 — "how a value gets from a provider to a pane"). The dependency claims underneath were correct
+and are untouched; that question — what must exist before what, and why — is the reason the
+section is worth keeping at all. What is *outstanding* is the tracker's job, because the tracker is
+what work is dispatched from and therefore the only one of the two anybody has a reason to update.
+
+Two smaller things fell out:
+
+- **The eyeball step is §10.1's control run by hand.** "Each phase is wired into the live session
+  and eyeballed" has been described here as the only step that caught the last defect; §10.1 now
+  says why it keeps being that step. A person notices a blank statusline. A suite whose strongest
+  assertions are about width does not.
+- **Phase 7 cannot use that acceptance** — an MCP tool emits JSON consumed by a model, and there is
+  nothing to look at. Its acceptance is a round trip: a model given only the tool descriptions
+  produces a config that `--check` passes and that renders what was asked for. That is the property
+  §12.6 needs and the one no unit test states.
 
 ## Standing constraints
 

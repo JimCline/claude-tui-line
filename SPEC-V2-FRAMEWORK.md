@@ -3093,13 +3093,16 @@ does not measure.** Every width assertion in this document needs both.
 ## 11. Phasing
 
 1. **Phase 1** — `chromeReserve` width fix. *Done; awaiting live confirmation.*
-2. **Phase 2** — pane surface, root leaf pane only, including the §2.6 overflow modes. The
-   default stays `"overflow"` so the §2.7 parity claim holds; `wrap` and `truncate` ship
-   opt-in and fully tested, so that splits land on machinery already proven rather than on
-   code written the same week it first matters.
-3. **Phase 3** — splits: sizing, gutters, per-pane borders, `valign`, multi-row blocks.
-   **Acceptance is §2.9**, eyeballed live.
-4. **Phase 4** — item registry + `command` providers, cache, TTL, timeouts.
+2. **Phase 2** — the single-pane surface: §2.1 through §2.8, root leaf pane only. The default
+   stays `"overflow"` so the §2.7 parity claim holds; `wrap` and `truncate` ship opt-in and fully
+   tested, so that splits land on machinery already proven rather than on code written the same
+   week it first matters.
+3. **Phase 3** — splits, and everything that exists only because there is more than one pane:
+   §2.9's re-measurement, §2.10's border grid, §2.11's collapse rule. **Acceptance is §2.9**,
+   eyeballed live.
+4. **Phase 4** — the item layer: the whole of §3, §4 and §5. That boundary is "how a value gets
+   from a provider to a pane", which is why the cache, the widths store, derived and compound
+   items, and argv placeholders are all inside it rather than scattered across later phases.
 5. **Phase 5** — the CLI surface. **§9 is the list**; this line does not repeat it, because it
    already got this wrong once — it named three flags when §9 specifies five, and the two it
    omitted are the two §12's commands need in order to offer the user a choice rather than
@@ -3123,7 +3126,40 @@ the surface work early is worth more than getting the registry in early, and §2
 compositor far harder than any registry change would.
 
 Each phase is wired into the live session and eyeballed before the next begins. That is the
-only step that caught the last defect.
+only step that caught the last defect — and §10.1 explains why it keeps being the step that does.
+A person looking at the statusline notices that it is blank; a suite whose strongest assertions
+are about width does not. The eyeball is the blank-surface control, run by hand. §10.1 exists so
+that the control also runs in CI, where it is repeatable and where nobody has to remember to look.
+
+**Phase 7 is the exception and needs a different acceptance**, because there is nothing to eyeball
+— an MCP tool's output is a JSON payload consumed by a model. Its acceptance is a round trip: a
+model, given only the tool descriptions, produces a config that `--check` passes and that renders
+what was asked for. That is the property §12.6 actually needs and the one no unit test states.
+
+### 11.1 This list is not the authority on what is outstanding
+
+Phases 2, 3 and 4 each enumerate the features they cover, and every one of those enumerations is
+now stale — for the ordinary reason, which is that the spec kept growing after the phase list was
+written and nothing linked the two. §2.8's `height: "content"`, §2.10's per-edge borders and
+`border.collapse`, §2.11's collapse rule, §3.2's hyperlinks, §3.3's compound items, §4.2's argv
+placeholders, §5.0.1's widths store and §5.1's probe caching are all specified, and **no phase
+mentions any of them.** Read literally, Phase 4 is "item registry + `command` providers, cache,
+TTL, timeouts" and is therefore finished, while three of those eight sections are unbuilt work
+inside its boundary.
+
+The proof that this list is not load-bearing is that §3.2 shipped anyway. Hyperlinks were
+specified, built, tested and merged without ever being assigned a phase, and nothing anywhere
+noticed — which is the answer to whether the list is what actually sequences the work.
+
+So, the same rule this document applies to the item registry and to the CLI surface, applied to
+itself: **a phase names a capability boundary and cites the sections inside it; it does not
+enumerate features.** What is outstanding lives in the tracker, which is updated as a matter of
+course because work is dispatched from it. This section answers a different and slower-moving
+question — what has to exist before what, and why — and that question is the whole reason it is
+worth keeping. The dependency claims below it are correct and were not touched.
+
+A phase enumerating its own contents is the same defect as a count restated in prose: two places
+that must agree, only one of which anybody has a reason to update.
 
 ## 12. Authoring surface — plugin commands and LLM-driven editing
 
