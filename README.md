@@ -156,9 +156,9 @@ Border `style` is one of `"rounded"` (default), `"square"`, `"heavy"`, `"double"
 "min-rows"` is the interesting one: rather than letting each pane grab what it wants in order, it
 searches for the width split that makes the *whole statusline* as short as possible.
 
-> Unrecognised values are currently accepted silently rather than rejected — an unknown `size`
-> falls back to `"fill"`, an unknown `style` to `"rounded"`. A `--check` command that reports
-> these instead of swallowing them is the next thing being built.
+> Unrecognised values are accepted silently at render time rather than rejected — an unknown
+> `size` falls back to `"fill"`, an unknown `style` to `"rounded"`. Run `--check` against your
+> config first: it reports every one of these instead of swallowing them.
 
 ### Items
 
