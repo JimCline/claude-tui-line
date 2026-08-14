@@ -2580,6 +2580,14 @@ export condition is where the cost actually lives.
 **absent** at that tick, and absent is one key shared by every terminal width, so the miss lands on
 the tick after rather than during the drag.)
 
+**Definition of done includes reclassifying `PaneItem.Command` in §9.5.1's coverage test.** That
+section's exemption table carries `PaneItem.Command` as `PendingForm`, citing this section, because
+`Command` has no reference form until placeholders exist. §9.5.1's own NEEDS-EVIDENCE (a) is answered:
+no landed-detection marker was available while §4.2 was unimplemented, so the coverage test cannot
+assert the reclassification on its own — this section's implementation must move the row from
+`PendingForm` to a covered entry in `ReferenceExtractors` by hand, in the same change that adds the
+placeholder-resolution logic.
+
 ### 4.3 Derived items
 
 A derived item takes another item's value and reshapes it. It runs no process and reads no payload
@@ -4476,8 +4484,13 @@ fraction of the cost. Recorded so the choice is a decision rather than a drift.
 1. The enforcement test enumerates candidates from roots
    `{Pane, PaneBorder, PaneItem, ColorExpr, ColorRule, ThresholdRule, MatchRule}` by the filter above,
    and every candidate is covered, `NeverAReference`, or `PendingForm`.
-2. Deleting any one entry from `ReferenceExtractors` fails the test, naming the member that lost
-   coverage. Six deletions, six distinct failures.
+2. Deleting a `ReferenceExtractors` row fails the test for every member that loses **all** its
+   covering rows, naming each. This is per-member, not per-row: a row may carry more than one member
+   (row 1 carries both `PaneItem.Id` and `PaneItem.Item`), and two rows may deliberately cover the
+   same member from different sources (rows 4 and 5 both carry `ColorRule.From` — the inline and
+   `colors`-table cases — so deleting either alone leaves that member covered by the other and does
+   not fail the test). The property that must hold is that no member is ever silently left uncovered
+   by every surviving row, not that each row maps to exactly one failure.
 3. Adding a `string? Foo` to `PaneItem`, to `Pane`, **or to `PaneBorder`** fails the test until
    classified. The `PaneBorder` case is the one the original root set could not catch and is the reason
    this section exists.
