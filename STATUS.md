@@ -2370,6 +2370,47 @@ CI was left alone. `.github/workflows/ci.yml` invokes the three checks as separa
 already checks each exit status correctly; the defect was in the local invocation habit, not in the
 pipeline.
 
+### `maxLines` ruled (§4.0.1): a fairness bound, opt-in, default no cap
+
+#31 was written down as "build the cap §4 describes". Reading §4 to build it, the stated rationale
+— "so a runaway script cannot flood the surface" — turns out to be a job the cap cannot do and
+that something else already does.
+
+**The surface is bounded by the pane, not by the item.** A `fill`, percent, or fixed pane resolves
+its rows without reference to its content, so a script emitting ten thousand lines costs exactly
+the rows that pane was going to spend. §2.6 already owns what happens at the boundary and calls
+itself authoritative. Adding a per-item truncation on the same axis is **defect 15's shape** — two
+mechanisms removing rows for unrelated reasons with nothing reconciling them — which is the defect
+class this project keeps paying for.
+
+The single case where the flooding argument holds is `height: "content"` (§2.8), whose height *is*
+its content, so the bound that would contain a runaway is derived from the runaway. A per-item cap
+does not close that either: three items capped at 4 still grow the pane to 12. It is a **pane**
+maximum and belongs to #7/#29.
+
+**What survives is a different feature with the same name.** Items share a pane's rows (§3.1), so
+a forty-line item does not overflow the surface — it evicts its siblings. Real, per-item, and
+unaddressed anywhere else. That is now `maxLines`'s stated job.
+
+**The default `4` is overturned.** It was written into prose and never measured, and worse, a
+default cap is silent truncation on the render path — the render path has no note channel at all,
+since §9.8.1's notes belong to `--preview`. A user with a legitimate five-line item sees four rows
+forever, and the only explanation is reachable exclusively by someone who already suspected it.
+That is §9.8.2's defect from the other side: **there the channel had no producer; here the producer
+would have had no channel.** With no default, every `maxLines` note names a number the user typed,
+which is the only reason the note is actionable.
+
+**Found in the runtime prompt, which is where it cost most.** `commands/migrate.md` told the LLM a
+tier-2 item is "being cut to 4 lines by default (§7)" and to advise the user to raise `maxLines` —
+during a real migration, about a key that does not exist, with §9.4.2's unknown-key diagnostic
+(#21) not built to catch the resulting config. It also cited **§7**, which is absent/unavailable
+items and has never said anything about caps. `check-citations.sh` could not have caught that: §7
+resolves. Only reading the cited heading's title does — the same habit that caught §12.4/§12.5
+earlier this session. Rewritten to §4.0.1 with the no-default rule stated.
+
+`commands/edit.md`'s mention needed no change: it says a cap note is width-independent and appears
+at all three widths, which stays true whenever a cap is configured and claims no default.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

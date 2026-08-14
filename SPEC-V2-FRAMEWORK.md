@@ -1763,8 +1763,8 @@ the framework does not use, and is no longer evidence about the framework at all
     that does not fit, and it works whether or not a script consulted this variable.
 - **cwd**: the session's `.cwd`, so `git`-flavored commands behave as the user expects.
 - **Output**: stdout with the trailing newline stripped. Each line becomes one row of the item's
-  block (§3.1), capped at `maxLines` (default 4) so a runaway script cannot flood the surface;
-  excess lines are dropped.
+  block (§3.1), optionally capped at `maxLines` (§4.0.1, no cap by default); excess lines are
+  dropped.
 
   > **Not built, and this paragraph said otherwise in the present tense for as long as it has
   > existed.** `CommandProvider` takes `stdout.Split('\n', 2)[0]` — the first line, unconditionally
@@ -1773,7 +1773,8 @@ the framework does not use, and is no longer evidence about the framework at all
   > and §9.8.2 rules that the note below cannot be the thing that carries `--preview`'s note
   > channel, because a note needs a producer. Found by the implementor going to read the mechanism
   > this text told them to reuse — which is the only way this class is ever found, since the
-  > document was perfectly self-consistent about it.
+  > document was perfectly self-consistent about it. §4.0.1 settles what the cap is for and what
+  > it does when nobody sets one; this bullet previously said "default 4", which §4.0.1 overturns.
 
   **`--preview` reports the drop as a render note** (§9.8.1), naming the
   item and the cap — not `--check`, which never runs the command and therefore cannot know
@@ -1796,6 +1797,53 @@ the framework does not use, and is no longer evidence about the framework at all
   a multi-row block as "a user-defined item whose command emitted multiple lines", and §3.1
   already specifies how such a block packs. Only one of the two could be true; the block model
   is the one the rest of the spec is built on, so the single-line reading is the one that goes.*
+
+#### 4.0.1 `maxLines` bounds an item against its siblings, not the surface against a runaway script
+
+The bullet above described a cap that has never existed, in the present tense, with a stated
+default of `4`. Two things have to be settled before it can be built, and neither of them is the
+truncation: what the cap is *for*, and what it does when nobody sets one.
+
+**It is not what stops a script flooding the surface.** That was the bullet's stated rationale, and
+it puts a second truncation policy on the same axis as §2.6, which is already "the authoritative
+mechanism for content that does not fit". Two mechanisms answering one question from different
+inputs is defect 15's shape exactly: the row budget comes from §2.8's ladder and the boundary
+behaviour from §2.6, and an item-level cap that also removes rows means a row can vanish for two
+unrelated reasons that nothing reconciles.
+
+The surface is already bounded. A `fill`, percent, or fixed pane resolves its row budget without
+reference to its content, so a script emitting ten thousand lines costs exactly the rows that pane
+was going to spend anyway. The one place that argument fails is a `height: "content"` pane (§2.8),
+whose height *is* its content — there the bound that would have contained the runaway is derived
+from the thing that ran away. **That gap is §2.8's to close, as a maximum on shrink-wrap growth,
+and it is a pane key.** A per-item cap could not close it regardless: three items capped at four
+lines each still grow a content pane to twelve rows.
+
+**What it is for is fairness inside a pane.** Items share a pane's rows (§3.1), so an item that
+suddenly emits forty lines does not overflow the surface — it evicts its siblings from a budget
+they were sharing. That failure is real, it is genuinely per-item, and nothing else in this
+document addresses it. So `maxLines` survives, on the item, with that as its job.
+
+**Default: no cap.** `4` was written into prose and never measured against anything. More than
+that, a default cap is *silent* truncation on the render path, because the render path has no note
+channel — §9.8.1's notes belong to `--preview`. A user with a legitimate five-line item would see
+four rows, permanently, with the framework's only explanation reachable exclusively by someone who
+already suspected it. An always-on producer whose notification exists only under a diagnostic flag
+is §9.8.2's defect arriving from the other side: there the channel had no producer, here the
+producer would have no channel.
+
+So the cap fires only where a user asked for one, and a `maxLines` note therefore always names a
+number that user typed. That is what makes the note actionable at all — §12.3's advice to raise the
+cap presumes a cap the reader can find in their own config.
+
+**Ordering.** The cap applies at the provider, before §3.1 packs the block, so everything
+downstream sees a block already the length it will render at. Drops are reported through the
+collector of §9.8.2, which makes this the channel's first real producer — and is why §9.8.2 ships
+the channel with `--preview` rather than waiting for this feature, and why this feature arrives
+with its own note rather than the two being built as one.
+
+`--check` still never reports it (§9.1.1): a cap is a property of output, and only running the
+command produces output.
 
 ### 4.1 User-defined items are first-class, and that is the extension point
 
@@ -4024,7 +4072,8 @@ then illustrated the channel with two cases, and **neither of them can produce a
 
 - The `maxLines` cap is the example §9.8.1 leans on hardest, and §4 now records that the feature it
   reports on does not exist — `command` items are single-line, there is no cap, so there is nothing
-  to be capped and nothing to say about it.
+  to be capped and nothing to say about it. §4.0.1 settles what it will be when built, and rules
+  that it never fires unasked — which is what keeps this note rare rather than routine.
 - Pane-dropping and segment truncation *do* happen — `SizeResolver.AllocateWithDrop` drops panes
   that no width remained for, `PaneRenderer` truncates segments — and both are **silent**. No
   signal reaches any caller. The `"pane 2 dropped: no width remained at 109 columns"` in §9.6's own

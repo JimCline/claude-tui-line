@@ -152,8 +152,9 @@ A note tells you *why* the render is short, and that changes the fix completely:
 - `pane N dropped: no width remained at C columns` — the mapping is fine; the layout does not fit
   at that width. Report it to the user, do not re-map anything.
 - `item 'X' emitted N lines; M kept (maxLines)` — a tier-2 command item wrapping their script is
-  being cut to 4 lines by default (§7). The original ran under no such cap. Raise `maxLines`, or
-  say so in your report.
+  being cut by a `maxLines` cap (§4.0.1). There is no default cap, so this note always names a
+  number that is written in the config **you generated** — the original script ran under none.
+  Raise it or drop it, and say so in your report.
 
 Without the notes, both of these reach you as nothing but a token missing from the diff, and the
 obvious response — re-map the element — is wrong for each. This is the same class as the timeout in
