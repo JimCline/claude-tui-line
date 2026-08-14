@@ -3,12 +3,12 @@ namespace ClaudeTuiLine.Tests;
 public class AcceptedCommandTests
 {
     [Fact]
-    public void Build_ReturnsExactlyNineKeysForTheEightEnumerableKindsPlusSize()
+    public void Build_ReturnsExactlyTenKeysForTheNineEnumerableKindsPlusSize()
     {
         var result = AcceptedCommand.Build();
 
         Assert.Equal(
-            new[] { "border.style", "colorSystem", "split", "valign", "align", "distribute", "overflow", "case", "size" },
+            new[] { "border.style", "colorSystem", "split", "valign", "align", "distribute", "overflow", "case", "height", "size" },
             result.Keys.Select(k => k.Key));
     }
 
@@ -55,6 +55,7 @@ public class AcceptedCommandTests
         Assert.Same(PaneDistributeParsing.AcceptedTokens, byKey["distribute"]);
         Assert.Same(OverflowModeParsing.AcceptedTokens, byKey["overflow"]);
         Assert.Same(ItemValueResolver.CaseAcceptedTokens, byKey["case"]);
+        Assert.Same(PaneHeightParsing.AcceptedTokens, byKey["height"]);
     }
 
     [Fact]
