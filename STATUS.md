@@ -3116,6 +3116,29 @@ Resolved opposite to migrate deliberately: the fixture's `cwd` is not a real pat
 filesystem-derived items blank out under it. Migrate needs verification coverage and so needs both
 payloads; setup needs one honest render and needs only this one.
 
+## Swept the commands for other hardcoded enumerations — mostly a discard
+
+Having found the payload duplicated three times, checked whether the command layer states any other
+list the binary owns. Four candidates, three discarded:
+
+- `migrate.md:82` — the three mapping tiers. Defined by the spec, not by the binary. Not a registry.
+- `migrate.md:84` — `from`/`extract`/`case`/`format`, the derived-item keys. States four keys inline
+  while line 29 already sends the reader to `--items`'s `kinds` section for them. Real but mild: a
+  stale key list here costs a capability the migration doesn't reach for, not a broken statusline,
+  and the sentence carries ordering information (`applied in that order`) that `--items` may not.
+- `edit.md:129` — `size`/`overflow`/`distribute`, presented as examples rather than a closed set.
+
+The live one was **`migrate.md:186`, written this session** in the §12.3.1 interim fix: eleven
+`StatusInput` field names spelled out in a prompt file. Exactly the §1 rule this session has been
+enforcing on other people's prose. Fixed now rather than deferred — the enumeration was never
+load-bearing, since the instruction is "any top-level key the payload does not carry," and the
+payload is right there. Deriving it is strictly more correct than a snapshot that goes stale on the
+next field added.
+
+No new spec section: §1 already rules this, and `SPEC:164` is the catch-all for prose that duplicates
+an output. Eleven existing applications of it — generalizing it a twelfth time would be the
+duplication it forbids.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

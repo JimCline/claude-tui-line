@@ -183,8 +183,11 @@ If the original script errors on this synthetic payload, say so rather than trea
 output as a match. Two blank lines are not parity.
 
 **Neither is silence.** The payload above carries `cwd` and `model` and nothing else. A real Claude
-Code payload carries eleven more — `session_id`, `context_window`, `rate_limits`, `pr`, `vim`,
-`agent`, `effort`, `thinking`, `output_style`, `worktree`, `workspace`.
+Code payload carries workspace, session, usage and editor-state fields besides — do not take that
+phrase for the list, and do not write the list into this file: it is a snapshot of a schema the
+binary owns, it goes stale on the next field added, and a field missing from it is a field you will
+not know to check. The payload in front of you is the authority for what is carried; treat every
+top-level key it does not have as absent.
 An element of the original that reads one of those produces **no output at all** under this payload,
 without erroring, so the check above holds for it vacuously: nothing on the left, nothing on the
 right, and the comparison passes on the empty set. That is the same success-message-over-a-silent-
