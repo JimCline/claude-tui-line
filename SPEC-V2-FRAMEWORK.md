@@ -2050,10 +2050,10 @@ field of its own: its entire input is one other item's resolved value.
 
 The pipeline is `from → extract → case → format`, in that order, and **`extract` sees the raw
 provider value rather than the rendered text.** That ordering is the whole design: a regex written
-against `⎇ feature/ABC-123` and one written against `feature/ABC-123` are different regexes, and
-the second is the one an author can write without knowing what glyph the builder chose. Putting
-`extract` after `format` would make every derived item's pattern depend on a decoration it does not
-control.
+against `worktree:api(feature/ABC-123)` and one written against the bare branch are different
+regexes, and the second is the one an author can write without knowing what decoration the builder
+chose. Putting `extract` after `format` would make every derived item's pattern depend on
+decoration it does not control.
 
 **The source does not have to be displayed.** §5's resolution set is the set of *referenced* ids,
 not the set of shown ones, so `from: "git-branch"` resolves the branch whether or not `git-branch`
@@ -2804,7 +2804,7 @@ payload" is not a value and two people implementing that sentence produce two di
   "model": { "display_name": "Claude Sonnet 5" },
   "effort": { "level": "medium" },
   "thinking": { "enabled": true },
-  "output_style": { "name": "default" },
+  "output_style": { "name": "Explanatory" },
   "context_window": {
     "used_percentage": 34.0, "total_input_tokens": 68000, "context_window_size": 200000
   },
@@ -2818,8 +2818,14 @@ payload" is not a value and two people implementing that sentence produce two di
 ```
 
 wrapped in an `ItemContext` whose machine-probed fields are canned to match: `gitBranch` = `"main"`,
-`remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` with a small non-zero
-activity count — whatever shape makes `engram` render *present*.
+`remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` of **3 recent memories**
+rendering as `◉ recalled`.
+
+That third value used to read "a small non-zero activity count — whatever shape makes `engram`
+render *present*", which is the same defect as the `output_style` one below wearing a milder face:
+a constraint stated as an outcome, leaving the value to whoever implements it. It is pinned now for
+the reason the whole fixture is pinned — two people implementing "whatever makes it render" produce
+two fixtures, and §9.3's entire point is that there is one.
 
 Four rules govern it, and each one rules out a fixture someone would otherwise reasonably write.
 
@@ -2829,6 +2835,21 @@ so a fixture built to look like a real payload omits them — and then `--items`
 whose `example` is empty, from which a user correctly concludes those items produce nothing. An
 item with no example has no entry in the field that exists to show it. Whatever an item needs in
 order to render, the fixture has.
+
+**`output_style.name` is `"Explanatory"` and must not be set back to `"default"`**, which is what
+this fixture said until the implementor built `--items` against it and found the contradiction.
+`"default"` is the *realistic* value — it is what most real payloads carry — and `BuildOutputStyle`
+deliberately suppresses any style name equal to it, because an output style of "default" is noise
+on a statusline. Both of those are correct. Together they meant the one item this fixture exists to
+demonstrate could never demonstrate itself: `--items` would report `output-style` with an empty
+example, permanently, and a user would correctly conclude the item produces nothing.
+
+That is this rule's own failure mode, committed in the literal the rule governs, and it is worth
+naming because of *how* it got there. Every other field was written by asking "what would a real
+payload hold here?" — the right question fifteen times and the wrong one once. The rule is not
+"populate every field"; it is **populate every field with a value that survives the renderer**, and
+the only fields where those differ are the ones with suppression logic behind them. Suppression is
+invisible from the payload side, which is why this needed a rule and not care.
 
 **Redundant fields must agree with each other.** `used_percentage: 34.0` is `68000 / 200000`;
 `worktree.branch` is the same `"main"` the canned `gitBranch` reports; `workspace.repo` names the
@@ -3313,7 +3334,7 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
   "version": "…",
   "items": [
     { "id": "git-branch", "reports": "the current branch, or nothing outside a repo",
-      "color": "decorative", "default": true, "example": "⎇ main" }
+      "color": "decorative", "default": true, "example": "main" }
   ],
   "kinds": {
     "builtin":  { "required": ["item"],    "optional": ["format", "color", "overflow", "link"] },
@@ -3328,7 +3349,7 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
 
 `reports` is the only field on a row that is not derived from something. `id`, `color`, and
 `default` read straight off `ItemRegistry`, and `example` is produced by *running*
-`BuildDefaultSegment` against §9.3.1's fixture — the `"⎇ main"` in the shape above is an
+`BuildDefaultSegment` against §9.3.1's fixture — the `"main"` in the shape above is an
 illustration of that output, not a string stored anywhere. `reports` is prose, it is written once
 here, and the sixteen strings are:
 
@@ -3364,6 +3385,24 @@ does. Where they differ, one of the two is wrong and which one is a judgement ca
 rewording the table to match the code converts every behavioural drift into documentation, which is
 the failure this document spends §1 on. Raise it.
 
+That rule paid for itself immediately, and against this document rather than the code. Three
+passages in this spec asserted that `git-branch` emits a `⎇` glyph: the shape example above, this
+paragraph's description of it, and — worst — the argument below for why `example` replaced "default
+format", which used the glyph as its *proof* that a builder emits decoration no format string could
+express. `BuildGitBranch` is `SingleColor("green", branch)` and always was. **CAPTURE.md settles
+it** — the bash statusline the tool is parity-checked against renders segment 2 as a bare branch
+name in green, so the code is correct and the glyph was never anywhere but here.
+
+The generalisable part is not the wrong character. **An illustration invented to explain a rule was
+later cited as evidence for a different rule**, and by then nothing marked it as invented. The
+argument for `example` over "default format" survives on `worktree`, which really does emit
+`worktree:NAME(BRANCH)` from C# — but it survives by luck, because the example it actually rested
+on was false. Neither `check-citations.sh` nor `check-counts.sh` can catch this: both check
+documents against themselves, and this is a claim about the code. **An example that names a
+specific behaviour is an assertion about the implementation and ages exactly like one**, which is
+the argument for keeping worked examples few, real, and re-checked whenever the section is
+reopened.
+
 **Why `kinds` is a section and not a column.** The accepted keys do not vary by item id. Every
 builtin takes `format`, `color`, `overflow`, and `link`, and nothing else; what varies is *how the
 item is written* — §4.1's `command`, §4.3's `from`/`extract`/`case`, §3.3's `parts`. Putting a key
@@ -3375,8 +3414,9 @@ what options it takes — **and the schema for defining a new one** (§4.1)". A 
 cannot express "the schema for defining a new one", because a new one has no row yet.
 
 **Why "default format" is gone.** There is no default format string to report. A row's rendering
-is a builder function (`ItemDefinition.BuildDefaultSegment`), not a template — `git-branch` emits
-its own glyph in C#, and no `"⎇ {}"` exists anywhere to print. Satisfying the field as written
+is a builder function (`ItemDefinition.BuildDefaultSegment`), not a template — `worktree` emits
+`worktree:NAME(BRANCH)` from C#, and no `"worktree:{}({})"` exists anywhere to print. Satisfying
+the field as written
 would mean introducing a format-string layer under every builder so that a CLI flag has something
 to name, which is the CLI dictating the render architecture to serve its own output. `example`
 replaces it and answers the question an authoring tool actually has — *do I need to add a `format`
@@ -3407,6 +3447,53 @@ from the row count of one `--items` run (§4). §12.2's migration depends on tha
 placed is a different mapping decision from one that appears on its own, and a tool that cannot
 tell them apart will map a branch readout onto `remote-url` and produce a config that renders
 short with nothing wrong in it.
+
+#### 9.6.2.2 What the shape did not say: bare `--items`, and `version`
+
+§9.6 says `--json` applies to `--check`, `--items`, `--preview` and `--colors`, which promises each
+of them a non-JSON default — then demonstrates one only for `--preview`. The implementor correctly
+declined to invent the other, and left `--items` unwired rather than guess. Ruled here.
+
+**Bare `--items` prints a table, and it is a view of `ItemsCommand.Build()`'s result rather than a
+second walk of the registry.** One id column, one example, one `reports`, in two labelled groups:
+
+```
+Default items — rendered unless you remove them:
+  directory     ~/code/acme-web              the working directory
+  git-branch    main                         the current branch, or nothing outside a repo
+  …
+
+Opt-in items — rendered only where you place them:
+  model-short   Sonnet 5                     an abbreviated model name, for panes too narrow …
+  remote-url    https://github.com/acme/…    the git remote's URL. Opt-in because resolving it …
+
+Item kinds: builtin, command, derived, compound. Run with --json for the schema of each.
+```
+
+Four rulings in that, none of them about formatting:
+
+- **The groups are labelled by what the flag means, not by its name.** "Default items" as a bare
+  heading tells a human nothing; `default: true` means *this renders whether or not you name it*,
+  and the person reading the plain form is exactly the person who does not know that yet. The JSON
+  keeps the boolean, because a model reading `default` does not need it explained.
+- **No key lists, no per-kind schema — one pointer line to `--json` instead.** §4.1's command-item
+  schema does not fit a terminal, and a truncated schema is worse than an absent one because it
+  reads as complete. The pointer names the four kinds so the reader knows what they are missing.
+- **The example column prints `Plain`, never markup, and never ANSI — including when stdout is a
+  TTY.** A colour-when-interactive rule would make this two output surfaces that drift, for a
+  benefit `--preview` already delivers properly. This output gets piped into `grep` and it should
+  be the same bytes either way.
+- **The plain form is a convenience view; the JSON is the contract.** Columns may be added, dropped
+  or re-widened without that being a compatibility break, and §9.6's stability guarantees do not
+  extend here. Stated so it does not silently become a second frozen surface — which is what
+  happens to every human-readable output nobody labelled.
+
+**`version` carries the same string `--version` prints**, read from the assembly through the one
+`AssemblyVersionInfo.InformationalVersion` accessor, never re-derived. §9.7 already makes the
+assembly the source of truth for the tool's version; the only thing left to rule was whether
+`--items` gets to answer differently, and it does not. A consumer that reads `version` out of
+`--items --json` and compares it against `--version` must never see two answers — that is the
+§9.7 drift test's whole premise, one surface lower.
 
 ### 9.6.3 `--colors` prints a recommendation, because the accepted set is not ours and is not finite
 

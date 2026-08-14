@@ -1928,6 +1928,65 @@ fourth.
 That closes the sweep: every document in the repo has now been read against the question *what does
 this say that no reader of the current one will ever see?*
 
+### `--items` came back with four blockers, and the spec was wrong on two of them
+
+The implementor built `--items --json` (1129/1129 green) and stopped on four things rather than
+guess. Two were spec defects, one was a genuine gap, one was an unconfirmed assumption. Ruling on
+all four is what unblocked Phase 5's remaining flags.
+
+**The glyph that was never there.** §9.6.2's shape showed `"example": "⎇ main"` for `git-branch`,
+framed as real `BuildDefaultSegment` output. `BuildGitBranch` is `SingleColor("green", branch)` and
+always has been. **CAPTURE.md line 60 settles which side was wrong** — the bash statusline renders
+segment 2 as a bare branch name in green — so the code was right and the glyph existed only in this
+document.
+
+It existed in four places by then: §4.3's extract-ordering example, §9.6.2's shape, §9.6.2.1's
+description of that shape, and §9.6.2.1's argument for why `example` replaced "default format",
+which used the glyph as its *proof* that a builder emits decoration no format string could express.
+That last one is the finding. **An illustration invented to explain one rule was later cited as
+evidence for a different rule**, and nothing by then marked it as invented. The argument survives —
+`worktree` really does emit `worktree:NAME(BRANCH)` — but it survived by luck, resting on a false
+instance. Neither mechanical check can catch this: both compare documents against themselves, and
+this was a claim about the code. An example naming a specific behaviour is an assertion about the
+implementation and ages exactly like one.
+
+Worth noting §9.6.2.1's own rule is what produced the find: *"if the implementation disagrees with
+one of these strings, that is a finding, not a string to quietly correct."* It paid for itself
+inside one session, and it paid out against the spec rather than the code.
+
+**A fixture that guaranteed one item could never render.** §9.3.1's literal sets
+`output_style.name: "default"`, and `BuildOutputStyle` deliberately suppresses any style name equal
+to `"default"` — correctly, since it is noise on a statusline. Together they meant `--items` would
+report `output-style` with an empty example permanently, and a user would correctly conclude the
+item produces nothing. That directly contradicts the fixture's own rule 1: *whatever an item needs
+in order to render, the fixture has.*
+
+`"default"` is the **realistic** value, which is exactly how it got written — "what would a real
+payload hold here?" is the right question fifteen times and the wrong one once. The rule is not
+populate every field; it is **populate every field with a value that survives the renderer**, and
+the only fields where those differ are the ones with suppression logic behind them, which is
+invisible from the payload side. Now `"Explanatory"`, with a paragraph forbidding the revert.
+
+The same audit caught a milder version two lines down: the Engram canned value read "whatever shape
+makes `engram` render *present*" — a constraint stated as an outcome, leaving the value to whoever
+implements it. Pinned to the implementor's own choice (3 memories, `◉ recalled`), which converts an
+accident into a decision.
+
+**Bare `--items` had no specified form.** §9.6 promises every one of the four flags a non-JSON
+default and demonstrates one only for `--preview`. The implementor left the CLI unwired rather than
+invent a layout — right call. New §9.6.2.2 rules it: a three-column table that is a *view of*
+`ItemsCommand.Build()`'s result rather than a second registry walk; groups labelled by what
+`default` means rather than by its name, since the person reading plain text is the one who does
+not know yet; no key lists, because a truncated §4.1 schema reads as complete; `Plain` only, never
+ANSI, even on a TTY, because colour-when-interactive is two surfaces that drift. And the ruling
+that keeps it from calcifying: **the plain form is a convenience view and the JSON is the
+contract** — columns may come and go without that being a compatibility break. Every
+human-readable output nobody labels that way eventually becomes a second frozen surface.
+
+**`version` confirmed** as the same string `--version` prints, through the one
+`AssemblyVersionInfo` accessor the implementor extracted. A consumer comparing the two must never
+see two answers — §9.7's drift test premise, one surface lower.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
