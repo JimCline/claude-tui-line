@@ -4473,7 +4473,7 @@ tells a model *which key* it got wrong rather than that something is wrong.
 | `get_config` | `configPath?` | `config`, `configPath`, `source`, `revision` |
 | `set_config` | `config`, `configPath?`, `baseRevision?` | `ok`, `diagnostics[]`, `revision`, `checkpoint`, `configPath`, `source` |
 | `validate` | `config` \| `configPath` | `ok`, `diagnostics[]`, `configPath`, `source` |
-| `preview` | `columns?`, `config?`, `configPath?` | `renders[]` — each `{ columns, rows[] }` — plus `configPath`, `source`, `diagnostics[]` |
+| `preview` | `columns?`, `config?`, `configPath?` | `renders[]` — each `{ columns, rows[], notes[] }` (§12.6.10) — plus `configPath`, `source`, `diagnostics[]` |
 | `revert` | `confirm?`, `target?` | unconfirmed: `entries[]`. confirmed: `restored` |
 
 **Every tool that resolves a config path returns `configPath` and `source`**, not just
@@ -4631,6 +4631,43 @@ config is a caller entitled to call `set_config` with it** — same trust, one s
 tool descriptions must say so, since a model reads them and nothing else, and both §12.6.4's
 look-before-you-leap default and §12.6.6's no-improvising rule work by making the cautious call
 the obvious one. That only holds if the model knows which call is the cautious one.
+
+#### 12.6.10 `preview` has no `notes`, which is §9.8.1's defect one layer up
+
+§12.6.1's table returns `renders[]` — each `{ columns, rows[] }` — plus a top-level
+`diagnostics[]`. §12.6.9 then spends a ruling arguing that `diagnostics[]` must be there, because
+§7 makes a bad config render *silently degraded* and "the preview looked right" is otherwise
+evidence for a config `set_config` will reject.
+
+Every word of that argument applies to render notes, and none of it was applied to them. A dropped
+pane produces a preview that also looks right — shorter, with nothing in the response saying it
+should have been longer. §9.8.1 already found this exact hole in `--preview --json` and closed it
+for the reason that decides it here too: *the JSON form is the one a model reads*. The MCP surface
+is not merely one such form, it is the only one a model reaches when nobody typed a slash command.
+And §9.8.1's second ruling — a note never appears in `diagnostics`, a diagnostic never appears in
+`notes` — means the model cannot recover the information from the field it does get. It is not
+degraded; it is absent, and correctly so, guarding a channel that was never built at this layer.
+
+**`preview` gains `notes[]`, and it belongs to each render rather than to the response.** This is
+the part that does not carry over unchanged from §9.8.1, where a single render made a top-level
+array unambiguous. §12.6.3 has `preview` render at **80 and 60** when given no `columns`, so a
+response-level array cannot say which width dropped the pane — which is the entire content of the
+note. The split falls straight out of §9.8: a diagnostic is width-independent, so it belongs to the
+response; a note is what happened *at a width*, so it belongs to the render.
+
+The one wrinkle is worth stating because it looks like a bug: a `maxLines` cap is width-independent
+and will therefore appear in **every** render's `notes`, identically. That is the honest
+representation rather than a duplicate — it is what the CLI already does across §12.4's three
+widths, where the same notes arrive on stderr (§9.8.1), and de-duplicating it into a response-level array would recreate the ambiguity this
+ruling exists to remove. Three copies of a cap note is one finding.
+
+**`rows[]` stays unstyled here, and that is not in tension with §9.3.2.** §9.3.2 rules that the
+bare CLI `--preview` must not degrade, because its output lands in a terminal and styling is part
+of what is being previewed. The MCP tool's consumer is a model relaying to a chat surface, which
+cannot render ANSI at all — escapes there are not colour, they are noise in the middle of a
+sentence. So the same test §9.3.2 applies gives the opposite answer again: the payload is not lost
+by omitting styling, because the channel could never have carried it. A model that needs to show a
+user what a colour change looks like has the CLI, whose output goes where colour means something.
 
 ### 12.7 `/claude-tui-line:setup`
 
