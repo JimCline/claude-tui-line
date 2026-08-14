@@ -4383,6 +4383,49 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 post-merge on `main` (1311/1311, build 0 warnings/0 errors, `check-all.sh` all five checks green,
 20 doc tokens checked). Landed as merge commit `74a3b38` (branch tip `dc7c168`), pushed.
 
+### #59: §2.3.2 fifth key-not-applicable case — childless explicit split
+
+Problem: the architect's #24 ruling flagged a fifth case falling out of the same predicate as a
+non-blocking follow-up: `Config.cs:794` (`NormalizeSplit`) drops an explicit `split` key with no
+(or empty) `children` back to a leaf. The task was originally briefed as "an inert `items` key
+alongside a childless `split`" — that framing was wrong and corrected before implementation
+started.
+
+Correction (architect, traced `Config.cs:794-795` directly): when `childCount == 0`, it's `split`
+itself that gets normalized to `PaneSplit.None` and dropped — `items` is untouched and renders
+normally on the resulting leaf exactly as intended, so flagging `items` would have been a false
+positive. `split` is the actually-inert key. Consequently the trigger widens: since nothing about
+`items` being present is relevant, the diagnostic fires on *any* childless explicit `split`
+(`{"split":"vertical"}` alone, no `items` at all, is equally inert), not just ones that also carry
+`items`. None of the four existing key-not-applicable cases gate on an unrelated second key being
+present either, so this keeps the same shape.
+
+Fix: `ConfigChecker.CheckKeyNotApplicable` (`ConfigCheck.cs`) gained a fifth case, appended last:
+predicate `ParseSplitCore(pane.Split) is PaneSplit.Vertical or PaneSplit.Horizontal &&
+pane.Children is not { Count: > 0 }`, warning `key-not-applicable` at `{path}/split`. Reuses #24's
+existing `ParseSplitCore` helper, which gives the double-flagging guard against `unknown-enum-value`
+for free — a misspelled split value parses to `null`, not `Vertical`/`Horizontal`, so it's
+correctly excluded and `unknown-enum-value` keeps sole ownership of that case.
+
+Product-judgment call, routed to the user rather than guessed: `{"split":"vertical","children":[]}`
+now trips two independent warnings — `/children` (from #24's case) and `/split` (from this case) —
+since both keys are independently inert from the same underlying mistake. **Ruling: emit both**,
+no suppression logic; consistent with #24's "one condition, one code" precedent, and each warning
+is independently true and actionable at its own path.
+
+Also updated: the three previously path-unqualified `DoesNotContain(key-not-applicable)` assertions
+in `ConfigCheckTests.cs` (~1052, 1128, 1172) were widened by #59's new case, so they're now scoped
+to their specific paths (`/surface/pane/distribute`, `/gutter`, `/items`) rather than asserting
+absence of the code anywhere in the diagnostic list.
+
+Flagged, not acted on: §2.3.2's prose ends "...and whatever the next one is" with no per-case
+enumeration to extend, and a fifth case now genuinely exists — worth tightening once #58 (the
+diagnostic-code coherence follow-up, which now also covers this prose question) is resolved.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1319/1319)
+and post-merge on `main` (1319/1319, build 0 warnings/0 errors, `check-all.sh` all five checks
+green, 20 doc tokens checked). Landed as merge commit `d18226c` (branch tip `f361860`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
