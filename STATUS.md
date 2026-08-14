@@ -2250,6 +2250,35 @@ JSON error object, which is why this presented as `--items --json was not the ex
 rather than as anything resembling a build failure. `-v quiet` alone suppresses the banner; the
 flag is gone. Every previous run of this check had gone through the stub.
 
+### The note channel had no producer, and the feature its example described was never built
+
+The implementor went to reuse the mechanism §9.8.1 points at — §4's `maxLines` truncation notice —
+and found there is no mechanism, because there is no `maxLines`. `CommandProvider` takes
+`stdout.Split('\n', 2)[0]`, the first line unconditionally, and no such key exists in any config
+type. §4 has described multi-line command output with a cap, in the present tense, for as long as
+it has existed. Nothing caught it because the document was entirely self-consistent about it: §4
+described the feature, §9.8.1 cited §4, §12.4 told a reader what to do about the note, and every
+citation resolved.
+
+The other case is worse in a quieter way. Pane-dropping and segment truncation *do* happen —
+`SizeResolver.AllocateWithDrop` and `PaneRenderer.TruncateSegment` — and both are silent. So the
+`"pane 2 dropped: no width remained at 109 columns"` in §9.6's own JSON example had no code that
+could emit it either.
+
+**The ruling that matters is that `--preview` may not ship with `notes[]` stubbed empty** (§9.8.2).
+An empty array is not a partial implementation of this channel; it is the channel's failure mode
+with a success message on it. `notes: []` reads as "nothing was dropped", §12.3 and §12.4 both tell
+a reader to treat that as load-bearing, and empty-because-unbuilt is indistinguishable at the
+consumer from empty-because-nothing-happened — with the second being far more often true, so the
+wrong reading is the one that always wins. Drop and truncation instrumentation is therefore in
+scope for `--preview` itself (#32); `maxLines` arrives with its own feature (#31).
+
+The signal leaves through a collector passed into `SizeResolver` and `PaneRenderer`, **never
+nullable**. A sink the render path passes `null` to is two paths again — instrumented for
+`--preview`, uninstrumented for what actually ships — which is Defect 15's shape a second time, in
+a second place, six sections apart. A real collector thrown away costs one allocation per render
+and buys one path.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
