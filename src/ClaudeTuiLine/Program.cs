@@ -405,8 +405,11 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
         }
 
         // §9.3.4: a bordered pane's top and bottom border lines are rows too, so bare --preview and
-        // --preview --json report the same line count for the same render. `width` always measures
-        // the row's own rendered text, never a second-hand number from the layout. A content row's
+        // --preview --json report the same line count for the same render. `width` is computed by
+        // the same function the layout used, never a second measurement — reused directly from
+        // PaneRow.Width wherever the layout produced the rendered line, and taken from the rendered
+        // text's own length only where no such layout value exists (Panel-drawn border/content
+        // lines, whose border decoration Spectre adds outside PaneRow tracking). A content row's
         // pre-border width — what the layout measured before a panel was wrapped around it, useful
         // for spotting raggedness in a split pipeline — is reported separately as `contentWidth`;
         // a border line has no such number, so the field is left absent for it.
@@ -429,7 +432,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
             rowsJson = jsonRows.Zip(lines, (row, line) =>
             {
                 var text = AnsiStrip.Strip(line);
-                return new PreviewRowJson(text, text.Length, row.Width);
+                return new PreviewRowJson(text, row.Width, row.Width);
             }).ToList();
         }
 
