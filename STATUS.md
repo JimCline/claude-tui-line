@@ -286,6 +286,48 @@ with different severities, and one formula corrected at one of its two use sites
 implementor building two sections at once, which is the argument for a separate pair of eyes on the
 spec rather than just a reader.
 
+### Second batch — the consistency pass turning up real defects
+
+The pass stopped being bookkeeping and started finding things.
+
+- **§5.1, `remote-url` caching** (`8ee5744`) — closes the last unspecified queued item. It reuses
+  `ItemCache` rather than getting its own store. The ruling that bites: a probe that finds nothing
+  is a *cached result*, not a cache miss, or git gets re-spawned every render in exactly the case
+  where the spawn can never return anything.
+- **§2.11, empty-pane collapse** (`d506075`, corrected in `28c1bd2`) — defect 12. "Empty" has two
+  causes and only one is safe to act on. Collapsing a pane that the *sizing loop itself* emptied
+  frees width, which un-drops the items, which un-empties the pane, which reclaims the width — a
+  cycle with no fixpoint, breaking §2.3's convergence argument. I also had to retract my own
+  fixed-size bullet: §2.4 already ruled the opposite and its reasoning was better than mine.
+- **§9.4.1, the severity test** (`ac1c959`, then `fdad2ac`) — and this one is the cautionary tale
+  of the night. The first version contradicted the paragraph three lines below it: applied
+  strictly, "delivered vs deleted" demotes every typo to a warning, because an unknown `size`
+  falls back to `fill` and renders fine. Two tiers now — *not in the language* is always an error,
+  and only *in the language with a missing referent* gets judged by consequence. **A section can
+  contradict itself within its own body**, which is a shorter distance than any of the other
+  inconsistencies found this session had to travel.
+- **§2.10's `collapse: false` formula was arithmetically wrong** (`28c1bd2`), and this is the one
+  that would have shipped. It charged `(N−1)×(g+2)`, but `N` separate boxes own `2N` edge columns
+  and that expression covers `2(N−1)` — it drops the outermost pair and under-reserves by 2 at
+  every `N`. Found because the implementor asked which of two arithmetics to build `--check`
+  against instead of picking one. The durable fix is that **nothing restates the arithmetic,
+  including this document**: one named function, called by both the renderer and the checker.
+- **One condition, four positions.** A dangling `link` was an error in §9.4, a graceful drop in
+  §3.2.1, "rejected" in §3.2, and a warning in the §4.2 text I wrote myself. All four now say
+  warning. A third severity — "notice" — was also in §6.2 by accident, in a system §9.4 defines as
+  having exactly two.
+
+### Open, and honest about it
+
+- **The colour system has a parser and no tests.** `colorSystem` (`standard` / `256` / `truecolor`)
+  parses in `Config.cs`, and `ColorResolution.ResolveLiteral` defers 256-palette and hex handling
+  to Spectre. Zero tests match `colorSystem`, `256`, or `hex`. So whether §6.1's three literal
+  forms and §6.2's down-conversion actually work is **unverified**, not known-good.
+- **README understates colours as "Sixteen named colours"**, where §6.1 specifies 16 names plus
+  256-palette names/indices plus hex. Deliberately not widened yet: the failure mode of
+  documenting a feature that turns out not to work is worse than the one of underselling a feature
+  that does, and the line above is why that is a live possibility rather than a formality.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
