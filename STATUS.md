@@ -1529,6 +1529,105 @@ other three.
   renderer ignores. Task #22, and it blocks #23: adding `even` to a switch fixes one key on one
   day; changing the shape is what stops the next key arriving pre-broken.
 
+### §2.4–§2.9 walked — the spec walk is complete, and it ended by auditing itself
+
+Last unwalked stretch. Every section of the spec has now been walked.
+
+- **§2.5.1 — three rulings intersect on `CLAUDE_TUI_LINE_PANE_WIDTH` and nobody looked at the
+  intersection.** §2.5 exports the pane's inner width to `command` providers; §4.2.3 (mine, two
+  sessions ago) put every input the child can see into the cache key; §2.3 resolves sizes by a
+  fixpoint of up to three passes whose entire purpose is changing those widths. Compose them and a
+  `command` item is **a cache miss on every pass** — the process spawns up to three times per
+  render at `refreshInterval: 1`, with a correct statusline and no symptom. It is also genuinely
+  circular in a `content` pane, whose width is *defined as* the measurement of its content; the
+  monotone clamp does not save that, because it constrains the pane's request and not the script's
+  output. Ruled: one spawn per render at the first-pass grant, and a `content` pane's items are
+  measured with the variable **unset**. The rule underneath, for whatever pane kind comes next —
+  *a pane exports its width only if its width does not depend on what the export returns.* Task #26.
+- **§2.4.1 — "the rightmost contributing pane" assumes a surface has one.** A root horizontal split
+  does not: its children stack, so each row's rightmost cells come from a different child with its
+  own background. Decided once, the backgrounded pane's colour band ends short on exactly the rows
+  that carry it. Per-row now. Same edit records that the trim is not a layout step — it removes
+  padding from some rows and not others, so §10's rectangle invariant is a property of the composed
+  buffer asserted *before* the trim, and a test measuring the emitted line passes only on a surface
+  where no row had trailing space. §10.1's problem, one layer down. Task #27.
+- **§2.6's vertical marker was never budgeted.** The horizontal case explicitly reserves the
+  marker's width; the vertical case said "ends with the marker", and the last surviving row is
+  routinely full — it is the row that forced the wrap being truncated. Appending puts it over the
+  pane width, which §2.4 rule 1 names as the ugliest failure available. One rule now, applied twice;
+  stating it once per axis is how the two got to disagree.
+- **§2.8 — §2.6 and the degrade ladder were two authorities on `maxRows`.** §2.6 reads as though
+  pane-level `maxRows` clips during layout, which would mean a pane exceeding *its own* budget gets
+  rung 4 — the harshest — while a surface exceeding its budget gets rungs 2 and 3 first. Same key,
+  same meaning one level up, opposite severity. The ladder owns both budgets; §2.6 describes what
+  rung 4 does, not when it fires. Also broke rung 3's tie (equal heights are the *normal* state in a
+  vertical split, since §2.4 pads siblings to a common height — leaving it unbroken makes a ladder
+  justified by determinism depend on enumeration order), and closed the gap in the subsection
+  titled **"Clipping must close the border"**: under three rows a bordered box *cannot* close, so
+  the rung written to prevent the "crashed" render produces it. Border suppresses under 3 rows —
+  the height-axis twin of `MinUsableWidth` — unless the author declared that `maxRows` themselves.
+  Task #29.
+
+- **§13.3 — a section number is a reference, and four of them resolved to nothing.** The find of
+  the walk, and it came out of noticing that **§2.9 is cited nine times and does not exist**. That
+  prompted checking every `§N.M` against the document's own headings:
+
+  | cited | times | |
+  |---|---|---|
+  | `§7` | 27 | failure behaviour — `§7.1` was a subsection of nothing |
+  | `§2.9` | 9 | the two-pane worked example, unheaded at the tail of §2.8 |
+  | `§10.6` | 3 | bullet 6 of §10's list, cited in subsection form |
+  | `§4.3` | 1 | derived items |
+
+  This is §9.6.1's own registry rule — "a code that is not in it does not exist" — which the
+  document applies to diagnostic codes and had never applied to itself. Not hypothetical: §11
+  defines a phase's acceptance as **"Acceptance is §2.9"**, and §9.4's whole severity argument
+  turns on "§7 makes the renderer cope."
+
+  The distribution is the part worth keeping. **The most-cited reference in the document is the
+  most thoroughly missing**, and that is causal rather than ironic — a reference used constantly is
+  one every reader already knows the meaning of, so nobody follows it, so nobody learns it goes
+  nowhere. Frequency of citation is *negatively* correlated with the chance anyone checks. The
+  single-citation dangle is the one a reader would most likely have caught.
+
+  §7 and §2.9 fixed in place. §10.6 and §4.3 plus a three-line CI check are task #28 — and the
+  check is the point, because all four survived many careful readings: prose citing a section reads
+  correctly whether or not the section is there.
+
+- Also corrected: §2.3 restated §2.9's measured anchor width as **43** where §2.9 measures **66**,
+  for the same pane in the same config at the same width. §2.9 says outright that its integers are
+  *measured, not asserted*. A second copy of a measured output is a hand-maintained duplicate, and
+  the copy that goes stale is always the one no test reads.
+
+### §9.4.3 resolved, and the round-trip that resolved it is the finding
+
+`--check`/`--check --json` landed (Program.cs, ConfigCheck.cs; build clean, 1122/1122). Task #22 is
+**done** — the implementor had already reshaped all three parsers to `ParseCore → T?` with a public
+`IsUnrecognized`, independently arriving at exactly what §9.4.3 rules for, with
+`ConfigCheck.CheckPaneEnums` as the second caller. #23 (`even`) is unblocked.
+
+But we spent a full round-trip disagreeing about what the code said, and **both readings were of
+real files**: §9.4.3 quotes `Pane.cs` at `8306620`, and the fix lives in an uncommitted working
+tree. This document's own two-authorities defect, with the second authority being **time** — and
+it is the variant with no possible symptom, because nobody is wrong. The two readings simply do not
+refer to the same thing, and neither side can tell from its own evidence. §9.4.3 now pins the
+revision it quotes and is kept in past tense rather than deleted; the rule it states governs closed
+sets not yet written.
+
+Two rulings the implementor asked for, both now in §9.6:
+
+- **`path` is absent for `code: "usage"`**, not `""`. Same reasoning as `diagnostics` being absent
+  rather than `[]` one field over — `""` is not "no path", it is the claim that the path is the
+  empty string, and it survives a null check and concatenates into `could not read `. Getting the
+  two fields different would be worse than getting either wrong, since a consumer that learned the
+  `diagnostics` rule would assume it generalises.
+- **No catch-all around `--check` is correct** — an internal exception reported as a clean config is
+  §7.1's render-wrong class in the one command that exists to find defects. But the consequence
+  needed writing down: the alternative to swallowing is a runtime exit code the registry does not
+  define. So **{0,1,2,3} is the contract, not the range**; anything else is a crash in this tool
+  rather than a verdict about the config. A caller testing `exit == 0` is right by accident; one
+  switching on the four falls through the bottom exactly when it should be loudest.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

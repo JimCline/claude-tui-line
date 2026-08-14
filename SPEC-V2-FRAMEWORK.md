@@ -153,9 +153,15 @@ shows up much later as an unexplained degrade rather than as an arithmetic bug.
 
 Step 4 is the rule that keeps an anchor from eating the surface, and it has **no trigger
 condition**. The cap is applied on every pass unconditionally; it simply does not bind when
-space is ample. At the §2.9 demo's wide case the cap is 108 − 24 = 84 against an ask of 43, so
-it is inert; at the narrow case it is 56 − 24 = 32 against the same ask, so it binds and forces
-the degrade. Same formula, no branch. Any prose elsewhere in this spec that reads like a
+space is ample. At §2.9's wide case the cap is far above the anchor's ask and is inert; at its
+narrow case the same formula produces a cap below the ask, so it binds and forces the degrade.
+Same formula, no branch.
+
+The figures are §2.9's and are deliberately not restated here. They were, and the copy had drifted:
+this paragraph asserted the anchor asks for **43** while §2.9 measures **66** for the same pane in
+the same config at the same width. §2.9 states that its integers are *measured, not asserted* —
+they come from rendering that config — so a second copy of them somewhere else is a hand-maintained
+duplicate of an output, and the version that goes stale is always the one no test reads. Any prose elsewhere in this spec that reads like a
 special "the surface is too tight" mode is describing this formula's *outcome* — there is no
 second code path, and implementing one violates §1.
 
@@ -512,6 +518,31 @@ self-explanatory; a permanent empty box is neither, and a user who wants stabili
 `fixed` and `distribute: "even"` (§2.3) to ask for it in the config rather than receiving it as
 an accident of the compositor.
 
+#### 2.4.1 The trim is per row, and it is not a layout step
+
+Rule 4 says trailing whitespace is trimmed "only when the rightmost contributing pane has no
+background color set", as though a surface had one such pane. **A root horizontal split does not.**
+Its children stack, so row 1's rightmost cells come from one child and row 9's from another, each
+with its own background. Evaluate the condition once and one of two things happens:
+
+- decided from a background-less pane ⇒ the backgrounded pane's rows are trimmed, and its colour
+  band ends several cells short of the surface on exactly the rows that carry it;
+- decided from the backgrounded pane ⇒ nothing is trimmed anywhere, which costs only bytes.
+
+The failure is asymmetric, and the direction that renders wrong is the one an implementer reaches
+first, because "the rightmost contributing pane" reads like a property of the surface. **The
+condition is evaluated per composed row, against the pane that contributed that row's rightmost
+cells.** The same applies to a vertical split whose right-hand child is itself a horizontal split.
+
+**The trim is also not a layout step, and §10 must not measure through it.** Rule 1 pads every row
+to exactly the pane's width; the trim then removes padding from some rows and not others, so after
+it runs **the composed rows are no longer equal width** — by design, and only in cells that were
+blank. §10's rectangle invariant is therefore a property of the composed buffer, not of the emitted
+bytes: it is asserted before the trim, which is the last transformation applied to the surface and
+sits after every layout assertion. A test that measures the emitted line and still passes is
+measuring a surface where no row had trailing space, which §10.1 already names as the problem —
+the assertion holds for a reason unrelated to what it claims.
+
 ### 2.5 A pane's content sees only its own pane
 
 **Content is laid out against the pane's inner width, never against `COLUMNS`.** A pane is the
@@ -538,6 +569,49 @@ Everything downstream takes inner width as a parameter:
 - Truncation (§2.6) measures against the pane's inner width.
 - `command` providers receive `CLAUDE_TUI_LINE_PANE_WIDTH` = the inner width of the pane the
   item lives in, so a user script can size its own output to the space it actually has.
+
+#### 2.5.1 The exported width, the fixpoint, and the cache key make three
+
+`CLAUDE_TUI_LINE_PANE_WIDTH` is not a free hint. Three rulings from three different sections
+intersect on it, and the intersection was not looked at when any of them was made:
+
+- **§2.5** exports the pane's inner width to every `command` provider.
+- **§4.2.3** put every input the child can see into the cache key, which now includes that width.
+- **§2.3** resolves sizes by a fixpoint of up to three passes, in which a `content` pane's grant
+  and its `fill` sibling's grant both change between passes — that is the entire purpose of the
+  loop.
+
+Compose them and a `command` item is a **cache miss on every pass**, because the key it is looked
+up under contains a width that the loop is in the business of changing. The process is spawned up
+to three times per render, at `refreshInterval: 1`. Nothing reports this; the statusline is correct
+and the machine is doing three times the work.
+
+It is also circular where it bites hardest. A `content` pane's width is *derived from measuring its
+content*; if that content includes a command whose output depends on the width, the pane's width
+depends on a value that depends on the pane's width. §2.3's monotone clamp does not save this — it
+constrains the *pane's request*, not the *command's output*, and a script that prints more when
+given more room is behaving reasonably. Termination is guaranteed; agreement is not.
+
+Ruled, in two parts:
+
+1. **A `command` item is spawned at most once per render.** The width it receives is its pane's
+   grant from the **first** pass, and later passes reuse the value rather than re-fetching it. The
+   width that enters the §4.2.3 cache key is the one actually exported, so the key stays honest —
+   it describes what the child saw, which is the property §4.2.3 states.
+2. **A `content` pane's items are measured with the variable unset.** Not with a guess, not with
+   zero: unset, which §4.2.3 already treats as a distinguished value rather than a missing one. A
+   pane whose width is defined as the measurement of its own content cannot also be an input to
+   that measurement, and no ordering of the passes fixes that.
+
+The rule those two share is worth stating on its own, because it is what decides the next pane kind
+someone adds: **a pane exports its width only if its width does not depend on what the export
+returns.**
+
+The accepted cost is a stale hint on a `content` or `fill` pane that later degrades — the script
+sized itself to a pane wider than the one it ended up in. That is the safe direction and it needs
+no new machinery: output too wide for its pane is precisely what §2.6 exists to resolve, and it
+resolves it the same way it resolves any other over-long value. The reverse — a script told it had
+less room than it got — would leave the pane visibly short with nothing able to notice.
 
 **Enforcement, not just intent:** `COLUMNS` is read exactly once, in the surface-sizing code at
 the root. No leaf-rendering code path may reach it — not `RowLayout`, not `SegmentBuilder`, not
@@ -592,6 +666,19 @@ right, so `--check` rejects it there and the renderer treats it as `"truncate"`.
 **Vertical overflow** is governed by the same marker. When wrapping produces more rows than the
 pane's `maxRows` (or the surface's, §2.8), the surplus rows are dropped and the last surviving
 row ends with the marker, so truncation is always visible rather than silent.
+
+**"Ends with the marker" means the marker replaces the row's last cells, never that it is appended
+to them.** The horizontal case two paragraphs up budgets the marker's width against the inner width
+and says so; the vertical case said only "ends with", and appending is the reading that sentence
+invites. The last surviving row is routinely a full row — it is the row that was full enough to
+force the wrap being truncated — so appending puts it one to two cells over the pane width, and
+§2.4's rule 1 names that exact failure as the ugliest one available: a single over-wide row shears
+every column to its right, on that row only, in a way a screenshot barely shows.
+
+So the marker is budgeted identically on both axes, with the same two riders: if the inner width is
+not greater than the marker width the marker is dropped rather than allowed to consume the row, and
+an `ellipsis` of `""` is a hard clip that spends no cell. One rule, applied twice — stating it
+once per axis is how the two got to disagree.
 
 **The `MinUsableWidth` single-line fallback is a property of the SURFACE, not of a pane.**
 
@@ -670,6 +757,22 @@ because the ladder is finite and every rung is strictly reducing.
    existing §3.1 block ordering rather than a second priority scheme.
 4. **Clip**, as the last resort.
 
+**The ladder is the only thing that enforces a row budget — either row budget.** §2.6 describes
+pane-level `maxRows` as dropping surplus rows and marking the last survivor, which reads as a
+second mechanism that fires during layout, before the ladder ever runs. It is not one. If it were,
+a pane that exceeded *its own* `maxRows` would be clipped immediately — rung 4, the harshest — and
+rungs 2 and 3 would never get the chance they exist for. An author who set `maxRows` on a pane
+asking for a bounded pane would receive the most destructive available degrade, while an author who
+set it on the surface received the gentlest, from the same key meaning the same thing one level up.
+§2.6's paragraph describes **what rung 4 does when it fires**, not when it fires.
+
+**Ties break by reverse declaration order, at every rung.** Rung 3 says "the tallest pane" and two
+panes are routinely equally tall — this is a vertical split, where §2.4 pads siblings to a common
+height, so equal heights are the normal state rather than a coincidence. Leaving that unbroken
+makes the outcome depend on enumeration order in a ladder whose stated justification is that it is
+deterministic. Reverse declaration order is already rung 2's rule and already carries the argument:
+the first-declared pane is the author's primary content and loses fidelity last.
+
 #### Clipping must close the border
 
 A bordered pane clipped mid-box emits a top edge and two verticals with no bottom edge. That
@@ -683,6 +786,20 @@ looks like a complete one.
 
 Clipped rows remain subject to §2.4: every emitted row is exactly `COLUMNS - chromeReserve`
 display columns. Degrading height never licenses a ragged row.
+
+**Below three rows a bordered box cannot close, so the border is suppressed rather than clipped.**
+A bordered pane spends one row on its top edge and one on its bottom, leaving `budget - 2` for
+content; at a budget of 2 that is a box containing nothing, which §2.4 already refuses, and at 1 it
+is a top edge alone — precisely the "crashed" render this subsection exists to prevent, produced by
+the rung written to prevent it. So: **a pane whose row budget is under 3 suppresses its own border
+and spends the whole budget on content.**
+
+This is the height-axis twin of §2.3's `MinUsableWidth` suppression, and it inherits that rule's
+qualification for the same reason: suppression is for a pane squeezed by a budget it did not
+choose. A pane that declared its own `maxRows` under 3 asked for this shape and keeps its border,
+losing content instead — the author named the number, exactly as §2.4 reasons about `fixed` and
+`percent` panes. Suppression applies where the *surface* budget, or the ladder acting on it, is
+what pushed the pane under three rows.
 
 #### A pane may shrink-wrap its height
 
@@ -721,6 +838,19 @@ shared for part of its run and belongs solely to the taller pane for the rest, a
 where the shorter box closes against it is a glyph case the grid does not otherwise produce.
 That is tractable — the glyph table gains rows — but a border grid designed on the assumption
 that every column is a full-height rectangle will not accommodate it later without being redone.
+
+### 2.9 The worked example — two panes, an anchor and an absorber
+
+This section is cited nine times elsewhere in this document and, until now, did not exist. Not
+loosely cited: §2.3 defers the definition of wrap-aware re-measurement to it, §2.3.1's `R` is
+computed "exactly as §2.9 computes it", §10 asks for a test asserting the sibling's final inner
+width "(§2.9)", and §11 states outright that **"Acceptance is §2.9"** for a whole phase. A phase's
+acceptance criterion pointed at a section number that resolved to nothing, and the prose read
+perfectly well without it, which is exactly why it survived nine citations.
+
+A section number is a reference of the same kind as a diagnostic code, and §9.6.1's rule for those
+transfers unchanged: **a section that is not there does not exist, no matter how many places cite
+it.** The content was always here — it was the tail of §2.8, where nothing pointed.
 
 The user's stated next test, and what "splits work" means concretely:
 
@@ -2340,6 +2470,16 @@ copies inside the renderer, which is worse, because there is no checker/renderer
 suggest looking. It was found by asking what `--colors` is allowed to print — a question about a
 CLI flag that had nothing to do with borders.
 
+## 7. Failure behaviour
+
+This section is cited **27 times** in this document and had no heading. Every "§7 makes the
+renderer cope with everything", every "§7's class", every argument that a diagnostic's severity is
+not about whether the renderer survives — all of them resolved to nothing, while §7.1 sat below as
+a subsection of a section that was not there. It is the most-cited reference in the document and
+the most thoroughly dangling, which is not a coincidence: a reference used constantly is one every
+reader already knows the meaning of, so nobody follows it, so nobody finds out it goes nowhere.
+See §2.9 for the same defect caught the same way, and §13.3 for the rule now covering both.
+
 Inherited from v1 and non-negotiable: **the statusline never errors, never pollutes stdout,
 always exits 0.** A misconfigured item, a missing binary, a script that writes garbage, a
 malformed pane tree — each degrades locally. One bad item suppresses itself; one bad pane
@@ -2841,10 +2981,25 @@ Two consequences that must not be left implicit:
   `unknown-key` is never intentionally doing so, and a gate that passes it writes a statusline
   that silently does not do what was asked. This is a requirement on §12, not a third severity.
 
-#### 9.4.3 Why none of §9.4.1 is implementable as the code is shaped
+#### 9.4.3 Why none of §9.4.1 was implementable as the code was shaped
 
-§9.4.1 has been in this document for some time and reports nothing, and the reason is not that
-nobody got to it. It is one line, repeated:
+> **Resolved, and pinned to a revision.** The code quoted below is `Pane.cs` at **`8306620`**, which
+> was `HEAD` when this section was written. It is no longer the working tree: all three parsers now
+> have a private `ParseCore` returning `T?`, a public `Parse` = `ParseCore(value) ?? default`, and a
+> public `IsUnrecognized` calling that same core — the exact shape this section rules for, arrived at
+> independently, with `ConfigCheck.CheckPaneEnums` as the second caller. Kept in the past tense
+> rather than deleted, because the rule in it governs every closed set added after this one, and the
+> mechanism is the part worth keeping.
+>
+> **Pin the revision when a spec quotes code.** This section and the session fixing it disagreed for
+> a full round-trip about what the code said, and both were reading real files — one the committed
+> revision, one an uncommitted working tree. That is this document's own two-authorities defect with
+> the second authority being *time*, and it is the variant with no possible symptom: nobody is wrong,
+> the readings just do not refer to the same thing. A quoted snippet without a revision is a claim
+> about a moment that has already passed by the time anyone reads it.
+
+§9.4.1 had been in this document for some time and reported nothing, and the reason was not that
+nobody got to it. It was one line, repeated:
 
 ```csharp
 public static PaneDistribute Parse(string? value) => value?.Trim().ToLowerInvariant() switch
@@ -2854,17 +3009,17 @@ public static PaneDistribute Parse(string? value) => value?.Trim().ToLowerInvari
 };
 ```
 
-`PaneAlign.Parse`, `PaneValign.Parse`, and `PaneDistributeParsing.Parse` are all **total functions
-into the enum**. There is no value they cannot answer, so by the time any caller holds the result
-the fact that the input was not in the language has been destroyed — not lost in transit,
+`PaneAlign.Parse`, `PaneValign.Parse`, and `PaneDistributeParsing.Parse` were all **total functions
+into the enum**. There is no value such a function cannot answer, so by the time any caller holds
+the result the fact that the input was not in the language has been destroyed — not lost in transit,
 *consumed*, by the one function positioned to notice it. `--check` cannot report what it cannot be
 told, and no amount of care in `--check` recovers it, because the information is gone before
 `--check`'s code runs.
 
-`OverflowMode.Parse` in the same codebase returns `OverflowMode?` and answers `null`. **Both shapes
-are already here, and the three keys §9.4.1 singles out as failing silently are exactly the three
-with the total shape.** That is not a coincidence to note; it is the mechanism, and it means these
-are one defect with three instances rather than three defects.
+`OverflowMode.Parse` in the same codebase returned `OverflowMode?` and answered `null`. **Both
+shapes were already here, and the three keys §9.4.1 singles out as failing silently were exactly the
+three with the total shape.** That is not a coincidence to note; it is the mechanism, and it means
+these were one defect with three instances rather than three defects.
 
 So the rule, and it governs every closed set including ones added later:
 
@@ -2954,6 +3109,30 @@ from being ambiguous.
 Exit 2 uses the same envelope with `code: "usage"`. Note that both are already true of the human
 form, which prints prose to stderr in these cases; `--json` is the surface that needed the ruling
 because a program cannot fall back to reading English.
+
+**`path` is absent for `code: "usage"`, for the same reason `diagnostics` is.** A bad flag is not
+about a file, so there is no path to report — and `""` is not that statement, it is the claim that
+the path is the empty string. It survives a null check, it concatenates, and a caller that formats
+`could not read ${path}` prints `could not read ` with no indication anything is missing. The
+envelope's fields are present when they have an answer; the schema is not a fixed set of slots to
+fill. This is the identical ruling one field over, and getting the two different would be worse
+than getting either wrong, because a consumer that learned `diagnostics`' rule would reasonably
+assume it generalises.
+
+The exception, when a usage error *is* about a file — `--config` given a path plus an unrecognised
+flag — is to report the usage error without the path anyway. Exit 2 says the invocation was never
+run; naming a file we never opened invites the reader to go look at it.
+
+**Exit codes outside {0, 1, 2, 3} mean claude-tui-line itself failed.** `--check` deliberately has
+no catch-all around its own execution: an internal exception must not be caught and reported as a
+clean config, which is §7.1's render-wrong class in the one command whose entire purpose is
+detecting defects. But the consequence needs saying out loud, because the alternative to swallowing
+is a runtime's own exit code and a stack trace on stderr, and that is a value §9.6.1's registry does
+not define. A caller testing `exit == 0` handles it correctly by accident. A caller switching on
+0/1/2/3 falls through the bottom, silently, in the one case that most needs to be loud. So: the four
+codes are the *contract*, not the range. Anything else is a crash, is a bug in this tool rather than
+in the config, and `--json` makes no promise about stdout in that case — a process that died did not
+finish writing.
 
 #### 9.6.1 The code registry
 
@@ -3969,3 +4148,44 @@ sentence was never written about a character, so the guard exists for one and no
 the test that would have caught it was never asked for. **Filed as defect 16.** The fix is a
 boundary check at the cut — advance by one unit when the index falls between surrogates — in
 **both** paths, because both cut and only the wrap path is usually remembered.
+
+### 13.3 A section number is a reference, and four of them resolved to nothing
+
+Walking §2 turned up `§2.9` cited nine times with no such section, which prompted checking every
+`§N.M` in the document against its own headings. Four numbers are cited and never defined:
+
+| cited | times | what it means |
+|---|---|---|
+| `§7` | 27 | the failure-behaviour rules. `§7.1` existed as a subsection of nothing |
+| `§2.9` | 9 | the two-pane worked example, living unheaded at the tail of §2.8 |
+| `§10.6` | 3 | bullet 6 of §10's list, cited in subsection form |
+| `§4.3` | 1 | derived items — `from` / `extract` / `case` |
+
+`§7` and `§2.9` are fixed in place; the other two are open.
+
+**This is §9.6.1's registry rule, which the document applies to diagnostic codes and does not
+apply to itself.** "A code that is not in it does not exist" is exactly as true of a section
+number, and both are references whose whole value is that following them lands somewhere. The
+consequences are not hypothetical: §11 defines a phase's acceptance criterion as "Acceptance is
+§2.9", and §9.4's severity argument turns on "§7 makes the renderer cope" — load-bearing claims
+resting on pointers into empty space.
+
+The distribution is the interesting part. **`§7` is both the most-cited reference in the document
+and the most thoroughly missing**, and that is causal rather than ironic: a reference used
+constantly is one every reader already knows the meaning of, so nobody follows it, so nobody learns
+it goes nowhere. Frequency of citation is *negatively* correlated with the chance anyone checks.
+The single-citation dangle, `§4.3`, is the one a reader would most likely have caught.
+
+Two riders:
+
+- **`§10.6` is a different fault from the other three.** §10's tests are a bullet list, and
+  citations refer to bullet 6 as `§10.6` — a subsection numbering the document never adopted. Fix
+  it by promoting §10's bullets to numbered subsections, not by rewriting the citations: three
+  places already cite them positionally, so the numbering is in use and only the headings are
+  missing. Bullets renumber silently when one is inserted; headings are visible when they move.
+- **Check this mechanically, not by reading.** Every instance here survived many careful readings
+  of the surrounding prose, because prose citing a section reads correctly whether or not the
+  section exists — the sentence carries the meaning and the number is decoration until someone
+  tries to follow it. Comparing the set of cited numbers against the set of heading numbers is
+  three lines of shell and belongs in CI beside the §9.7 version-drift check, which exists for
+  the same reason: two things that must agree, and no symptom when they stop.
