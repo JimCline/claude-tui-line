@@ -813,6 +813,34 @@ noticing it was open. That is the one-definition rule paying out rather than mer
 asserted, and it is worth recording as evidence that the rule is load-bearing: the alternative
 design, where each command describes its own backup, would have needed this found twice.
 
+### The implementor's scoping question found the gap in my own section (§6.2.1)
+
+`color-down-converted` landed, and the implementor flagged what it had *not* covered: Spectre's
+numeric `colorNNN` form, deliberately left out because my example was hex-only and it did not
+want to invent the interaction. Exactly the right instinct — and following it up found that the
+narrow implementation matched §6.2's prose while the §9.6.1 registry row already said something
+broader ("a `colorSystem` that **cannot render it**", a tier comparison). Two authorities, and
+this time the *implementation* had been written against the weaker one.
+
+The real gap is that every paragraph of §6.2 discusses `standard`. So the case nobody had
+written down is **hex under `256`** — an author who widened the palette one step, which is the
+one situation where you would expect the warning to have been thought about. §6.2.1 now states
+the rule as a minimum-system table with the comparison made explicit: fires when the literal's
+minimum exceeds the resolved system, which is three cases rather than one.
+
+Two smaller rulings inside it:
+
+- The row's own rationale — "approximated to the nearest of the sixteen" — is **false** in the
+  new case, where it is approximated to the nearest of 256. That is the digest rule about a
+  diagnostic carrying its stated reason as an implicit condition, hit again: broadening a check
+  without broadening its message ships a diagnostic that lies to a third of the authors who
+  trigger it. The message now names which palette.
+- A hex literal landing exactly on a 256 entry still fires under `256`, ruled deliberately.
+  Suppressing it means shipping 256 RGB triples nothing here would ever verify, and the warning
+  is *correct* regardless: someone who means entry 207 should write `color207`, which says so
+  and survives a colour-system change. The diagnostic points at a real improvement rather than a
+  phantom defect, which is the only reason a technically-avoidable warning is allowed to stay.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

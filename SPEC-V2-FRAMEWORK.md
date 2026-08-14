@@ -1797,6 +1797,38 @@ A baseline regenerated because it was inconvenient has stopped meaning anything.
 ever *does* become the default, that is a separate decision requiring a visually confirmed
 re-capture recorded explicitly as a loss of coverage — not a side effect of a colour change.
 
+#### 6.2.1 What down-converts, and under which system
+
+Everything above discusses `standard`, which is the common case and not the whole rule. Each
+literal form has a **minimum colour system** — the narrowest one that renders it as written:
+
+| literal form | example | minimum system |
+|---|---|---|
+| one of the sixteen named tokens | `blue`, `fuchsia` | `standard` |
+| a 256-palette name, or `colorNNN` with `NNN` ≥ 16 | `deepskyblue1`, `orange3`, `color141` | `256` |
+| `colorNNN` with `NNN` ≤ 15 | `color4` | `standard` |
+| a hex literal | `#ff5fd7` | `truecolor` |
+
+**`color-down-converted` fires when a literal's minimum exceeds the resolved `colorSystem`.**
+That is three cases, not one: 256-forms under `standard`, hex under `standard`, and **hex under
+`256`** — the third invisible to anyone reading only the paragraphs above, because they never
+mention a system the author might have widened *to*. Attributes (`default`, `dim`, `bold`) are
+not colours and never fire.
+
+The message must name the palette actually rendered through — sixteen under `standard`, 256
+under `256`. "Approximated to the nearest of the sixteen" is simply false in the third case, and
+a diagnostic whose stated reason does not apply to the input that triggered it is how authors
+learn to disbelieve the ones that do.
+
+**A hex literal that happens to land exactly on a 256-palette entry still fires under `256`.**
+This is deliberate, and it is not the false positive it looks like. Suppressing it would mean
+shipping a table of 256 RGB triples whose correctness nothing in this project would ever check —
+an unverifiable exactness claim, which is worse than a warning that is merely uninteresting. And
+the warning is *right* even then: an author who means palette entry 207 should write `color207`,
+which says so and survives a colour-system change, rather than a hex literal that renders
+correctly today by coincidence. The diagnostic points at a real improvement in that case, not at
+a phantom defect.
+
 ### 6.3 Named tokens
 
 A top-level `colors` table defines reusable, value-driven colour tokens. Referenced with a
@@ -2344,7 +2376,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `collapsed-edge-conflict` | adjacent panes disagree about a shared edge under `border.collapse` | warning | 2.10 |
 | `collapse-not-surface-level` | `border.collapse` declared on a pane — the compositor resolves one grid for the whole surface, so a per-pane value has no defined meaning | error | 2.10.1 |
 | `border-inside-on-leaf` | `"border": "inside"` on a leaf pane — a leaf has no interior, so this silences its border entirely | warning | 2.10.1 |
-| `color-down-converted` | a hex or 256-palette literal under a `colorSystem` that cannot render it — it will be approximated to the nearest of the sixteen | warning | 6.2 |
+| `color-down-converted` | a literal whose minimum colour system (§6.2.1) exceeds the resolved `colorSystem` — it is approximated to the nearest colour the resolved palette has. The message names *which* palette, since that is not always the sixteen | warning | 6.2.1 |
 | `leaf-only-key-on-split` | `overflow` or `ellipsis` declared on a split — only leaf panes consult them and they do **not** inherit, so the declaration does nothing. Exactly those two keys; `align`/`valign` are not in scope for this code | warning | 2.6 |
 | `pane-no-items` | a `content` or `fill` pane declaring no items **and no explicit `minSize`** — it collapses, so the declaration did nothing. **Not** `fixed`/`percent`, nor a `content`/`fill` pane with a `minSize`: all three hold their extent and are legitimate spacers (§2.11.1) | warning | 9.4 |
 
