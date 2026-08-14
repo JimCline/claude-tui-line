@@ -3240,6 +3240,38 @@ once.
 happened and nothing runs it. That is how a registry starts falling behind: not by anyone deciding to
 duplicate it, but by the check that would have caught them being retired as passed.
 
+## §14.2 rejects mtime correctly, then substitutes something that fails the same test (§14.2.1)
+
+§14.2's case against mtime: *"the whole failure mode is a file that was written from stale input"* —
+mtime says **when**, not **what from**. Correct. But SHA-256 of the deployed binary says **which**,
+and equally not what from. Both answer a question about the output; neither reaches the input, which
+is where the failure lives. A stale artifact hashes perfectly consistently — consistency is exactly
+what a stale file has.
+
+What the hash genuinely buys is auditability: two people, or one person across two sessions, can
+establish they mean the same binary, and "shipped and verified" stops being a memory. That is a
+reporting discipline, and §14.2 should be read as one. It is not detection, and it was being counted
+as detection.
+
+Ruled: provenance requires the artifact to **carry** its source identity, not to be measured after
+the fact. The mechanism already exists and §14 had never cited it — §9.7's `<Version>` and
+`--version`. Comparing `publish/claude-tui-line --version` against the source tree answers the
+question §14 is actually asking, by asking the artifact, which is the only party that knows. Hash it
+to name it; ask it to date it.
+
+**This reclassifies task #18.** §9.7's drift test was scoped as internal consistency between the
+assembly version and `plugin.json`. It is also the missing half of §14. Two sections solving
+complementary halves of one problem without referencing each other is the condition under which both
+get called complete — so §14 now depends on §9.7, and changing how the version is stamped changes
+whether deploys can be verified at all.
+
+Weighed and kept minor: `-o publish` is a relative path (the §12.7 unset-variable shape), but the
+`.csproj` argument is relative too, so a wrong directory fails to find the project instead of
+publishing somewhere unexpected. The unguarded case is a **second clone or worktree** — both are real
+repo roots, both satisfy the `.csproj` path, and only one holds the `publish/` the live statusline
+runs. That is §14.1's original drift with the directories renamed, and it is another argument for
+§9.7: a version answers *which tree*, a hash only *which file*.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

@@ -6101,6 +6101,46 @@ deployed binary does not mean it came from the current source — mtime records 
 written, and the whole failure mode is a file that was written from stale input. Any claim that
 something is "shipped and verified" names the hash it was verified against.
 
+#### 14.2.1 A hash of the output answers identity, not provenance
+
+§14.2 rejects mtime with the right argument and then substitutes something that fails the same
+test. Its case against mtime is that *"the whole failure mode is a file that was written from stale
+input"* — mtime tells you **when** the artifact was written, not **what from**. True. But a SHA-256
+of the deployed binary tells you **which** artifact it is, and equally not what from. Both answer a
+question about the output. Neither reaches the input, which is where the failure lives.
+
+What the hash does buy is real and worth keeping: two people, or the same person across two sessions,
+can establish they are talking about the same binary, and a claim of "shipped and verified" becomes
+auditable rather than remembered. That is a reporting discipline and §14.2 should be read as one. It
+is not detection. Running `sha256sum publish/claude-tui-line` twice and getting the same answer
+confirms nothing has been rebuilt; it cannot distinguish an artifact built from current source from
+one built from a tree three commits stale, because the stale artifact hashes perfectly consistently
+too. Consistency is exactly what a stale file has.
+
+**Ruled: provenance requires the artifact to carry its source identity, not to be measured after the
+fact.** The mechanism already exists elsewhere in this document and §14 has never cited it: §9.7
+gives the binary a `<Version>` and a `--version` that reports it. Comparing what
+`publish/claude-tui-line --version` says against the version in the source tree answers the question
+§14 is actually asking — *is what the user runs built from what I am editing?* — and answers it by
+asking the artifact, which is the only party that knows. Hash the artifact to name it; ask the
+artifact to date it.
+
+Note what this makes of §9.7's drift test. It was scoped as an internal consistency check between
+the assembly version and `plugin.json`, and it is also the missing half of §14. Two sections solving
+complementary halves of one problem without referencing each other is the condition under which both
+get called complete, so: §14 depends on §9.7, and a change to how the version is stamped is a change
+to whether deploys can be verified at all.
+
+**Secondary, and deliberately weighted as minor:** `-o publish` in §14.1 is a relative path, and a
+relative path names a different real directory per working directory — the shape §12.7 rules on for
+an unset variable expanding to `/bin`. Here it is mostly self-guarding, because the `.csproj`
+argument is relative too, so a wrong directory fails to find the project rather than publishing
+somewhere unexpected. The case it does not guard is a **second clone or a worktree**: both are real
+repo roots, both satisfy the `.csproj` path, and only one of them holds the `publish/` the live
+statusline executes. That is §14.1's original drift with the two directories renamed, and it is the
+scenario §14.2's hash discipline was invented for — which is the argument for §9.7 again, since a
+version answers *which tree* while a hash only answers *which file*.
+
 ### 14.3 Producing the artifact and deploying it are different acts, and only the second is restricted
 
 `publish/` is what the user's live statusline executes, so writing there replaces something of the
