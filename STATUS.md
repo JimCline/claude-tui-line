@@ -4309,6 +4309,52 @@ check-citations 115/9 files, check-counts 10 files, check-notes 2 distinct, chec
 16 items/10 files, check-doc-tokens 18 tokens/0 disagree). Landed as merge commit `209ace6`
 (branch tip `7da31bb`), pushed.
 
+### #24: §2.3.2 key-not-applicable diagnostic
+
+Problem: §2.3.2 defines `key-not-applicable` as a predicate — *is this key read on this node,
+given its resolved shape?* — not an enumerated list of key/context pairs. Three cases read
+directly off the assembled `Pane` tree: `distribute` on a horizontal split, `gutter` on a
+horizontal split, and `items` alongside a non-empty `children`. A fourth case, "children on a
+leaf," was flagged mid-implementation as a genuine scope ambiguity rather than guessed at: §2.3.2's
+prose mentions it, but it doesn't parse cleanly against the leaf/children invariant at
+`Config.cs:788` (non-empty `children` implies non-leaf) — so on the assembled tree, a leaf never
+carries a non-empty `children` to begin with. Routed to the architect rather than resolved by
+assumption.
+
+Ruling (architect): the fourth case is real, but not for the reason first guessed. `Config.cs:795`
+(`NormalizeSplit`) sends any pane with non-empty `children` and no `split` key to `Vertical` — so a
+pane carrying `children` is a leaf only when that list is explicitly *empty* (`children: []`). The
+trigger is `pane.Children is { Count: 0 }` (matches non-null-and-empty only; an absent key doesn't
+match) — the same leaf definition already used at `ConfigCheck.cs:486`/`:517`, not a new one. The
+load-bearing wrinkle: `PaneConfig.Children` is `List<PaneConfig>?`, but `ResolvePane`
+(`Config.cs:642`) collapses null and empty to the same `Array.Empty` on the assembled tree — so
+whether the author wrote an explicit empty `children: []` key only survives in the *raw* `UserConfig`
+DTO. Unlike the other three cases, this one has no assembled-tree representation to read at all.
+
+Fix: new `ConfigChecker.CheckKeyNotApplicable` in `ConfigCheck.cs`, wired in after
+`CheckLeafOnlyKeysOnSplits`, covering all four cases per §9.6.1's registry and the rest of §2.3.2 —
+the first three read the assembled `Pane` tree (mirroring the existing pattern), the fourth reads
+the raw `UserConfig` via `WalkRawPanes` in the same method, since it has no assembled-tree source.
+`Config.cs:764`'s `ParseSplitCore` widened `private`→`internal` for reuse. Guards against
+double-flagging with `unknown-enum-value` per §9.4.1's "one condition, one code" principle — a
+misspelled `split` (e.g. `"vertikal"`) with non-empty `children` parses to `None`, normalizes to
+`Vertical`, stays a container, so `key-not-applicable` is correctly unreachable there; only
+`unknown-enum-value` fires.
+
+Three follow-ups the architect flagged during the ruling, explicitly non-blocking for this merge,
+tracked separately (not filed as numbered backlog items yet — see next orchestration pass):
+diagnostic-code coherence (`leaf-only-key-on-split`, `border-inside-on-leaf`, and now
+`key-not-applicable` are three separate codes for what §2.3.2 frames as one predicate, worth
+checking against §9.6.1's registry before deciding whether to unify); a fifth case falls out of the
+same mechanism (`{"split": "vertical", "items": [...]}` with no `children` silently drops back to a
+leaf, `items` does nothing, currently unflagged); and a low-priority §9.4.2 prose erratum (a
+misspelled `split` does not actually collapse the statusline as the spec's example claims — the
+pane stays a container, just on the wrong axis).
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1304/1304)
+and post-merge on `main` (1311/1311, build 0 warnings/0 errors, `check-all.sh` all five checks
+green). Landed as merge commit `25ff0ab` (branch tip `898acc3`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
