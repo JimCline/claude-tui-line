@@ -137,7 +137,7 @@ Pane keys:
 |---|---|
 | `split` | `"vertical"`, `"horizontal"` — makes this a container for `children` |
 | `children` | child panes |
-| `size` | a bare column count (`"24"`), a percentage (`"40%"`), `"content"`, or `"fill"` (also the default) |
+| `size` | a bare column count (`"24"`), a percentage (`"40%"`), `"content"`, or `"fill"` (also the default). `"auto"` is a deprecated alias for `"fill"` — note that it does **not** mean `"content"` |
 | `minSize` / `maxSize` | integers — clamps on the resolved width |
 | `distribute` | `"min-rows"` — size siblings to minimise total rows rather than greedily |
 | `gutter` | integer — columns between children |
@@ -162,7 +162,8 @@ searches for the width split that makes the *whole statusline* as short as possi
 
 ### Items
 
-Sixteen items ship built in:
+Sixteen items ship built in, and **fourteen of them are in the default set** — the list you get
+when a pane omits `items`. The two marked *(opt-in)* render only where you place them yourself:
 
 | | |
 |---|---|
@@ -296,7 +297,9 @@ need to be displayed anywhere. Terminals without OSC 8 support just show the tex
 ## Layout, briefly
 
 Width is the hard constraint. The usable surface is `COLUMNS` minus a small reserve for Claude
-Code's own chrome, and every sizing decision follows from that. Panes are measured, not guessed:
+Code's own chrome — 3 columns, adjustable with a top-level `"layout": { "chromeReserve": 3 }` if
+your terminal or Claude Code version reserves a different amount. Every sizing decision follows
+from that number, so raising it shrinks everything uniformly rather than clipping one pane. Panes are measured, not guessed:
 an item's *plain* text determines its width, and colour markup never does — so adding colour can
 never change the layout.
 

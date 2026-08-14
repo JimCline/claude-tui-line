@@ -87,9 +87,22 @@ Along the split axis, each child declares `size`:
 - **`"content"`** — **the anchor**: exactly what the pane's content intrinsically needs, and
   no more. The pane declares its width; the layout does not impose one.
 - **`"NN%"`** — that share of the parent's axis extent, rounded down.
-- **`"fill"`** / **`"auto"`** (default) — an equal share of whatever is left. This is the pane
-  that *absorbs* the consequences of everyone else's sizing, and wraps its content into
-  whatever it ends up with.
+- **`"fill"`** (default) — an equal share of whatever is left. This is the pane that *absorbs*
+  the consequences of everyone else's sizing, and wraps its content into whatever it ends up with.
+- **`"auto"`** — a **deprecated alias for `fill`**. Accepted, resolves to `fill`, and `--check`
+  reports `deprecated-size-alias` (warning).
+
+  It is the one value in this vocabulary whose plain-English reading names a *different value that
+  also exists*. "Auto" sounds like "size itself to its content", which is `content` — the anchor,
+  and the opposite of taking an equal share of the leftovers. So an author who writes `auto`
+  meaning intrinsic sizing gets the absorbing pane instead, and the only symptom is a layout that
+  looks a bit off at some widths. That is §7.1's class inside the config vocabulary: accepted,
+  plausible, and not what was asked for.
+
+  Kept rather than removed because §8's own example config uses it, and because deprecating in
+  place is the safe inversion — an author who meant `fill` loses nothing and learns the canonical
+  name, while an author who meant `content` finally gets told. Do not add a third spelling of
+  either.
 
 Resolution is deterministic, in this order: **fixed → content → percent → fill**. Explicit
 numbers win over derived ones; derived-but-firm wins over relative; `fill` takes the remainder,
@@ -641,8 +654,8 @@ it declares its own width from the text it must draw. The left pane is `fill` wi
 names a column count — change the model name or the terminal width and the layout re-derives
 itself.
 
-The left pane omits `items`, so it gets the default list — all 14 builtins, i.e. today's
-statusline, reflowed to whatever width the anchor leaves it.
+The left pane omits `items`, so it gets the default list — the 14 default-set builtins (§8), i.e.
+today's statusline, reflowed to whatever width the anchor leaves it.
 
 **The arithmetic at `COLUMNS=112`**, as the shipped build actually resolves it:
 
@@ -1162,9 +1175,15 @@ the visible text between them and measures the row far too narrow.
 
 #### 3.2.1 Resolved questions
 
-- **`case`** is `upper` or `lower`. An unrecognized value passes through unchanged today. That is
-  the same silent-acceptance flaw as `"auto"` resolving to `fill` (§2.2) and is owned by the
-  config-diagnostics work, not fixed here.
+- **`case`** is `upper` or `lower`. An unrecognized value passes through unchanged today — an
+  author who writes `"case": "title"` gets the raw value and no signal, which is the
+  silent-acceptance flaw the config-diagnostics work owns. Not fixed here.
+
+  This used to cite `"auto"` resolving to `fill` as the parallel case. It is not one: `auto` is a
+  *recognised* value with a defined meaning (§2.2), now a deprecated alias reported as
+  `deprecated-size-alias`. The two are opposites — one is a legal spelling of something real, the
+  other is a value with no meaning at all — and §7.1 rules them in opposite directions, so citing
+  one as an example of the other pointed the fix the wrong way.
 - **A `{other-id}` that does not resolve drops the link, not the item.** The text still renders,
   plainly. The missing-field rule governs an item's own `{}` value; a decoration's unmet
   dependency must not delete information.
@@ -1362,7 +1381,8 @@ parity against the captured bash output. The parity baseline is not a preference
 makes the unification checkable.
 
 The consequence that matters: **the default list is not a separate rendering path.** A leaf with
-no `items` renders the 14 builtins through exactly the code an explicit `items` array uses, with
+no `items` renders the 14 default-set builtins (§8) through exactly the code an explicit `items`
+array uses, with
 the same formats. If a configured `{ "item": "context" }` and the default list can produce
 different text for the same item, there are two display implementations and the framework is
 being bypassed by its own baseline — which also means the golden parity test is guarding a path
@@ -2047,9 +2067,17 @@ Later, with splits:
   adding a split to a config must never silently add chrome: under a uniform default, nesting
   three deep would spend 12 columns on boxes before any content existed. The border stays on the
   panes that hold content, which is also where its color is worth setting.
-- `items` **absent** in a leaf ⇒ the default list: all 14 builtins in CAPTURE.md order.
-- `items` **present** ⇒ exactly those, in that order. An unknown builtin id is suppressed
-  silently.
+- `items` **absent** in a leaf ⇒ the default list: the **fourteen builtins whose `default` is
+  true**, in CAPTURE.md order. That is fourteen *of sixteen*, not all of them — `model-short` and
+  `remote-url` are opt-in and render only where an author places them. Read as "all builtins" the
+  default set gains `remote-url`, which shells out to git on every render, and the promise that
+  you only pay for that if you asked for it is quietly broken. §9.6.2's `default` flag is the one
+  definition of which is which; this sentence must never become the second.
+- `items` **present** ⇒ exactly those, in that order. An unknown builtin id is **suppressed at
+  render time and reported by `--check` as `unknown-item-id` (error)**. Both halves are the rule:
+  suppression alone is §7.1's third outcome — a config that renders short, plausibly, forever,
+  with nothing anywhere saying why — and the diagnostic is what makes the silence recoverable
+  rather than merely quiet.
 - A `{ "item": "<id>" }` entry may override `format`/`color`/`overflow` on a builtin.
 - `overflow` and `ellipsis` are inherited by a pane's items unless an item overrides
   `overflow` itself. A long path set to `truncate` inside an otherwise wrapping pane is the
@@ -2377,6 +2405,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `collapse-not-surface-level` | `border.collapse` declared on a pane — the compositor resolves one grid for the whole surface, so a per-pane value has no defined meaning | error | 2.10.1 |
 | `border-inside-on-leaf` | `"border": "inside"` on a leaf pane — a leaf has no interior, so this silences its border entirely | warning | 2.10.1 |
 | `color-down-converted` | a literal whose minimum colour system (§6.2.1) exceeds the resolved `colorSystem` — it is approximated to the nearest colour the resolved palette has. The message names *which* palette, since that is not always the sixteen | warning | 6.2.1 |
+| `deprecated-size-alias` | `size: "auto"`, which resolves to `fill`. Warned rather than accepted silently because "auto" reads as "size to content", naming a *different value that exists*. The message must say it resolved to `fill` and name `content` as the other candidate — an author told only "deprecated" re-spells it `fill` and keeps the layout they did not want | warning | 2.3 |
 | `leaf-only-key-on-split` | `overflow` or `ellipsis` declared on a split — only leaf panes consult them and they do **not** inherit, so the declaration does nothing. Exactly those two keys; `align`/`valign` are not in scope for this code | warning | 2.6 |
 | `pane-no-items` | a `content` or `fill` pane declaring no items **and no explicit `minSize`** — it collapses, so the declaration did nothing. **Not** `fixed`/`percent`, nor a `content`/`fill` pane with a `minSize`: all three hold their extent and are legitimate spacers (§2.11.1) | warning | 9.4 |
 

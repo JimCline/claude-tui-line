@@ -950,6 +950,46 @@ resolved once into `$BIN_DIR`, and the fallback is reported to the user rather t
 Same family as the expansion defect in step 5, and it is the reason that one was worth fixing:
 both are the install writing a path nothing downstream ever re-checks.
 
+### §8 walked — a count that reads as a superset, and `auto` ruled two ways
+
+First of the early sections, written before most of what now cites them. Four findings, one live
+on the implementor's critical path tonight.
+
+**`size: "auto"` had two contradictory rulings.** §2.2 lists it as a documented synonym for
+`fill`; §3.2.1 cited "`auto` resolving to `fill`" as an example of the *silent-acceptance flaw*
+the diagnostics work exists to fix. `--check` cannot satisfy both — warn or don't — and it is
+being written right now, so this was one edit away from being decided by whichever line the
+implementor read first.
+
+Ruled: **`auto` stays legal, as a deprecated alias, and warns** (`deprecated-size-alias`). Not
+because deprecation is tidy, but because of what makes this value specifically dangerous — it is
+the only one in the vocabulary whose plain-English reading names *a different value that also
+exists*. "Auto" sounds like "size to its content", which is `content`, the exact opposite of
+taking an equal share of the leftovers. So the author who most needs telling is the one who wrote
+`auto` meaning `content`, and their only symptom is a layout slightly off at some widths. The
+registry row therefore requires the message to name `content` as the other candidate: told merely
+"deprecated", that author re-spells it `fill` and keeps the layout they did not want.
+
+§3.2.1's aside is corrected in place — `case: "title"` is the honest example of a value with no
+meaning, and §7.1 rules the two in opposite directions, so citing one as an instance of the other
+pointed the fix backwards.
+
+**The count.** Three sites said "all 14 builtins" for the default list. There are **sixteen**
+builtins; fourteen are in the default set. Read literally — and "all" invites exactly that — the
+default set gains `model-short` and `remote-url`, and `remote-url` shells out to git on every
+render, breaking the promise the README makes in as many words. §9.6.2's `default` flag is the
+one definition; all three sites now defer to it rather than restating a number.
+
+**Two smaller ones.** §8 said an unknown builtin id "is suppressed silently" and stopped there —
+true, and half the rule: `unknown-item-id` is an error at `--check`, which is the half that makes
+the silence recoverable rather than permanent. And `layout.chromeReserve` appears in the very
+first example config in the spec while the README documents no such key; now documented, with
+what raising it actually does.
+
+**One clean result:** the `(SPEC.md §6b)` cross-reference resolves — `SPEC.md` is still in the
+repo. Checked because a dangling pointer in the sentence defining per-render config reload would
+be worth knowing about.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
