@@ -3385,10 +3385,26 @@ passes, hash is self-consistent, §14.3's single-command rule unviolated, status
 Sent to the implementor as an insert after #18, so it lands next to the same material. Sequencing is
 now **#18 → §14.2.2 deploy check → §9.2.2 protected-region fix → #37 → #21 → #36.**
 
-**Open, delegated rather than dropped:** §14.3's "reproduces a hash" needs two AOT publishes to
-different `-o` scratch directories compared byte-for-byte. Asked the implementor to run it at a
-natural stopping point rather than racing their build over a shared `obj/`. Neither directory may be
-`publish/`.
+**Landed as `tools/verify-deploy.sh` (`d1227bc`).** My own first statement of the contract had the
+defect it was written to prevent: I named `publish/claude-tui-line` as though there were one
+deployed artifact. There are two — `publish/`, where this repo builds, and
+`${CLAUDE_PLUGIN_DATA:-$HOME/.claude/claude-tui-line}/bin`, where `commands/setup.md` step 2 puts a
+real user's copy. A check hardcoded to the first is green on my machine while a user runs last
+week's binary, which is §14.1's failure relocated from *which version* to *whose copy*. So the path
+is `$1`, defaulting to `publish/claude-tui-line` for convenience only. Two further rulings went in
+with it: the tree side reads `plugin.json` rather than building, because deploy verification's
+premise is a machine that may be broken; and "cannot tell" exits distinctly from "mismatch", because
+folding it into failure teaches people to ignore red and folding it into success is a silent pass.
+All three exit paths were exercised, not just read. Deliberately not added to `check-all.sh` —
+everything there asks about the working tree, this asks about a particular installed copy.
+
+**~~Open, delegated~~ Measured: AOT publish is deterministic across `-o` destinations.** §14.3's
+"reproduces a hash" needed two AOT publishes to different scratch directories compared
+byte-for-byte, neither of them `publish/`. The sha256s matched, so §14.3's verification story stands
+and §14.2's hash is a check any reviewer can run rather than one only the deployer can. The result
+is also what keeps the hash and `--version` from collapsing into each other: determinism is exactly
+what makes the hash answer *which source* precisely — and exactly why it can never answer *when*,
+since output from the same commit is identical whether it was published this morning or last month.
 
 ### GitHub Actions removed; `tools/check-all.sh` is the gate
 
@@ -3406,6 +3422,13 @@ is the same check.
 anywhere.** It needs a built binary, so it lived only in the Actions `build` job. Written, reviewed,
 committed, and it has compared nothing. **Task #30 is marked complete and the gate behind it has never
 fired.** Expect its first real run to find things; those findings are latent, not new.
+
+**It has now run, against a real binary, and came back clean:** 16 items across 10 files, everything
+matching, `check-all.sh` exit 0. Recording that flat rather than as vindication. The prediction above
+was that a never-run check would find latent defects and it found none — which says the examples were
+right, and says nothing at all about whether they would have stayed right for another month
+unchecked. The finding that mattered was never "these examples are wrong"; it was that nobody could
+have known either way. That is now false, which is the entire change.
 
 `tools/check-all.sh` is `check-docs.sh` then `check-examples.sh`, both run even if the first fails. No
 build step — `check-examples.sh` already builds via `dotnet run` when `CLAUDE_TUI_LINE_BIN` is unset and

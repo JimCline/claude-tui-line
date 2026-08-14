@@ -6360,8 +6360,24 @@ next to each other, and are read by the same test run. It proves the tree is int
 It cannot observe `publish/` at all, and nothing else does either.
 
 So the check §14 actually needs is a distinct step that does not exist yet: **run the deployed
-binary and ask it.** `publish/claude-tui-line --version`, compared against the version the tree
-declares. That is the only reading that crosses the boundary where the failure lives.
+binary and ask it.** `<binary> --version`, compared against the version the tree declares. That is
+the only reading that crosses the boundary where the failure lives.
+
+**Which binary is a parameter, not a constant, and hardcoding it would reintroduce the defect at a
+different address.** There are two deployment targets, not one: `publish/`, which is where this
+repository builds, and `${CLAUDE_PLUGIN_DATA:-$HOME/.claude/claude-tui-line}/bin`, which is where
+`commands/setup.md` step 2 installs a real user's copy. A check wired to `publish/` reports green on
+the developer's machine while the installed binary a user is actually running is a release behind —
+the same all-green-and-wrong shape §14.1 is about, relocated from *which version* to *whose copy*.
+So the path is the first argument. `publish/claude-tui-line` is a convenience default for the
+common case, never the only thing the check can see.
+
+The tree-side reading must come from `plugin.json`, not from a build. The premise of deploy
+verification is a machine where the deployed thing may be wrong, which includes machines where the
+toolchain is broken or absent; a check that has to compile before it can answer is unavailable
+exactly when it is needed. And "could not determine" must exit differently from "mismatch" — folding
+an indeterminate result into failure trains people to ignore a red result, and folding it into
+success is a silent pass. Three outcomes, three exit codes: match, mismatch, cannot tell.
 
 It cannot be a unit test, and the reason is the whole point rather than a limitation. A test runs
 against what the test run just built; the artifact in question is one somebody deployed at some
@@ -6386,16 +6402,29 @@ Reading a value back out of a derived artifact is a *check* on the registry, not
 That is the same authored-versus-derived line §1 turns on, and it is the line that decides whether
 adding a reader is a cost or a safeguard.
 
-**One open question, flagged rather than ruled, because ruling it without evidence is how §9.7 got
-its own defect.** §14.3 says a reviewer "reproduces a hash" from the SDK-default output directory
-while deploys go to `publish/`. That comparison is only meaningful if a native AOT publish is
-byte-identical across two different `-o` destinations from the same source. Modern MSBuild is
-deterministic by default, and `obj/` is shared regardless of `-o`, both of which point toward yes —
-but AOT binaries can embed build paths, and "points toward" is not a measurement. **Someone must
-publish the same commit to two scratch directories and compare the hashes before §14.3's
-reproduce-a-hash sentence is relied on.** Neither directory may be `publish/`. If they differ, §14.3
-loses its verification story and §14.2's hash becomes a check only the deployer can perform — which
-would not be fatal, but is the opposite of what §14.3 currently claims.
+**One question was flagged rather than ruled here, because ruling it without evidence is how §9.7
+got its own defect. It has since been measured, and the answer was yes.** §14.3 says a reviewer
+"reproduces a hash" from the SDK-default output directory while deploys go to `publish/`. That
+comparison is only meaningful if a native AOT publish is byte-identical across two different `-o`
+destinations from the same source. Modern MSBuild is deterministic by default and `obj/` is shared
+regardless of `-o`, both of which pointed toward yes — but AOT binaries can embed build paths, and
+"points toward" is not a measurement. The same commit was published to two scratch directories,
+neither of them `publish/`, and the two binaries' sha256 matched. §14.3's reproduce-a-hash sentence
+stands, and §14.2's hash is a check any reviewer can perform rather than one only the deployer can.
+
+The determinism result is what makes §14.2's hash and this section's `--version` genuinely
+different instruments rather than two spellings of one. Determinism means the hash answers *which
+source produced this*, exactly and cheaply. It says nothing about *when the producing happened* —
+byte-identical output from the same commit is byte-identical whether it was published this morning
+or last month, which is the whole of §14.1's failure. The hash names the file; `--version` dates it;
+determinism is why the first of those is trustworthy and why it cannot be stretched to cover the
+second.
+
+The check this section calls for now exists as `tools/verify-deploy.sh` — first argument the binary
+path, tree side read from `plugin.json`, three exit codes. It is deliberately not in
+`check-all.sh`: everything there answers a question about the working tree and runs anywhere the
+repo is checked out, while this one asks about a particular installed copy and is meaningless
+without being told which. Running it is a step in deploying, not a step in checking out.
 
 ### 14.3 Producing the artifact and deploying it are different acts, and only the second is restricted
 
