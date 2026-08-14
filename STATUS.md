@@ -351,6 +351,32 @@ The pass stopped being bookkeeping and started finding things.
   could be cross-checked against a second runner's grep of the same symbols. A single verbatim
   print of prose has nothing to cross-check against except the file itself.
 
+- **Six diagnostic codes did not exist, including the two biggest.** §9.6 declares `code` values a
+  permanent compatibility surface, but nothing gathered them, so they lived scattered across six
+  sections and nobody could see the holes. Writing the registry (new §9.6.1) found that **every
+  unknown enum value and every unknown colour name** — between them the entire reason §9.4 exists,
+  and the exact diagnostics being implemented this week — had **no code string anywhere**, while
+  §3.3 already cited "the existing `unknown-item-id` and unknown-colour codes" as though one had
+  been defined. All three §9.4.1 warnings were also unnamed.
+
+  Named now, before anyone had to invent one mid-build: `unknown-enum-value`, `unknown-color`,
+  `overflow-forbidden-position`, `unknown-link-target`, `unknown-color-source`,
+  `unknown-color-token`. Rulings that came with them —
+  - **One code for all six enum keys, not one per key.** The JSON Pointer already names the key
+    and the repair is identical in every case. §4.1 splits `command-shape` from
+    `command-shell-argv` under the *same* rule because there the repairs differ. One rule, opposite
+    answers, which is how you can tell it is doing work rather than dressing up a decision.
+  - **None of the three item-id warnings reuses `unknown-item-id`.** §9.5 ruled that sharing the
+    reference walk is not sharing the verdict; the corollary is that the code must carry the
+    verdict, or a consumer branching on it can't tell error from warning. One code with two
+    severities is a code whose meaning is not fixed.
+  - **`unknown-color` is spelled the American way on purpose** — codes match the config key
+    (`"color"`), this document says colour, so the mismatch looks like a typo and will tempt a
+    tidy-up that silently breaks a shipped surface. Written down so it survives.
+  - **Tool-protocol codes are a separate table.** `stale-revision` and `cli-not-found` describe a
+    failed *invocation* and have no `path`; they must never be confused with a `diagnostics` entry
+    pointing into the user's config.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

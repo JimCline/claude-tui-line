@@ -1137,7 +1137,7 @@ Rules, each closing a silent failure:
   containing `parts` or `link` (`part-forbidden-key`), a part naming an unknown id, and an unknown
   colour. A part that names nothing is not an empty part; it is a config the author got wrong.
 
-  The last two reuse the existing `unknown-item-id` and unknown-colour codes rather than taking
+  The last two reuse the existing `unknown-item-id` and `unknown-color` codes rather than taking
   part-specific ones — it is the same condition in a new position, and the JSON Pointer already
   says where. The codes are named here rather than left to the implementation because §9.6 fixes
   a code's meaning permanently once it ships, so an ad-hoc name chosen mid-build is a name the
@@ -1906,11 +1906,31 @@ error and we would be back at "does the renderer cope" under a new name.
 **First, two tiers, because the consequence test only governs the second one.**
 
 - **Tier 1 — not in the language.** An unknown value for `size`, `style`, `align`, `valign`,
-  `overflow`, or `case`; an unknown colour name; `overflow: "overflow"` in a position §2.6
-  forbids. These are **always errors**, and consequence never enters into it. The document is not
-  a valid instance of the schema, and how gracefully the renderer absorbs a token that is not in
-  the language is beside the point — the paragraph below on unknown enum values is the argument,
-  and it stands unchanged.
+  `overflow`, or `case` (`unknown-enum-value`); an unknown colour name (`unknown-color`);
+  `overflow: "overflow"` in a position §2.6 forbids (`overflow-forbidden-position`). These are
+  **always errors**, and consequence never enters into it. The document is not a valid instance
+  of the schema, and how gracefully the renderer absorbs a token that is not in the language is
+  beside the point — the paragraph below on unknown enum values is the argument, and it stands
+  unchanged.
+
+  **One code across all six enum keys, not one per key.** The JSON Pointer in `path` already
+  names the key exactly, so a per-key code would only repeat it, and the repair is identical in
+  every case: replace the value with one from the recognized set. Compare §4.1, which *does*
+  split `command-shape` from `command-shell-argv` — there the repairs genuinely differ. Same
+  rule, opposite answers, which is how you can tell the rule is doing work rather than
+  decorating a decision already made.
+
+  **`unknown-color`, spelled the American way, on purpose.** Every code string matches the
+  config key it is about, and the key is `"color"`. This document says colour throughout, so the
+  mismatch looks like a typo and will eventually tempt someone into "fixing" it. §9.6 makes that
+  a breaking change to a shipped compatibility surface. It is spelled to match the config, and
+  it stays that way. The same goes for `unknown-color-source` and `unknown-color-token`.
+
+  `overflow: "overflow"` gets its own code rather than folding into `unknown-enum-value` because
+  the value is not unknown — it is a perfectly good member of the enum that this position
+  forbids, and the repair is to pick a different mode rather than to correct a misspelling. This
+  is the same distinction, and the same reasoning, that gives `from-derived-source` its own code
+  below.
 - **Tier 2 — in the language, referent missing.** A `from`, a `link` `{other-id}`, an `@name`, an
   `{ "item": ... }` selector. The grammar accepts any string in these positions, so validity is
   not the question; existence is. **The consequence test decides these, and only these.**
@@ -1930,21 +1950,29 @@ thing the config asked for**:
   into a config intending it never to appear, so the fallback is not a lesser version of the
   request; it is the request's negation.
 
-Applied to the five reference forms, which is where the boundary is easiest to get wrong:
+Applied to the reference forms, which is where the boundary is easiest to get wrong:
 
 | form | fallback | severity |
 |---|---|---|
 | `{ "item": "<id>" }` selector naming nothing | the item never renders | **error**, `unknown-item-id` |
 | derived `from` naming nothing | the item never renders | **error**, `unknown-item-id` |
 | derived `from` naming another derived item | the item never renders (§3.2.1) | **error**, `from-derived-source` |
-| `link` `{other-id}` naming nothing | text renders, link dropped | **warning** |
-| colour rule `from` naming nothing (inline or `colors` table) | text renders, colour falls back | **warning** |
-| `@name` naming no token (§6.3) | text renders, colour lost | **warning** |
-| `command` argv `{id}` placeholder (§4.2) | undefined — the child gets a command line nobody wrote | **error** |
+| `link` `{other-id}` naming nothing | text renders, link dropped | **warning**, `unknown-link-target` |
+| colour rule `from` naming nothing (inline or `colors` table) | text renders, colour falls back | **warning**, `unknown-color-source` |
+| `@name` naming no token (§6.3) | text renders, colour lost | **warning**, `unknown-color-token` |
+| `command` argv `{id}` placeholder (§4.2) | undefined — the child gets a command line nobody wrote | **error**, §4.2's three codes |
+
+**Three of these name an item id and none of them reuses `unknown-item-id`, deliberately.** §9.5
+already ruled that sharing the reference walk is not sharing the verdict; the corollary is that
+the *code* has to carry the verdict too, or a consumer branching on it cannot tell an error from
+a warning without also reading `severity`. One code with two severities is a code whose meaning
+is not fixed, which §9.6 forbids. `unknown-color-token` is doubly distinct: its `@name` resolves
+against the `colors` table, a different namespace from item ids entirely, so conflating the two
+lookups would report a good config as dangling.
 
 The two `from` forms landing in *different* buckets is the point, and the tempting mistake is to
-group by reference syntax — all five are `from`-or-`{}` lookups through one null-safe path, so
-they look alike from inside the resolver. Group by consequence instead. A colour is decoration
+group by reference syntax — every one of them is a `from`-or-`{}` lookup through one null-safe
+path, so they look alike from inside the resolver. Group by consequence instead. A colour is decoration
 over text that stands without it; a derivation is the item's *only* source of value, so losing it
 loses the item. Same code path, opposite outcomes.
 
@@ -2017,6 +2045,52 @@ inferred.
 **`code` values are a compatibility surface.** Once a code ships, its meaning is fixed; a new
 condition gets a new code rather than a widened old one. `/edit` and the §12.6 tools branch on
 these, and a code that quietly changes meaning makes every consumer wrong at once.
+
+#### 9.6.1 The code registry
+
+**This table is the registry. A code that is not in it does not exist**, and a new condition adds
+a row here in the same change that specifies it. That rule is not ceremony: writing it out found
+that the two *largest* error classes in §9.4 — every unknown enum value and every unknown colour
+name, which between them are the whole reason §9.4 exists — had no code string anywhere, while
+§3.3 already referred to "the existing `unknown-item-id` and unknown-colour codes" as though one
+had been defined. Scattered across six sections, that is invisible. Gathered into one table it is
+the first thing you notice.
+
+Severity is fixed per code, and that is what lets a consumer branch on `code` alone. Where one
+condition would otherwise carry two severities in two constructs, it is two codes (§9.4.1).
+
+**Config diagnostics** — entries in the `diagnostics` array, each with a JSON Pointer `path`:
+
+| code | condition | severity | §  |
+|---|---|---|---|
+| `unknown-enum-value` | `size`/`style`/`align`/`valign`/`overflow`/`case` value not in the language | error | 9.4.1 |
+| `unknown-color` | colour name matching no palette entry | error | 9.4.1 |
+| `overflow-forbidden-position` | `overflow: "overflow"` where §2.6 forbids it | error | 9.4.1 |
+| `unknown-item-id` | `{ "item": … }` selector, derived `from`, or argv `{id}` naming nothing | error | 9.4.1 |
+| `from-derived-source` | derived `from` naming another derived item — present, but forbidden here | error | 9.4.1 |
+| `unknown-link-target` | `link` `{other-id}` naming nothing; link dropped, text survives | warning | 9.4.1 |
+| `unknown-color-source` | colour rule `from` naming nothing, inline or in the `colors` table | warning | 9.4.1 |
+| `unknown-color-token` | `@name` naming no entry **in the `colors` table** — a different namespace from item ids | warning | 6.3 |
+| `command-shape` | one-element argv containing whitespace, without `shell: true` | error | 4.1 |
+| `command-shell-argv` | `shell: true` with more than one argv element; arguments would be dropped | error | 4.1 |
+| `placeholder-derived-source` | argv `{id}` placeholder naming a derived item | error | 4.2 |
+| `placeholder-command-source` | argv `{id}` placeholder naming another `command` item | error | 4.2 |
+| `placeholder-env-collision` | two ids mangling to one `CLAUDE_TUI_LINE_VAL_<ID>` under `shell: true` | error | 4.2 |
+| `part-source-count` | a compound part with zero, or more than one, source | error | 3.3 |
+| `part-forbidden-key` | a compound part carrying `parts` or `link` | error | 3.3 |
+| `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
+| `min-exceeds-max` | `minSize` greater than `maxSize` on one pane — unachievable everywhere | error | 9.8 |
+| `collapsed-edge-conflict` | adjacent panes disagree about a shared edge under `border.collapse` | warning | 2.10 |
+
+**Tool-protocol codes** — a different channel, and consumers must not confuse the two. These
+appear as a top-level `{ "ok": false, "code": … }` describing a failed *invocation*, never as an
+entry in `diagnostics` describing a place in the user's config. They have no `path`, because
+there is no config position to point at:
+
+| code | condition | § |
+|---|---|---|
+| `stale-revision` | the config changed under a §12.6 tool between read and write | 12.6 |
+| `cli-not-found` | the binary could not be located; the error names every path tried | 12.6 |
 
 ### 9.7 `--version`, and the two places a version number wants to live
 
