@@ -375,6 +375,20 @@ Table-driven where possible; every test feeds fixtures, no test shells out excep
    newer mtime on the deployed binary does not mean it came from the current source. Any claim
    that something is "shipped and verified" names the SHA-256 it was verified against.
 
+   **Producing the artifact and deploying it are different acts, and only the second is
+   restricted.** `publish/` is what the user's live statusline executes, so writing there
+   replaces something of the user's while it is running — that is a deploy, and it requires
+   approval. Development and verification build to the SDK-default output instead
+   (`src/ClaudeTuiLine/bin/Release/net10.0/osx-arm64/publish/`), which is where an implementor
+   or a reviewer exercises the binary, measures latency, and reproduces a hash.
+
+   This does not reintroduce the drift above. The drift came from *two* ways to produce the
+   deployed artifact, one of which was a human remembering to copy a file. There is still
+   exactly one command that writes `publish/`, it is still the one printed above, and identity
+   is still established by hash — the only thing added is who may run it. A build nobody
+   deployed cannot diverge from a deploy, and a hash comparison between the two is precisely
+   how you confirm it didn't.
+
    AOT trim/analysis warnings from
    Spectre.Console must be inspected: warnings affecting only unused features (tables, live
    display, exception rendering) are acceptable and get listed in the implementation

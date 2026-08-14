@@ -54,6 +54,27 @@ public static class PaneAlignParsing
 }
 
 /// <summary>
+/// SPEC-V2-FRAMEWORK.md §2.3.1: how a vertical split's <c>content</c>/<c>fill</c> children divide
+/// their share of the width. <see cref="Greedy"/> is the existing single-pass allocation (§2.3),
+/// unchanged and still the default; <see cref="MinRows"/> searches for the width split that
+/// minimizes the tallest candidate's row count instead.
+/// </summary>
+public enum PaneDistribute
+{
+    Greedy,
+    MinRows,
+}
+
+public static class PaneDistributeParsing
+{
+    public static PaneDistribute Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "min-rows" => PaneDistribute.MinRows,
+        _ => PaneDistribute.Greedy,
+    };
+}
+
+/// <summary>
 /// One entry of a leaf pane's <c>items</c> list (§8). <see cref="Item"/> selects a builtin by id;
 /// a <c>command</c> item instead carries its own <see cref="Id"/> plus <see cref="Command"/>/
 /// <see cref="Shell"/>/<see cref="TtlSeconds"/>/<see cref="TimeoutMs"/> (§4/§5) and leaves
@@ -104,4 +125,5 @@ public sealed record Pane(
     int? MaxSize = null,
     int Gutter = 0,
     PaneValign Valign = PaneValign.Top,
-    PaneAlign Align = PaneAlign.Left);
+    PaneAlign Align = PaneAlign.Left,
+    PaneDistribute Distribute = PaneDistribute.Greedy);

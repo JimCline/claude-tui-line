@@ -271,6 +271,84 @@ different algorithm with the same output and the wrong cost, and it must not shi
 that the tests pass. **Latency is re-measured against the p90 budget as an acceptance condition
 for this feature, not as follow-up work.**
 
+#### 2.3.1 The allocation algorithm
+
+Search the **answer**, not the input. The naive framing — try allocations, count rows — searches
+a space that grows with the number of panes. Inverting it collapses the problem: instead of
+asking "how few rows does this allocation cost?", ask "is a surface of `T` rows achievable at
+all?" That question is cheap, and it is monotone in `T`, which is the whole game.
+
+**The two functions this rests on.**
+
+For a candidate pane `i`, `rows_i(w)` is its greedy row count at width `w` — the existing packer,
+called unchanged. It is non-increasing in `w`. Define its inverse:
+
+```
+minWidth(i, T) = min { w : rows_i(w) <= T }
+```
+
+the narrowest width at which pane `i` fits in `T` rows or fewer. Compute it by binary search over
+`[minSize_i, maxSize_i]`, which is valid precisely because `rows_i` is monotone. That is
+`O(log w)` packings per pane per `T`, and it is what keeps the search over breakpoints rather
+than widths: the binary search *lands on* a breakpoint without ever enumerating the widths
+between them.
+
+**Feasibility.** A vertical split places panes side by side, so the surface is as tall as its
+tallest pane. Therefore a surface of `T` rows is achievable exactly when every candidate can be
+made to fit in `T` rows with the extent available:
+
+```
+feasible(T)  ⇔  Σ minWidth(i, T)  ≤  R
+```
+
+where `R` is the extent remaining after fixed and percent panes and gutters have taken theirs. If
+any `minWidth(i, T)` exceeds that pane's `maxSize`, `T` is infeasible regardless of `R` — the
+bound was declared hard and the policy does not overrule it.
+
+**The search.** `minWidth(i, T)` is non-increasing in `T`, so `feasible(T)` is monotone: once a
+row count is achievable, every larger one is too. Scan `T` upward from 1 and stop at the first
+feasible value. `T` is bounded by the largest item count in any candidate pane — around 20 in
+practice — so a linear scan is both adequate and clearer than a binary search over `T`. The
+result is exact, not a heuristic.
+
+**This is O(N) in the number of panes, which is why it is the algorithm and not merely one.** A
+search over allocations would be exponential in `N` and would have forced restricting the feature
+to two-pane splits. Searching over `T` instead makes the pane count almost free: each additional
+pane adds one term to a sum. The two-pane case that motivated the feature is just `N = 2`, with no
+special path.
+
+**Distributing the surplus.** The winning `T` leaves `S = R − Σ minWidth(i, T)` unallocated.
+Giving a pane more width can never increase its row count, so distributing `S` is always safe and
+is purely the tiebreak from above made concrete — spend it on evenness:
+
+- Water-fill: repeatedly give one cell to the currently-narrowest candidate, subject to its
+  `maxSize`. Equivalently, level the widths up to a common ceiling and hand any remainder left to
+  right.
+- **A `content` pane is capped at its natural width.** Extra columns beyond what its content needs
+  are not a benefit to it — fitting its content is the entire meaning of `content` — so surplus
+  past that point flows to the `fill` siblings instead.
+- If every candidate is capped and surplus remains, the split leaves it unconsumed, exactly as
+  `greedy` would. The policy chooses among legal allocations; it does not invent a place to put
+  extent that no pane asked for.
+
+**Worked, against the config that motivated this.** Two candidates, `R = 108` at `COLUMNS = 112`
+— 112 less the 3-column `chromeReserve` is a 109-column surface, less 1 for the gutter between
+the two panes, exactly as §2.9 computes it.
+`T = 1`: the left pane's ten items need far more than 108 columns on one row, so
+`minWidth(left, 1)` alone exceeds `R` — infeasible. `T = 2`: still infeasible. `T = 3`:
+`minWidth(left, 3) + minWidth(right, 3) ≤ 108` — feasible, so `T = 3` wins and the surplus is
+water-filled. Three packings-with-binary-search per pane per `T`, four values of `T`, two panes:
+tens of packer calls, which is the cost this section demanded.
+
+**Acceptance conditions**, both of which must be demonstrated rather than argued:
+
+1. **Optimality** — on a config small enough to brute-force, the allocation this returns must
+   equal the best found by exhaustively laying out every legal width. The brute force belongs in
+   the test, never in the shipped path; it exists to prove the fast algorithm agrees with the
+   slow, obviously-correct one.
+2. **Latency** — p90 re-measured against the budget (§5) with `min-rows` active across widths
+   100–240. A regression here fails the feature, per the paragraph above.
+
 ### 2.4 Compositing — the part that must not be improvised
 
 A leaf pane renders to a **`PaneBuffer`**: an ordered list of rows, each carrying its markup
@@ -299,6 +377,27 @@ Compositing rules, all load-bearing:
 5. **`Profile.Width` stays at the sentinel** for all pane rendering. Panes are sized by our
    arithmetic; Spectre is used for styling and border glyphs, not for layout. The one thing
    that must never happen is Spectre deciding a break we did not ask for.
+
+**Emptiness — nothing to say means nothing drawn, but only where the user did not ask for a
+shape.** SPEC.md:353 required "no segments ⇒ zero output even with border enabled". That rule
+survives the pane rewrite and it applies at two levels, differently:
+
+- **An empty surface emits nothing at all** — no border, no blank row, zero bytes. A statusline
+  is a permanent fixture at `refreshInterval: 1`; an empty box occupies terminal rows forever
+  in exchange for no information, which is strictly worse than absence.
+- **An empty `content` or `fill` pane collapses**, taking its gutter with it, and its siblings
+  divide the extent it released. Rendering a two-column box around nothing is the same trade as
+  above, in miniature.
+- **An empty `fixed` or `percent` pane keeps its extent and its border.** The user named a
+  number, and the same principle that keeps those panes out of `min-rows` candidacy (§2.3)
+  keeps them here: an explicit instruction is not overruled because the framework judged the
+  result pointless. Reserving declared space is often exactly the intent — a pane that holds
+  its position while its content comes and goes.
+
+This deliberately accepts that a collapsing pane shifts its siblings. That shift is visible and
+self-explanatory; a permanent empty box is neither, and a user who wants stability has both
+`fixed` and `distribute: "even"` (§2.3) to ask for it in the config rather than receiving it as
+an accident of the compositor.
 
 ### 2.5 A pane's content sees only its own pane
 
@@ -472,7 +571,43 @@ looks like a complete one.
 Clipped rows remain subject to §2.4: every emitted row is exactly `COLUMNS - chromeReserve`
 display columns. Degrading height never licenses a ragged row.
 
-### 2.9 The two-pane test — the acceptance target for splits
+#### A pane may shrink-wrap its height
+
+`height(vertical split) = max(height(children))` (§2.2), and every pane fills its band. A pane
+with two rows of content beside a pane with three therefore draws a three-row box with one row
+of nothing inside it. `valign` does not help: it positions content *within* the box, so it
+relocates the blank row rather than removing it.
+
+A pane may instead declare **`height: "content"`** (default `"fill"`), and its border box closes
+immediately under its last content row. The band rows it does not occupy are surface background,
+outside any border.
+
+The vocabulary is deliberately the same as §2.3's width `size` — `content` means "as tall as
+what is in me", `fill` means "take the band" — because it is the same question asked on the
+other axis, and a second spelling for one idea is §1's rule being broken for the sake of a
+prettier word.
+
+**`valign` keeps its meaning and gains a second subject.** Under `fill` it places the content in
+the box; under `content` the box is exactly the content, so `valign` places the *box* in the
+band. One concept — where does the short thing sit inside the tall space — and no new knob.
+
+Three things this does not do, each worth stating because each is a plausible expectation:
+
+- **It does not make the statusline shorter.** Total rows are still `max` over the children; the
+  left pane's three rows still cost three rows. This changes where border glyphs are drawn, not
+  how much vertical space the surface occupies. Anyone reaching for it to save a row wants
+  §2.3's `distribute: "min-rows"` instead.
+- **It does not interact with the degrade ladder.** `maxRows` bounds the surface; shrink-wrapping
+  reduces no pane's content and so can never bring a surface inside a budget it was outside.
+- **It is not the empty-pane rule.** §2.4 collapses a pane with *no* content. This is a pane with
+  *less* content than its siblings, which is the ordinary case rather than the degenerate one.
+
+**This must be authored into §2.10, not bolted onto it afterwards.** Under the shared-edge model
+two adjacent panes share one column of vertical edge; when one box is shorter, that column is
+shared for part of its run and belongs solely to the taller pane for the rest, and the junction
+where the shorter box closes against it is a glyph case the grid does not otherwise produce.
+That is tractable — the glyph table gains rows — but a border grid designed on the assumption
+that every column is a full-height rectangle will not accommodate it later without being redone.
 
 The user's stated next test, and what "splits work" means concretely:
 
@@ -569,17 +704,38 @@ packs into whatever the anchor leaves it. Every compositing rule in §2.4 fires 
 padding, height mismatch, `valign`, and a per-pane border all fail visibly here and are nearly
 invisible in a single-pane test.
 
-### 2.10 Borders are a grid, not per-pane boxes
+### 2.10 Borders are a grid the compositor owns, in one of two visual languages
 
-A border is **not a property of a pane**. It is a property of the **boundary**, and a boundary
-between two panes is one physical line that both of them touch. This is CSS's
-`border-collapse: collapse`, and it is the model the whole section rests on.
+A border is **not a property of a pane**. It is a property of the **boundary**, and the
+compositor is the only thing that draws one. **Panes stop drawing boxes**: a pane renders
+*content only*, into its own inner rectangle, and the compositor overlays a single resolved
+**border grid** across the finished surface. This is not a new authority — it is §2.4's existing
+rule ("the compositor is the sole authority on the surface") finally applied to borders too, and
+it deletes the per-pane border-wrapping path along with the re-padding defence that path needed.
 
-The consequence that matters: **panes stop drawing boxes.** A pane renders *content only*, into
-its own inner rectangle. The compositor then overlays a single resolved **border grid** across
-the finished surface. This is not a new authority — it is §2.4's existing rule ("the compositor
-is the sole authority on the surface") finally applied to borders too, and it deletes the
-per-pane border-wrapping path along with the re-padding defence that path needed.
+That much is unconditional. What is a choice is whether a boundary between two siblings is drawn
+as **one line or two** — and both are legitimate visual languages, so the framework offers both
+rather than ruling one out:
+
+```json
+"border": { "collapse": false }
+```
+
+- **`"collapse": false` (default)** — *separate boxes*. Each pane's edges are its own; adjacent
+  panes are two complete boxes with the gutter between them. **This is what ships today**, and
+  it is the default because a change of visual language is not something a framework should
+  perform on an existing config during an upgrade.
+- **`"collapse": true`** — *shared edges*. Adjacent edges resolve to one physical line that both
+  panes touch. This is CSS's `border-collapse: collapse`, which is where the name comes from.
+
+**The reason to collapse is width, not taste.** With gutter `g`, a separate boundary spends
+`g + 2` columns — A's right edge, the gutter, B's left edge — while a collapsed one spends
+exactly `1`. Every interior boundary hands back `g + 1` columns to content. On a statusline at
+`COLUMNS=112` that is the difference between a pane wrapping and not, which is why this is a
+config knob and not a stylesheet.
+
+Everything below — per-edge selection, the junction table, the reserve decomposition, the
+degrade order — applies to **both** models. Only the collapsing rule and the arithmetic differ.
 
 **Per-edge selection.** Each pane declares which of its four edges it wants:
 
@@ -597,11 +753,16 @@ with Excel-style shorthands, which are the friendly form and expand to exactly t
 "border": "none"
 ```
 
-**Collapsing.** A physical line is drawn if **any** adjacent pane asks for it. Where two panes
-disagree about colour or style, the **first requester in tree declaration order wins** — chosen
-because it is deterministic and explainable, not because it is clever. `--check` (§9) reports
-every conflict it resolves, since a silently-dropped colour is exactly the kind of thing a user
-will otherwise spend an evening on.
+**Collapsing** applies only under `collapse: true`. A physical line is drawn if **any** adjacent
+pane asks for it. Where two panes disagree about colour or style, the **first requester in tree
+declaration order wins** — chosen because it is deterministic and explainable, not because it is
+clever. `--check` (§9) reports every conflict it resolves, since a silently-dropped colour is
+exactly the kind of thing a user will otherwise spend an evening on.
+
+Under `collapse: false` no conflict can arise, because neighbours never contend for one line:
+each pane's edges are drawn as it declared them, in its own colour and style. That is a second
+reason it is the safe default — the mode that needs a tie-break rule is the one the user opts
+into.
 
 **Junctions.** At each grid position, the glyph is a pure function of which of the four
 directions carry a line. Implement it as one 16-entry table per style, keyed by the `NESW`
@@ -616,18 +777,31 @@ edge glyphs and the content padding. Split them.
 reserve(p)  =  (edges p is charged for)  +  padLeft + padRight
 ```
 
-A shared edge is charged **once, to the split**, never twice to the two neighbours — that
-double-charge is the whole bug this section exists to avoid. So for a vertical split with `N`
-children and interior dividers on, the dividers consume `N − 1` columns, and
+Under `collapse: true` a shared edge is charged **once, to the split**, never twice to the two
+neighbours — that double-charge is the whole bug this section exists to avoid. So for a vertical
+split with `N` children and interior dividers on:
 
 ```
-avail = splitInnerWidth − (N − 1)      // dividers, in place of the old gutter
+collapse: true    avail = splitInnerWidth − (N − 1)              // one column per boundary
+collapse: false   avail = splitInnerWidth − (N − 1) × (g + 2)    // two edges plus the gutter
 ```
 
-The divider **occupies the gutter**: with dividers on, `gutter` must be ≥ 1 and defaults to 1;
-a `gutter` greater than 1 centres the line with blanks either side (`  │  `). Everything else in
-§2.3 — the floor table, the six-step allocation, the fixpoint — is untouched and takes the new
+and the second line is the arithmetic in force today, which is why `borderReserve` reads 4 per
+pane in §2.9's worked example. The two formulas are the whole sizing difference between the
+models; nothing else in §2.3 changes.
+
+Under `collapse: true` the divider **occupies the gutter**: `gutter` must be ≥ 1 and defaults to
+1; a `gutter` greater than 1 centres the line with blanks either side (`  │  `). Everything else
+in §2.3 — the floor table, the six-step allocation, the fixpoint — is untouched and takes the
 per-pane `reserve(p)` wherever it currently reads `borderReserve`.
+
+**`height: "content"` is cheap under `collapse: false` and expensive under `collapse: true`.**
+Separate boxes are independent, so a pane whose box closes early introduces no new glyph case at
+all — its neighbour's edges are unaffected because they were never shared. Collapsed edges are
+where the difficulty lives: a shorter box makes one column shared for part of its run and solely
+the taller pane's for the rest, plus a junction where the short box closes against it. The
+practical consequence is a sequencing one — **`height: "content"` can ship against the default
+model without waiting for collapsing**, and only its collapsed-mode junctions need the grid.
 
 **Edges are static config, and this is load-bearing.** Colours may be derived from a provider's
 value (§6); edges may **never** be. An edge has extent, so a value-derived edge would put a
@@ -704,6 +878,19 @@ shows the text unchanged.
 
 `{}` is the item's own value; `{other-id}` is another item's resolved value. No second lookup
 mechanism — the same registry that resolves items resolves these.
+
+**A referenced item does not have to be displayed, and this is the normal case rather than an
+edge case.** The example above is exactly it: `remote-url` is a 40-plus-column URL that no one
+wants occupying a statusline, and the entire point of referencing it is to make the short branch
+name clickable instead. If `{other-id}` resolved only against items already placed in a pane,
+the feature would work solely in the configuration nobody wants, and the example printed above
+would not work at all. Resolution goes to the registry, which does not know or care what is on
+screen.
+
+A referenced id that names nothing must be distinguishable from one that names a real item,
+because silently dropping the link makes a typo and a working config produce identical output.
+`--check` rejects a `link` template naming an unknown id; at render time the link is dropped
+per the best-effort rule below, but that path is the fallback, not the diagnosis.
 
 **Zero-width is the whole problem.** `\e]8;;URL\e\\text\e]8;;\e\\` costs no columns and is
 roughly 40–80 characters, so anything that measures it as text puts the pane border that many
@@ -782,6 +969,74 @@ free; truncation still needs its own branch so the closer precedes the ellipsis.
 The test that matters here asserts the link *survives* a wrap of a coloured segment. A row that
 is merely the right width passes even when both the colour and the link have been silently
 thrown away.
+
+### 3.3 Compound items — several sources, several colours, one item
+
+`format` decorates one value and `color` paints all of it, so a label cannot be dimmer than the
+value it labels. Splitting the label into its own item does not work either: the separator is a
+*between-items* construct, so `agent:` and `ORCHESTRATOR` come out as `agent: | ORCHESTRATOR`.
+There is no way to say "these fragments are one thing" while colouring them differently.
+
+A **compound item** declares `parts` instead of a value, and renders them concatenated with
+**no separator between them**:
+
+```json
+{ "id": "agent-badge", "parts": [
+    { "text": "agent:", "color": "grey" },
+    { "from": "agent", "extract": "[^:]+$", "case": "upper", "color": "aqua" }
+] }
+```
+
+A part carries the same vocabulary a pane item already carries — `extract`, `case`, `format`,
+`color` — because a part *is* an item fragment, and inventing a second vocabulary for it would
+put two spellings on one behaviour. What a part adds is exactly one source, and it must be
+exactly one of:
+
+- `text` — a literal
+- `item` — a registry or `command` id, rendered as that item renders
+- `from` — a derived value, per §3.2's derivation rules
+
+**This is not a second rendering path.** A compound resolves to the same thing every item
+resolves to: one `Segment`, one `Plain` string that is the concatenation of the parts, and
+markup carrying a colour change per part. `Segment` already holds multiple styled spans — that
+capability is what builtins use to colour `62%` inside `ctx:62% (125k/200k)`. Compounds expose
+it to config; they do not add machinery. §4.1's `match` + `colors` compiles to the same span
+list, and must keep doing so: `match` stays the better surface for carving *one* string, `parts`
+is the general form for composing *several*, and both produce one list of `(text, colour)` spans
+that the renderer cannot tell apart.
+
+Rules, each closing a silent failure:
+
+- **Width is unaffected.** `Plain` is the concatenation; markup never contributes width. Defect
+  0's invariant is untouched, and this is the reason compounds are safe to add to a layout
+  engine that sizes by measurement.
+- **`truncate` cuts by `Plain` across the concatenation**, and the surviving spans keep their
+  markup — including closing any span the cut lands inside. A truncation that severs a colour
+  span mid-way and emits an unclosed SGR bleeds colour into the border. This is the one
+  genuinely new implementation hazard here and needs its own test.
+- **A literal is bound to its adjacent value and disappears with it.** When a value part
+  resolves to empty, the literal part next to it — the one after it if there is one, otherwise
+  the one before — is dropped too. `agent:` does not survive an absent agent, and ` ✓` does not
+  survive an absent PR. This is §4.1's "the literal text bound to it goes too", with array
+  adjacency doing the job the format string's adjacency does there.
+- **If every value part is empty, the item renders nothing** and collapses per §2.4. A compound
+  of only literals is a constant, which is legal and occasionally what someone wants.
+- **Item-level `color` is the default** for parts that do not set one.
+- **A part may not contain `parts`.** One level, for §3.2.1's reason: nesting makes resolution
+  order observable, and an order-dependent config is one whose behaviour depends on how the
+  parser happened to walk it.
+- **A part may not carry `link`.** `link` stays at item level and wraps the whole compound.
+  Per-part links mean nesting OSC 8 inside a styled span, which is §3.2.2's restyle hazard with
+  more edges; it is deferred deliberately rather than overlooked.
+- **Semantic colour precedence is unchanged.** A part naming a semantic item keeps its
+  value-derived threshold colour unless that part sets `color` — §6's rule, applied one level in.
+- **`--check` rejects** a part with zero or more than one source, a part naming an unknown id, a
+  part containing `parts` or `link`, and an unknown colour. A part that names nothing is not an
+  empty part; it is a config the author got wrong.
+
+**This is the sixth construct that names an item by id**, after pane `items`, colour-token
+`from`, derived `from`, link `{other-id}`, and §4.2's argv placeholders. §5's resolution set must
+enumerate it, and defect 11 is what happens when it does not.
 
 ## 4. Providers
 
@@ -984,17 +1239,85 @@ Rules, each closing a way this could otherwise fail silently:
   precedence is unchanged — a configured colour replaces a decorative one, never a value-derived
   threshold.
 
+### 4.2 Handing a resolved value to a user's own command
+
+§4.1 makes a user-defined item first-class, but a `command` item can only see what its own
+process can discover. Everything the framework has *already resolved* — the model name, the
+agent, the context percentage — is invisible to it, so a script that wants to react to one has
+to re-derive it, usually by parsing the same stdin JSON the framework already parsed. That is
+a second implementation of a behaviour that exists, which §1 forbids.
+
+**A `command` item's argv may contain `{item-id}` placeholders, expanded before the process is
+spawned.**
+
+```json
+{ "id": "agent-badge", "command": ["~/bin/agent-badge.sh", "{agent}", "{model}"],
+  "ttlSeconds": 5 }
+```
+
+This is deliberately *not* a new syntax. It is the same `{}` / `{other-id}` vocabulary §3.2
+already defines for link templates, resolved by the same resolver against the same registry —
+one mechanism wearing a second hat, rather than a fourth way to name a value. It inherits
+§3.2.1's constraint unchanged: a placeholder names a **registry id or a `command` id, never a
+derived item**, and a `command` item's placeholders may not name another `command` item.
+Command-to-command references would need a topological sort, which §3.2.1 deferred; allowing
+them here would smuggle in the order-dependence that rule exists to prevent.
+
+**Expansion is argv-only, and this is a security boundary rather than a convenience.**
+`CommandProvider` passes each argv entry through `ProcessStartInfo.ArgumentList`, where it
+reaches the child verbatim with no shell involved — a value containing `;`, `$(...)`, or a
+newline is data. When `shell: true`, `command[0]` is instead handed to `sh -c`, and substituting
+a resolved value into that string is command injection: a branch named `; rm -rf ~` would
+execute. Values reaching a statusline are *attacker-influenceable* in the ordinary case — a
+branch name comes from whoever opened the pull request.
+
+So, for `shell: true`, the framework substitutes nothing and instead exports each referenced
+value into the child environment as `CLAUDE_TUI_LINE_VAL_<ID>`, with the id upper-cased and
+non-alphanumerics replaced by `_`. The script reads `"$CLAUDE_TUI_LINE_VAL_AGENT"`, quoted,
+and the value stays data. This joins the `CLAUDE_TUI_LINE_ITEM_ID` and
+`CLAUDE_TUI_LINE_PANE_WIDTH` variables `CommandProvider` already sets.
+
+Only *referenced* values are exported, never all of them. Exporting everything would force
+every item to resolve on every render, and `remote-url` is lazily probed (`ItemContext`)
+precisely because it costs a subprocess — an eager export would reintroduce that cost
+unconditionally and silently.
+
+**These placeholders must join the up-front resolution set (§5), and this is the load-bearing
+part.** §5 requires every value be resolved once before sizing begins, and enumerates the set as
+"every item referenced by any pane's `items`, plus every item named by a colour token's `from`".
+That enumeration is incomplete today: it omits link-template `{other-id}` references, which is
+the mechanical cause of defect 11 — `{remote-url}` resolves only when `remote-url` happens to be
+placed in a pane and therefore lands in the dictionary for a different reason. Adding argv
+placeholders to that set without fixing the enumeration would reproduce the same bug in a second
+place, with the same silence.
+
+`--check` rejects a placeholder naming an unknown id, a derived item, or a `command` item, for
+the §3.2 reason: a dangling reference and a working one must not render identically.
+
 ## 5. Execution model — the hard part
 
 The process is spawned **every second**. Naive shelling out per item per tick would destroy
 the 12.6ms budget that justified Native AOT in the first place.
 
 **Values are resolved exactly once per render, before sizing begins.** Every item referenced by
-any pane's `items`, plus every item named by a colour token's `from` (§6) even when it is never
-displayed, is fetched in a single up-front phase — builtins synchronously, `command` providers
-concurrently through the cache with one shared timeout window — producing a plain synchronous
-dictionary. Sizing reads that dictionary. Post-sizing colour resolution reads the same
-dictionary. No provider ever runs twice in one render.
+any pane's `items`, plus every item named by a colour token's `from` (§6), a derived item's
+`from` (§3.2), a link template's `{other-id}` (§3.2), a `command` item's argv placeholder
+(§4.2), or a compound part's `item` / `from` (§3.3) — **each of them even when the referenced
+item is never displayed** — is fetched in a
+single up-front phase — builtins synchronously, `command` providers concurrently through the
+cache with one shared timeout window — producing a plain synchronous dictionary. Sizing reads
+that dictionary. Post-sizing colour resolution reads the same dictionary. No provider ever runs
+twice in one render.
+
+**The enumeration above is the whole feature, and getting it wrong fails silently.** An earlier
+version of this paragraph listed only pane `items` and colour-token `from`, and that omission is
+the mechanical cause of defect 11: a link's `{remote-url}` resolved only when `remote-url`
+happened to be placed in a pane and therefore entered the dictionary for an unrelated reason,
+so the feature appeared to work in tests and did nothing in the configuration users actually
+want. Any future construct that names an item by id is incomplete until it is added to this
+list. A reference that resolves in one config and silently drops in another is the failure mode
+this list exists to prevent — so it is not "the set of displayed items", it is **the set of
+referenced items**, and those are not the same set.
 
 This is a **correctness requirement, not an optimisation**, and it is the reason the §2.3
 fixpoint terminates. That fixpoint's convergence argument assumes a pane's intrinsic measurement

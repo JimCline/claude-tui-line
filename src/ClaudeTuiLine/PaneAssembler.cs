@@ -74,7 +74,7 @@ public static class PaneAssembler
     // §2.6: "overflow" is only legal for a surface's single root pane; inside any split it would
     // corrupt the neighbor to its right, so a pane rendered through this path (always inside a
     // split) coerces an explicit "overflow" down to "truncate" rather than honoring it.
-    private static OverflowMode ResolveOverflow(Pane pane) =>
+    internal static OverflowMode ResolveOverflow(Pane pane) =>
         pane.Overflow is OverflowMode mode && mode != OverflowMode.Overflow ? mode : OverflowMode.Truncate;
 
     private static PaneRow AlignRow(PaneRow row, int targetWidth, PaneAlign align)

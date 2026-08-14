@@ -66,7 +66,9 @@ public static class SizeResolver
             return new ResolvedPane(pane, outerWidth, horizontalChildren);
         }
 
-        var alloc = ResolveVertical(pane, outerWidth, ctx, values, measureOverride);
+        var alloc = pane.Distribute == PaneDistribute.MinRows
+            ? ResolveVerticalMinRows(pane, outerWidth, ctx, values)
+            : ResolveVertical(pane, outerWidth, ctx, values, measureOverride);
         var resolvedChildren = new List<ResolvedPane>(alloc.Children.Count);
         for (var i = 0; i < alloc.Children.Count; i++)
         {
@@ -312,6 +314,250 @@ public static class SizeResolver
         }
     }
 
+    // ---- vertical axis: min-rows distribution (§2.3.1) ----
+
+    /// <summary>
+    /// Test-only diagnostic: counts calls to <see cref="RowCountAt"/> — one packer invocation
+    /// each — so a test can assert the actual cost of a min-rows resolve instead of reasoning
+    /// about it. Production callers never read this.
+    /// </summary>
+    internal static int MinRowsPackerInvocationCount;
+
+    // Structurally mirrors AllocateWithDrop's drop-retry loop rather than sharing it: the two
+    // allocate differently enough (AllocateWithDrop threads a per-child request array that
+    // min-rows has no equivalent of) that forcing a shared implementation would risk the
+    // unchanged greedy path for a small amount of duplication.
+    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
+        var current = split.Children;
+
+        while (true)
+        {
+            var result = AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values);
+
+            var tooSmall = false;
+            for (var i = 0; i < result.Grants.Count; i++)
+            {
+                if (ClassifySize(current[i].Size).Kind != SizeKind.Fixed && result.Grants[i] < 1)
+                {
+                    tooSmall = true;
+                    break;
+                }
+            }
+
+            if (!tooSmall || current.Count <= 1)
+            {
+                return result;
+            }
+
+            current = current.Take(current.Count - 1).ToList();
+        }
+    }
+
+    // One run of the min-rows allocation (§2.3.1): fixed and percent panes take their width
+    // first, mirroring AllocateOnePass's own step order and matching R's own prose definition —
+    // "the extent remaining after fixed and percent panes and gutters have taken theirs" — then
+    // every content/fill pane is a candidate for the row-count search.
+    private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
+        var innerAvail = Math.Max(0, splitOuterWidth - (split.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0));
+        var gutterTotal = split.Gutter * Math.Max(0, children.Count - 1);
+        var avail = Math.Max(0, innerAvail - gutterTotal);
+
+        var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
+        var grants = new int[children.Count];
+        var rem = avail;
+
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (kinds[i].Kind == SizeKind.Fixed)
+            {
+                grants[i] = kinds[i].FixedValue;
+                rem -= grants[i];
+            }
+        }
+
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (kinds[i].Kind == SizeKind.Percent)
+            {
+                var raw = (int)Math.Round(kinds[i].Pct * avail, MidpointRounding.AwayFromZero);
+                var grant = Math.Clamp(raw, 0, Math.Max(0, rem));
+                grants[i] = grant;
+                rem -= grant;
+            }
+        }
+
+        var candidateIndices = new List<int>();
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (kinds[i].Kind is SizeKind.Content or SizeKind.Fill)
+            {
+                candidateIndices.Add(i);
+            }
+        }
+
+        if (candidateIndices.Count > 0)
+        {
+            var r = Math.Max(0, rem);
+            var solved = SolveMinRows(children, candidateIndices, r, ctx, values);
+            for (var ci = 0; ci < candidateIndices.Count; ci++)
+            {
+                grants[candidateIndices[ci]] = solved[ci];
+            }
+        }
+
+        return new AllocResult(children, grants);
+    }
+
+    // SPEC-V2-FRAMEWORK.md §2.3.1: T is the achievable row count, searched from 1 upward — the
+    // first T for which every candidate's minWidth(i, T) fits within r wins, since feasible(T) is
+    // monotone (a larger T only relaxes each candidate's minWidth). Bounded by the most rows any
+    // candidate could ever need — its own rendered segment count, since no row holds more than
+    // one segment fewer than the next — never by an arbitrary constant. Falls back to every
+    // candidate at its own floor when no T up to that bound is feasible (the split as a whole is
+    // over-constrained), the same outcome AllocateOnePass's own step 4 falls back to; the outer
+    // drop-retry loop in ResolveVerticalMinRows exists for exactly this case.
+    private static int[] SolveMinRows(IReadOnlyList<Pane> children, IReadOnlyList<int> candidateIndices, int r, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
+        var n = candidateIndices.Count;
+        var candidates = candidateIndices.Select(i => children[i]).ToList();
+        var lo = candidates.Select(Floor).ToArray();
+        var hi = new int[n];
+        for (var ci = 0; ci < n; ci++)
+        {
+            hi[ci] = Math.Max(Math.Min(candidates[ci].MaxSize ?? r, r), lo[ci]);
+        }
+
+        var maxT = 1;
+        foreach (var candidate in candidates)
+        {
+            maxT = Math.Max(maxT, CandidateSegments(candidate, ctx, values).Count);
+        }
+
+        for (var t = 1; t <= maxT; t++)
+        {
+            var minWidths = new int[n];
+            var feasible = true;
+            var sum = 0;
+
+            for (var ci = 0; ci < n; ci++)
+            {
+                var w = MinWidthForRowCount(candidates[ci], lo[ci], hi[ci], t, ctx, values);
+                if (w is not int width)
+                {
+                    feasible = false;
+                    break;
+                }
+
+                minWidths[ci] = width;
+                sum += width;
+            }
+
+            if (feasible && sum <= r)
+            {
+                var surplus = r - sum;
+                return WaterFillSurplus(candidates, minWidths, hi, surplus, ctx, values);
+            }
+        }
+
+        return lo;
+    }
+
+    // minWidth(i, T): the narrowest outer width at which candidate i's real rendering — the same
+    // packer every other render path calls — achieves T rows or fewer. rows_i(w) is non-increasing
+    // in w (more width never adds rows), so binary search over [lo, hi] is valid; returns null when
+    // even hi cannot reach T rows.
+    private static int? MinWidthForRowCount(Pane candidate, int lo, int hi, int t, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
+        if (RowCountAt(candidate, hi, ctx, values) > t)
+        {
+            return null;
+        }
+
+        var low = lo;
+        var high = hi;
+        while (low < high)
+        {
+            var mid = low + (high - low) / 2;
+            if (RowCountAt(candidate, mid, ctx, values) <= t)
+            {
+                high = mid;
+            }
+            else
+            {
+                low = mid + 1;
+            }
+        }
+
+        return low;
+    }
+
+    // rows_i(w): candidate i's real row count at outer width w, via the same packer every leaf
+    // actually renders through (PaneAssembler.RenderLeafRows's own path) — §2.3.1 requires "the
+    // existing packer, called unchanged", not a re-derived width twin.
+    private static int RowCountAt(Pane candidate, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
+        MinRowsPackerInvocationCount++;
+
+        var borderReserve = candidate.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+        var innerWidth = Math.Max(0, outerWidth - borderReserve);
+        var segments = CandidateSegments(candidate, ctx, values);
+        var overflow = PaneAssembler.ResolveOverflow(candidate);
+        var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, candidate.Ellipsis, allowFallback: false);
+        return buffer.Rows.Count;
+    }
+
+    // SPEC-V2-FRAMEWORK.md §2.3.1: the winning T's leftover width is spent purely on evenness —
+    // repeatedly handing one cell to the currently-narrowest eligible candidate — since giving any
+    // candidate more width than its own minWidth(i, T) can never raise its row count above T. A
+    // content candidate is capped at its own natural (unwrapped) width, matching the existing
+    // MeasureRequest call greedy itself uses: extra columns past that point are not a benefit to
+    // it, so surplus flows on to whichever candidates can still use it. If every candidate is
+    // capped and surplus remains, it is left unspent, exactly as greedy leaves an unconsumed
+    // remainder.
+    private static int[] WaterFillSurplus(IReadOnlyList<Pane> candidates, int[] minWidths, int[] hi, int surplus, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
+        var n = candidates.Count;
+        var widths = (int[])minWidths.Clone();
+        var cap = new int[n];
+
+        for (var ci = 0; ci < n; ci++)
+        {
+            cap[ci] = ClassifySize(candidates[ci].Size).Kind == SizeKind.Content
+                ? Math.Min(hi[ci], MeasureRequest(candidates[ci], null, ctx, values))
+                : hi[ci];
+        }
+
+        var remaining = surplus;
+        while (remaining > 0)
+        {
+            var narrowest = -1;
+            for (var ci = 0; ci < n; ci++)
+            {
+                if (widths[ci] >= cap[ci])
+                {
+                    continue;
+                }
+
+                if (narrowest == -1 || widths[ci] < widths[narrowest])
+                {
+                    narrowest = ci;
+                }
+            }
+
+            if (narrowest == -1)
+            {
+                break;
+            }
+
+            widths[narrowest]++;
+            remaining--;
+        }
+
+        return widths;
+    }
+
     // ---- intrinsic measurement: the same fits-or-degrade decision the renderer uses (LeafContent) ----
 
     private static int MeasureRequest(Pane pane, int? grantedOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
@@ -323,10 +569,20 @@ public static class SizeResolver
 
     private static int MeasureInnerContentWidth(Pane pane, int? innerCap, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
     {
+        var segments = CandidateSegments(pane, ctx, values);
+        return innerCap is int cap ? LongestWrappedRowWidth(segments, cap) : UnwrappedWidth(segments);
+    }
+
+    // The segment list a pane actually renders — the default 14 builtins when no items are
+    // configured, or its resolved items otherwise — shared by the existing content-width
+    // measurement above and the min-rows row-count search below so the two never drift apart.
+    // Color is never resolved here: RowLayout.Wrap's row-break decision only ever inspects
+    // Segment.Plain.Length.
+    private static IReadOnlyList<Segment> CandidateSegments(Pane pane, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    {
         if (pane.Items.Count == 0)
         {
-            var segments = SegmentBuilder.Build(ctx);
-            return innerCap is int defaultCap ? LongestWrappedRowWidth(segments, defaultCap) : UnwrappedWidth(segments);
+            return SegmentBuilder.Build(ctx);
         }
 
         var packedGroup = new List<Segment>();
@@ -342,7 +598,7 @@ public static class SizeResolver
             packedGroup.Add(SegmentBuilder.BuildItemSegment(decision.Text, null));
         }
 
-        return innerCap is int cap ? LongestWrappedRowWidth(packedGroup, cap) : UnwrappedWidth(packedGroup);
+        return packedGroup;
     }
 
     // The same unwrapped-single-row arithmetic RowLayout.Wrap's packing loop produces, so a
