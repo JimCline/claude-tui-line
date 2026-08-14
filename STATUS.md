@@ -3313,6 +3313,52 @@ Touched: new §12.6.11; §12.6.5's two superseded clauses marked in place (forwa
 §12.6.9); `commands/edit.md` step 5 rewritten with the compare-and-branch. check-docs green at 108
 cited sections.
 
+## §3.2.2 discharged, and three rulings back to the implementor (§9.2.2, §9.4.4)
+
+**§3.2.2 — nothing to rule.** It was on the shortlist as a short leaf section making a concrete
+code claim; the code already satisfies every part of it. `PaneRenderer.RestyleSimple` unwraps the
+OSC 8 link, restyles the inner markup, and re-wraps (`:112`–`:119`); `TruncateSegment` closes the
+link before appending the ellipsis (`:73`–`:79`), so clicking `…` cannot navigate; and
+`HyperlinkTests.cs:76 WrapOfLinkedColoredSegment_EveryContinuationRow_KeepsBothColorAndLink` is
+exactly the test §3.2.2 said was the one that matters — asserting the link *survives* a wrap of a
+coloured segment, rather than asserting a row is the right width. Fourth discard of this pass.
+
+**Three flags from the implementor's `eca7477`, all three answered, two of them corrections to me.**
+
+1. **`JsonException.LineNumber` is 0-indexed; the row must show `+ 1`.** They found this by crafting
+   a real malformed config rather than by reading the API docs. Accepted and pinned into §9.2.2.
+   Worth stating why it is not a nitpick: §9.2.2 justifies the entire composition by calling the
+   message "the part a user can reconstruct by opening the file at the line we just named." That is
+   true only if the number names the line they land on. An off-by-one does not degrade the row, it
+   inverts the argument that produced it.
+
+2. **A real JSON Pointer costs ~34 columns, so protecting the whole prefix makes rung 5 the common
+   case.** Also theirs, also measured. My ruling said protect the position and truncate the message;
+   at 45 columns that cannot fit the protected region at all and drops to the bare tool name —
+   correct behaviour of the rule as written, wrong outcome, trading a row that still says *where*
+   for one that says nothing, at exactly the widths the ladder exists for. **Corrected: the
+   protected region is `line <n>` alone.** The Pointer and the message are one truncatable tail.
+   The irreplaceability rule was right; I had applied it one level too coarsely — the line number
+   cannot be recovered by any means, the Pointer is what you see when you open the file at that
+   line. Also ruled: when the tail is cut entirely the separator goes with it, no dangling `: `.
+
+3. **§9.4.4's `--config` sentence excluded the render path, and they were right not to follow it.**
+   It derived "which modes read `--config`" from "which modes can reach exit 3", giving `--check`
+   and `--preview`. Render reads config and exits **0** with a diagnostic row (§9.2.1), so exit-3
+   reachability was never the property in question — *loading config* is. Sentence corrected in
+   place with the reasoning kept, because the general form is worth having: **a derived list is only
+   as good as the property it is derived from, and a derivation that happens to produce the right
+   answer today is not thereby correct.** §9.4.4's own thesis is that derived beats enumerated. It
+   does — and this is the price: an enumeration is wrong visibly, a bad derivation is wrong with a
+   reason attached. Building the table from the corrected rule surfaced a live regression
+   (`--config` silently accepted alongside `--version`/`--items`/`--colors` since `b182025`) that
+   the old wording would have ratified.
+
+Note on their `--check --columns` message rewording: no wording was ever spec'd for those two, and
+naming the mode that was actually selected is better than naming the one that wasn't. No objection.
+
+check-docs green at 108 cited sections.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

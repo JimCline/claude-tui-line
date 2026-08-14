@@ -3228,6 +3228,31 @@ degrade toward what the user cannot otherwise obtain.** Reason text is recoverab
 Nothing here normalizes or rewrites .NET's wording — inventing our own parser vocabulary would be a
 second registry of a table we do not own (§9.6.3 makes the same argument for colour names).
 
+**Two corrections from building it, both found by measuring rather than by reading.**
+
+**`LineNumber` is 0-indexed and the row is 1-indexed.** `JsonException.LineNumber` counts from
+zero; every editor the reader will open the file in counts from one. Display `LineNumber + 1`. The
+paragraph above justifies the whole composition by saying the message is "the part a user can
+reconstruct by opening the file at the line we just named" — which is true only if the number names
+the line they will actually land on. An off-by-one here does not degrade the row, it inverts its
+argument. (`BytePositionInLine` is 0-indexed on the same convention, and is not in the composed
+form; if a rung ever adds a column, it takes the same `+ 1`.)
+
+**Only `line <n>` is protected from rung 4, not the whole composed prefix.** A real JSON Pointer is
+long — `$.surface.pane.items[0]` is twenty-three columns, putting the full prefix near thirty-four
+— so protecting all of it means that at 45 columns the ladder cannot fit the protected region and
+falls to rung 5, the bare tool name. That is the correct behaviour of the rule as first written and
+the wrong outcome: it trades a row that still says *where* for a row that says nothing, at exactly
+the widths this ladder exists for.
+
+Apply the irreplaceability rule one level finer than it was first applied. `line <n>` cannot be
+recovered by any means available to the reader. The Pointer largely can — it is what they will see
+when they open the file at that line — and the message text certainly can. So the protected region
+ends after the line number; the Pointer and the message together are one truncatable tail, cut from
+the right. At 45 columns the row degrades to a shortened Pointer rather than to nothing, and rung 5
+returns to being the floor it was described as rather than the ordinary case. When the tail is cut
+away entirely, the separator goes with it — no row ends in a dangling `,` or `: `.
+
 ### 9.3 Where `--preview` gets its payload
 
 `--preview` renders the same pipeline the statusline renders, so it needs the same stdin JSON.
@@ -3886,8 +3911,20 @@ something false, and the exit code is the only chance to say so. This is §2.3.2
 axis, so what is a warning in config is a usage error here.
 
 Which modifier applies where is not a new list either. `--config` is read by the modes that load
-config, which §9.4 already settles by saying which can reach exit 3: `--check` and `--preview`.
-`--columns` is read by the mode that renders, which is `--preview` alone. `--json` is read by the
+config — `--check`, `--preview`, **and the render path**. `--columns` is read by the mode that
+renders, which is `--preview` alone.
+
+> **Corrected.** This sentence used to derive that set from "which modes can reach exit 3", giving
+> `--check` and `--preview` and silently excluding render. That derivation was already wrong when
+> written and became load-bearing once §9.2.1 shipped: the render path reads config and, when it
+> cannot, exits **0** with a diagnostic row rather than exit 3. Exit-3 reachability was never the
+> property being asked about — *loading config* is — and picking the wrong discriminator excluded
+> the one mode whose config-reading §9.2.1 exists to specify. Building the table from the corrected
+> rule immediately surfaced a live regression that the old wording would have ratified. The general
+> form: **a derived list is only as good as the property it is derived from, and a derivation that
+> happens to produce the right answer today is not thereby correct.** §9.4.4's whole argument is
+> that derived beats enumerated; it does, and this is the failure mode that buys — an enumeration
+> is wrong visibly, a bad derivation is wrong with a reason attached. `--json` is read by the
 modes §9.6 gives a JSON shape to — `--check`, `--items`, `--colors`, `--preview` — and `--version`
 has none, so `--version --json` is exit 2. Every one of those is a lookup in a section that already
 had to be right for another reason.
