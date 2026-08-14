@@ -1049,7 +1049,7 @@ public class ConfigCheckTests
 
         var diagnostics = ConfigChecker.Check(config);
 
-        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable");
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/distribute");
     }
 
     [Fact]
@@ -1125,7 +1125,7 @@ public class ConfigCheckTests
 
         var diagnostics = ConfigChecker.Check(config);
 
-        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable");
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/gutter");
     }
 
     [Fact]
@@ -1169,7 +1169,7 @@ public class ConfigCheckTests
 
         var diagnostics = ConfigChecker.Check(config);
 
-        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable");
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/items");
     }
 
     [Fact]
@@ -1300,6 +1300,173 @@ public class ConfigCheckTests
 
         Assert.Contains(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/children");
         Assert.Contains(diagnostics, d => d.Code == "pane-no-items" && d.Path == "/surface/pane");
+    }
+
+    [Fact]
+    public void SplitOnChildlessPaneWithItems_ReportsKeyNotApplicableOnSplit()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/split" && d.Severity == DiagnosticSeverity.Warning);
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/items");
+    }
+
+    [Fact]
+    public void SplitOnChildlessPaneWithNoItems_ReportsKeyNotApplicableOnSplit()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/split" && d.Severity == DiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public void SplitWithNonEmptyChildren_ProducesNoKeyNotApplicableOnSplit()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/split");
+    }
+
+    [Fact]
+    public void ExplicitNoneSplitOnChildlessPane_ProducesNoKeyNotApplicableOnSplit()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "none",
+                    Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/split");
+    }
+
+    [Fact]
+    public void AbsentSplitKey_ProducesNoKeyNotApplicableDiagnostic()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable");
+    }
+
+    [Fact]
+    public void MisspelledSplitOnChildlessPane_DoesNotAlsoReportKeyNotApplicableOnSplit()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertcal",
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-enum-value" && d.Path == "/surface/pane/split");
+        Assert.DoesNotContain(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/split");
+    }
+
+    [Fact]
+    public void SplitWithEmptyChildrenList_ReportsBothChildrenAndSplitKeyNotApplicable()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Children = new List<PaneConfig>(),
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/children");
+        Assert.Contains(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/split");
+    }
+
+    [Fact]
+    public void NestedSplitOnChildlessPane_ReportsAtNestedPath()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { Split = "vertical", Items = new List<PaneItemJsonConfig> { new() { Item = "model" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "key-not-applicable" && d.Path == "/surface/pane/children/1/split" && d.Severity == DiagnosticSeverity.Warning);
     }
 
     [Fact]
