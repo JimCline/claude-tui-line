@@ -165,6 +165,8 @@ searches for the width split that makes the *whole statusline* as short as possi
 These ship built in. The ones marked *(opt-in)* render only where you place them yourself;
 everything else is in the **default set** — the list you get when a pane omits `items`:
 
+<!-- items-table: checked against `--items --json` by tools/check-examples.sh (rule C) -->
+
 | | |
 |---|---|
 | `directory` | the current working directory |

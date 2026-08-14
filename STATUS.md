@@ -2213,6 +2213,43 @@ own bullet list says outright, neither newly written, both passing `check-citati
 time. Cheapness is the property: it costs nothing, so it gets done on citations nobody suspects,
 and an unsuspected citation is the only kind this hides in.
 
+### The README's item table was the one item list nothing checked
+
+§9 forbids an item list embedded in a skill or command's prose, and the audit that looked for
+violations found the command prompts clean — 1–3 mentions each, all translation examples, and both
+`migrate.md` and `edit.md` say in as many words not to copy a list out of the README. What the
+audit found instead was the README's own table: sixteen ids with descriptions, asserting both the
+membership of the set and which two of them are opt-in.
+
+**It is not the forbidden second registry, and deleting it would be the wrong fix.** Nothing
+automated reads it; it is what a person reads before deciding to build, and a README that cannot
+say what ships is worse than one that can. But "not forbidden" is not "checked" — the table made
+two claims the binary knows the answer to, and nothing compared them. Rule C in
+`check-examples.sh` now does: id-set equality in both directions, plus each row's `(opt-in)` marker
+against `default: false`. The table is marked with an HTML comment because a prose table has no
+in-band string to anchor on the way `--items` plain output does, and the README's other tables must
+stay unscanned.
+
+This costs a README row per new item. That is not §1's zero-edit promise breaking — §1 exempts
+whatever is genuinely unique about the new thing, and one line saying what it reports is exactly
+that. The check does not write the row; it refuses to let anyone not notice.
+
+**The negative test caught a live bug in the check itself.** The first draft read the flag with
+`jq '.default // true'`. jq's `//` fires on `false` as well as `null`, so every opt-in item read
+back as a default one and the opt-in half of the rule was dead — passing on a correct README and
+passing exactly as hard on a wrong one. It surfaced only because the drift cases were driven in all
+four directions, and two of them failed to fail. This is §10.1's rule again: a check is not
+verified by watching it pass.
+
+### `check-examples.sh`'s `dotnet run` path had never once executed
+
+Reported by the implementor, who ran it with `CLAUDE_TUI_LINE_BIN` unset for the first time. SDK
+10.0.301's `dotnet run` does not claim `--nologo`, so it was forwarded past `--` into the app's own
+argv at every position tried. The app answered `unrecognized argument: '--nologo'` — as a valid
+JSON error object, which is why this presented as `--items --json was not the expected shape`
+rather than as anything resembling a build failure. `-v quiet` alone suppresses the banner; the
+flag is gone. Every previous run of this check had gone through the stub.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

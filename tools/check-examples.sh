@@ -39,6 +39,27 @@
 #      render. §4.3's `worktree:api(feature/ABC-123)` is the case in point: correct, and
 #      nothing this check should ever object to.
 #
+#   C. A markdown table preceded by `<!-- items-table -->` is an *enumeration* of the
+#      builtin items, and must be exactly the live set — no id missing, none listed that
+#      no longer exists, and each row's `(opt-in)` marker agreeing with `default: false`.
+#      Rules A and B check that a documented value is real; this one checks that a
+#      documented *list* is complete, which is the only failure a per-row check cannot
+#      see. The README's table is the case that motivated it.
+#
+#      §9 forbids an item list embedded in a skill or command's prose, and both prompts
+#      say in as many words not to copy one out of the README — so nothing automated
+#      trusts this table. What it is, is the list a person reads before deciding to
+#      build, and a README that cannot say what ships is worse than one that can. The
+#      resolution is neither to delete it nor to trust it: make the binary the oracle
+#      here too. TABLE_MARKER below, and it must be an HTML comment because a prose
+#      table has no in-band string of its own to anchor on the way --items output does —
+#      and the README's other tables (config keys, colours) must stay unscanned.
+#
+#      This does mean adding an item costs a README row. That is not the §1 zero-edit
+#      promise being broken: §1 exempts "whatever is genuinely unique" about the new
+#      thing, and a one-line description of what it reports is exactly that. The check
+#      does not write the row, it refuses to let you not notice.
+#
 # Columns are split on two-or-more spaces, so the padding widths in §9.6.2.2's illustration
 # are not load-bearing — deliberately. That table is a convenience view; --json is the
 # contract (§9.6.2.2), and pinning its whitespace here would freeze the half that was
@@ -53,6 +74,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
 ANCHOR='Item kinds: builtin'
+TABLE_MARKER='items-table'
 
 die() { echo "check-examples: $*" >&2; exit 2; }
 
@@ -73,15 +95,27 @@ elif command -v dotnet >/dev/null 2>&1; then
     # Deliberately not `tail -1`: that works only while the serializer emits one line, and
     # would break the day anyone sets WriteIndented — for a reason nobody would look for
     # here. MSBuild does not emit a line beginning with `{`.
+    #
+    # No `--nologo`: SDK 10.0.301's `dotnet run` does not claim that flag, so it is
+    # forwarded past `--` into the app's own argv at any position, and the app answers
+    # `unrecognized argument: '--nologo'` — a valid JSON error object, which is why this
+    # presented as "--items --json was not the expected shape" rather than as a build
+    # failure. `-v quiet` alone suppresses the banner.
     items_json=$(dotnet run --project src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release \
-        --nologo -v quiet -- --items --json 2>/dev/null | sed -n '/^[[:space:]]*{/,$p')
+        -v quiet -- --items --json 2>/dev/null | sed -n '/^[[:space:]]*{/,$p')
 else
     die "no binary. Set CLAUDE_TUI_LINE_BIN, or install the .NET SDK so this can build one."
 fi
 
 [[ -n "$items_json" ]] || die "--items --json produced no output."
 
-pairs=$(printf '%s' "$items_json" | jq -r '.items[] | [.id, .example] | @tsv' 2>/dev/null) \
+# `.default` is emitted as a bool by §9.6.2's shape. Absent means default, but NOT via
+# `.default // true`: jq's `//` fires on `false` as well as `null`, so every opt-in item
+# would read back as a default one and rule C's opt-in half would be dead — passing on a
+# correct README and passing just as hard on a wrong one. `has` asks the question that was
+# meant. The bug was live here until the negative test for a flipped flag failed to fail.
+pairs=$(printf '%s' "$items_json" \
+    | jq -r '.items[] | [.id, .example, (if has("default") then .default else true end)] | @tsv' 2>/dev/null) \
     || die "--items --json was not the expected shape (no .items[] with .id and .example)."
 
 [[ -n "$pairs" ]] || die "--items --json listed no items — refusing to report clean."
@@ -95,7 +129,7 @@ fi
 
 printf '%s\n' "$pairs" > "/tmp/check-examples-pairs.$$"
 
-awk -v anchor="$ANCHOR" '
+awk -v anchor="$ANCHOR" -v marker="$TABLE_MARKER" '
 # A placeholder is a description of a value, not a claim about one. Only these two forms:
 # an angle-bracketed slot, or an elision. Anything else is an assertion and gets checked.
 function is_placeholder(s) {
@@ -103,19 +137,30 @@ function is_placeholder(s) {
 }
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 
-# The pairs file: id \t live example.
+# Closing a marked table is where absence becomes visible: a row that is never written
+# has no line to report against, so the finding is reported against the marker.
+function close_table(   id) {
+    if (!intable) return
+    for (id in known)
+        if (!(id in claimed))
+            printf "%s:%d: items table omits `%s`, which --items lists\n", file, tableline, id
+    for (id in claimed) delete claimed[id]
+    intable = 0
+}
+
+# The pairs file: id \t live example \t default. @tsv escapes any embedded tab, so a
+# three-way split cannot be confused by an example containing one.
 FNR == NR {
-    tab = index($0, "\t")
-    if (tab > 0) {
-        id = substr($0, 1, tab - 1)
-        live[id] = substr($0, tab + 1)
-        known[id] = 1
-        seen_example[substr($0, tab + 1)] = 1
+    if (split($0, f, "\t") >= 3) {
+        live[f[1]] = f[2]
+        known[f[1]] = 1
+        isdefault[f[1]] = f[3]
+        seen_example[f[2]] = 1
     }
     next
 }
 
-FNR == 1 { file = FILENAME; fence = 0; nbuf = 0 }
+FNR == 1 { close_table(); file = FILENAME; fence = 0; nbuf = 0 }
 
 {
     # --- Rule A: every "example": "…" must be a value the binary emits. ------------------
@@ -128,6 +173,46 @@ FNR == 1 { file = FILENAME; fence = 0; nbuf = 0 }
         if (val != "" && !is_placeholder(val) && !(val in seen_example))
             printf "%s:%d: \"example\": \"%s\" — no item renders that\n", file, FNR, val
         line = substr(rest, q + 1)
+    }
+
+    # --- Rule C: a marked table must enumerate the live set exactly. ---------------------
+    if (!fence && index($0, "<!--") > 0 && index($0, marker) > 0) {
+        intable = 1; tableline = FNR; tablerows = 0; tablegap = 0
+        next
+    }
+    if (intable && !fence) {
+        if ($0 !~ /^[ \t]*\|/) {
+            # A blank line has to be allowed between the marker and the table: most
+            # markdown parsers need one, and an HTML comment butted against the header
+            # row stops the table rendering at all. Two is the whole budget, so a marker
+            # that names nothing is reported as omitting every item rather than drifting
+            # down the file and swallowing an unrelated table.
+            if (tablerows == 0 && ++tablegap <= 2) {
+                # still looking for the header row
+            } else
+                close_table()
+        } else {
+            tablerows++
+            row = $0
+            sub(/^[ \t]*\|/, "", row); sub(/\|[ \t]*$/, "", row)
+            n = split(row, col, /\|/)
+            c1 = trim(col[1])
+            # Only a lone backticked token is an assertion about an id. The header and the
+            # `|---|---|` separator fall out here, as does any row of prose.
+            if (n >= 2 && c1 ~ /^`[^`]+`$/) {
+                id = substr(c1, 2, length(c1) - 2)
+                if (!(id in known)) {
+                    printf "%s:%d: items table lists `%s`, which --items does not\n", file, FNR, id
+                } else {
+                    claimed[id] = 1
+                    optin = (index(col[2], "(opt-in)") > 0)
+                    if (optin && isdefault[id] == "true")
+                        printf "%s:%d: `%s` is marked (opt-in); --items reports default: true\n", file, FNR, id
+                    else if (!optin && isdefault[id] != "true")
+                        printf "%s:%d: `%s` is not marked (opt-in); --items reports default: false\n", file, FNR, id
+                }
+            }
+        }
     }
 
     # --- Rule B: rows inside a block that identifies itself as --items output. -----------
@@ -157,6 +242,10 @@ FNR == 1 { file = FILENAME; fence = 0; nbuf = 0 }
         nbuf++; buf[nbuf] = row; bufline[nbuf] = FNR
     }
 }
+
+# A table that runs to the last line of the last file still has to be closed, or the one
+# arrangement where the omission check never fires is the one nobody would think to test.
+END { close_table() }
 ' "/tmp/check-examples-pairs.$$" "${FILES[@]}" > "/tmp/check-examples.$$" 2>/dev/null
 
 status=0
