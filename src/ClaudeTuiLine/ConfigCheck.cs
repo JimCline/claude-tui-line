@@ -544,6 +544,13 @@ public static class ConfigChecker
                 yield return new Diagnostic(path + "/children", DiagnosticSeverity.Warning, "key-not-applicable",
                     "\"children\" has no effect on a leaf; a pane is a split only when its children list has at least one entry");
             }
+
+            if (ConfigLoader.ParseSplitCore(pane.Split) is PaneSplit.Vertical or PaneSplit.Horizontal
+                && pane.Children is not { Count: > 0 })
+            {
+                yield return new Diagnostic(path + "/split", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"split\" has no effect on a leaf; a pane is a split only when its children list has at least one entry");
+            }
         }
     }
 
