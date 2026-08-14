@@ -5841,6 +5841,49 @@ This is the same shape as §12.6.9's fresh-machine finding, one turn later in th
 the gap was a caller who never supplied `baseRevision`; here it is a caller who supplies it,
 is correctly refused, and then defeats the refusal by complying with it.
 
+#### 12.6.12 A bare `stale-revision` refusal manufactures the retry it exists to prevent
+
+§12.6.11's rule lands cleanly on the command path and does not transfer to the MCP path, because
+the two layers divide the same knowledge differently. In `/claude-tui-line:edit` one actor does
+everything: the model reads the file, works out the change, re-reads, and writes. It holds both
+copies, so "compare them and branch" is an instruction it can actually follow.
+
+At the MCP layer nobody holds both halves. **The server has the revisions and no idea what the
+caller meant; the model has the intent and cannot see the file.** `set_config` receives a finished
+config, not "remove the second item" — the intent was resolved into bytes before the call was made,
+which is exactly the resolution §12.6.11 says goes stale.
+
+That asymmetry decides what the refusal has to contain. A bare `{ "code": "stale-revision" }` leaves
+the model one affordance: call `get_config`, take the new revision, resend the config it already
+built. That is not a caller behaving badly — it is the only move the response makes available, and
+it is precisely the clobber §12.6.11 names. **A refusal that offers no way to re-derive is a
+refusal that produces the naive retry**, and it will do so while logging a correct rejection first.
+
+1. **The `stale-revision` error must carry the current config and the current revision in its
+   payload**, not a code and a sentence. Then the model's cheapest next move is to look at what
+   changed, which is the branch — and the expensive move, ignoring a config it was just handed and
+   resending its own, is one no model takes by accident. The refusal stops being a wall and becomes
+   the second read.
+
+2. **The tool description must state the compare-and-branch rule**, because on this path it is the
+   only documentation anything reads. Nothing loads `commands/edit.md` when a model calls
+   `set_config` directly — the description *is* the procedure, and a rule that lives only in a
+   command file is absent from the layer with no command. Description and error payload are not
+   redundant: the description is what makes the first call careful, the payload is what makes the
+   retry correct, and neither substitutes for the other.
+
+3. **The server must not attempt the merge itself.** It is the actor without the intent, so merging
+   would mean inferring from two configs what the caller was trying to do — and inferring it
+   *authoritatively*, since the result would then be written and reported as a clean compare-and-swap
+   success. That is §12.6.11's failure with an extra step and better paperwork. The server's job ends
+   at handing back enough for someone who knows the intent to redo the work.
+
+The rules point opposite directions at the two layers, which is worth stating plainly so neither is
+read as the other. In `/edit` the model must not proceed **when the two reads differ**. Over MCP it
+must not proceed **when the write is refused** — it has no two reads to compare, and the refusal is
+its only signal that there was anything to compare. Same finding; the trigger moves because the
+knowledge does.
+
 ### 12.7 `/claude-tui-line:setup`
 
 Numbered last and run first. `setup` is the command the README sends every new user to, it is the
