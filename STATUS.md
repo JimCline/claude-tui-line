@@ -2738,6 +2738,33 @@ conversation is a ruling nobody can cite.
    nothing failing. All collector note texts go in §9.8.1's list. The §9.3 preamble lines stay
    content-pinned only; they address a person reading a terminal.
 
+## `9.2.1` was ruled but not specified; the gap was the word "truncated" (`9.2.2`)
+
+Assigned #17 to the implementor and then read `9.2.1` to check it was implementable before they
+got there. It rules the hard part correctly — the render path exits 0 and draws the reason rather
+than falling back to defaults — and then hands the easy-looking part over in four words: "truncated
+to the usable width."
+
+Four words, four unanswered questions. Is the prefix the program name or `argv[0]`? Which path is
+named in the row where the user never typed one? What gets dropped first when a home-directory path
+plus a parse error does not fit in 60 columns? And whose ellipsis — the built-in one, or the
+`ellipsis` setting that lives in the file that could not be read?
+
+The third is the one with a wrong answer that looks right. Truncating right-to-left is what any
+implementation does by default, and it keeps the path while throwing away the reason — leaving a row
+that says a file is broken without saying what is wrong with it, which is the one substring of the
+message with no value on its own, since the user can already see the file. So `9.2.2` rules the
+degradation as an explicit ladder of five rungs rather than a sentence about truncation. A ladder is
+five tests; a sentence is zero.
+
+The general shape, which is the third time it has come up this week: **a section that rules the
+contested half of a decision will hand the uncontested half over in a phrase, and the phrase is
+where the defect lives.** Nobody argues about truncation, so nobody writes it down, so it gets
+implemented by whoever is typing at the time.
+
+Verified the new count is actually checked rather than assumed: mutated "five rungs" to "six" and
+confirmed `check-counts` goes red naming `SPEC-V2-FRAMEWORK.md:3007`, then restored. Green again.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

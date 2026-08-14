@@ -2977,6 +2977,52 @@ For every path other than the render path — `--check`, `--preview`, `--items` 
 applies unchanged. Those have a caller who can read an exit code, which is precisely the
 distinction §5's exit-code rule was scoped to.
 
+#### 9.2.2 The diagnostic row is an interface, and "truncated to the usable width" is four unanswered questions
+
+§9.2.1 rules *that* the render path draws the reason, and shows one sample of what that looks
+like. A sample is not a format. The row it describes is the only thing a user will ever see when
+their config breaks — they will read it, screenshot it, and paste it into an issue — which makes
+it an interface in exactly the sense §9.8.1 means when it pins the collector notes: the moment
+something is written to be read, an unpinned string drifts and nothing fails.
+
+**The prefix is the literal string `claude-tui-line`, never `argv[0]`.** Under a plugin install
+`argv[0]` is an absolute path into a versioned directory, and under a shim it is whatever the
+shim was named. The person reading this row is trying to find out which tool is complaining so
+they can go look for its config; a forty-character path answers a question they did not ask and
+buries the one they did.
+
+**The path is the one that was actually read, resolved.** In row two of §9.2.1's table the user
+never typed a path — the config was found by the §5 search order — and that is precisely the row
+where naming the file is the entire information content. "Something in your config is broken" is
+not actionable when the config could be in any of the searched locations.
+
+**The reason is the payload; the path is context.** This decides the degradation order, which
+matters more than it sounds like it should: statuslines are routinely 60 columns inside a split
+pane, and a home-directory path plus a parse error does not fit in 60 columns. Truncating right
+to left — the obvious implementation — throws away the reason and keeps the path, producing a row
+that says a file is bad without saying what is wrong with it. That is the one substring of the
+message with no value on its own, since the user can already see the file.
+
+**Ruled: a degradation ladder, applied in order, each rung tried only when the one above it does
+not fit.** The ladder has five rungs:
+
+1. `claude-tui-line: <path>: <reason>` — the whole row.
+2. The same, with `<path>` elided from the middle to whatever budget remains after the prefix and
+   the reason, keeping the leading `/` or `~` and the file name.
+3. `claude-tui-line: <reason>` — the path dropped entirely.
+4. The same, with `<reason>` truncated from the right and marked with an ellipsis.
+5. As much of `claude-tui-line` as fits. Below about eighteen columns nothing useful is possible,
+   and this rung exists so that the code has a defined answer rather than an exception.
+
+Each rung is a test, which is the point of writing it as a ladder rather than as a sentence about
+truncation.
+
+Two constraints on how the fitting is computed. The width is the full terminal width — this row
+has no border and no gutter — and it must come from the same function the render path uses, for
+the reason §9.3.4 gives: a second measurement is a second answer. And the ellipsis is the
+built-in one, never the configured `ellipsis`, on the same grounds §9.2.1 gives for drawing no
+border — that setting lives in the file that could not be read.
+
 ### 9.3 Where `--preview` gets its payload
 
 `--preview` renders the same pipeline the statusline renders, so it needs the same stdin JSON.
