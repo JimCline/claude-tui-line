@@ -3447,8 +3447,60 @@ twenty lines away — because **a switch is not enumerable**, so a shared parser
 behaviours agree and can never make the documented set agree. Fix is to make the set data; `size` is
 exempt, its list mixes literals with descriptions of a form.
 
-Open: whether the README and spec carry a third and fourth copy. §9.6.2.2 covers item examples, not
-enum tokens.
+~~Open: whether the README and spec carry a third and fourth copy.~~ Answered — see §1.1.2 below.
+
+### §1.1.2 landed: the docs are a third and fourth copy, two already drifted — and the fix is not to generate them
+
+First real task for `cdtui-architect`, the new architecture peer. Investigated read-only, wrote a
+self-contained fragment to its own path (no Edit access, so no full-file rewrite of the living spec
+to land one section), handed back the splice instructions; I did the insert and STATUS write.
+
+**Finding.** Yes, six sites, two already drifted. `split` is written `"vertical"`/`"horizontal"` at
+both `README.md:138` and `SPEC-V2-FRAMEWORK.md:3694`, omitting `none`; `distribute` is written
+`"min-rows"` alone at `README.md:142`, omitting `greedy`. Sharpest instance:
+`SPEC-V2-FRAMEWORK.md:3693–3696` states the cite-don't-copy discipline for `distribute` in one
+sentence and copies `split`'s members wrong, and `colorSystem`'s in full, in the same sentence.
+
+**A second finding arrived first and changed the shape of this one: §1.1.1 was never implemented.**
+`1c10684` touched only `SPEC-V2-FRAMEWORK.md` (+68, zero code); `ConfigCheck.cs` has exactly one
+commit in its history, predating §1.1.1. The nine arrays at `ConfigCheck.cs:289–297` are untouched;
+acceptance was unified (`BorderStyleParsing.TryParse`) but the value-set duplication was not. **I had
+marked #38 completed on the strength of the spec commit alone and never checked the code — wrong.**
+Caught by the architect via `git show --stat` and `git log -- ConfigCheck.cs` before it built a
+docs-ruling on top of a registry that doesn't exist. #38 reopened, sequenced behind #37 (shares
+`ItemValueResolver.cs`). §1.1.2 rules on the docs question anyway, explicitly depending on a registry
+that isn't built yet rather than pretending otherwise.
+
+**Ruling: docs ⊆ registry, never docs = registry.** Every literal token the docs quote as an accepted
+value must be one the registry accepts; the docs are not required to name every token the registry
+holds. `--check`'s existing diagnostic (`ConfigCheck.cs:401–410`) is the authority on the full set —
+it already delivers the complete list at the moment someone needs it, which a table read weeks
+earlier cannot match. `README.md:136`'s `accepted values` column heading gets retitled, which turns
+both current drifts into intentional brevity rather than defects, and they get left alone — not
+"finished" by adding the missing tokens after the completeness claim is gone. Spec prose cites rather
+than copies; the `split` fix at `:3694` is a citation, not the missing `none`, or fixing it creates a
+fifth copy while fixing the fourth. The check cannot live in `check-docs.sh` — needs a compiled
+registry, and that script's own guarantee (`check-all.sh:15–19`) is that it never learns to skip what
+it can't perform — so it belongs beside `check-examples.sh`. Nothing buildable yet: #37 → #38 → an
+external door onto the registry (needed because a registry no outside consumer can read is "a
+`switch` with extra steps", the exact thing §1.1.1 exists to end) → the subset check itself, in that
+order.
+
+**The load-bearing argument, and why generation was rejected outright rather than deferred:**
+`README.md:140` on `size` says `"auto"` is a deprecated alias for `"fill"` and warns it does *not*
+mean `"content"` — three facts `SizeValues` doesn't carry at all. Generating that row from the
+registry would delete information to gain a consistency the row never lacked. That's §1.1.1's `size`
+exemption ("three literals and two descriptions of a form") arriving a second time in a second
+medium: a registry can hold a set; documentation's job is to describe a form; where they diverge,
+generation destroys the part worth writing. Three kinds follow from that seam — enumerable
+(checkable), form-with-special-cases (`size` alone, uncheckable), illustrative mention (every example
+config, must **never** be checked, since the only way to satisfy such a check is to make examples
+exhaustive and thereby worse to read).
+
+Fold-in of my one live call in this thread: `README.md:159–161`'s note that `--check` "is the next
+thing being built" was stale (it shipped in Phase 5, `1c90e0c`) — fixed directly (`b018b7b`), kept
+the render-time-fallback half of the sentence since nothing in `ConfigCheck.cs`'s history confirmed
+that changed too, rather than guessing.
 
 ### #37 scoped up: `ScanReferences` is a second walk, and the record shape found a broken diagnostic
 

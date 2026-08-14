@@ -143,6 +143,213 @@ Whether the README and this spec carry a third and fourth copy is **not establis
 the next thing to check — §9.6.2.2's drift test covers item examples, not enum tokens, so there is
 no reason to assume it is covered and no evidence yet that it is not.
 
+#### 1.1.2 The third and fourth copies exist — and only one of the three kinds should be checked
+
+§1.1.1 closed by saying that whether the README and this spec carry a third and fourth copy of the
+nine token lists was "not established here and is the next thing to check". This section checks it.
+The answer is yes, with two already drifted; but the obvious remedy — deriving the prose from the
+registry §1.1.1 specifies — is **wrong**, and the reason it is wrong is the same reason §1.1.1
+exempts `size`.
+
+##### The inventory
+
+| Where | What it is | Agrees with `ConfigCheck.cs:289–297`? |
+|---|---|---|
+| `README.md:136–150` | a table whose column is headed **`accepted values`** | **no** — see below |
+| `README.md:152–153` | `border.style`, six literals in prose | yes |
+| `SPEC-V2-FRAMEWORK.md:160–168` | the pane schema sketch | partially — `Size` omits `content` and `fill` |
+| `SPEC-V2-FRAMEWORK.md:2622` | `colorSystem`, three literals | yes |
+| `SPEC-V2-FRAMEWORK.md:3693–3696` | `split` and `colorSystem`, written out | **no** — see below |
+| `SPEC-V2-FRAMEWORK.md:844–846` | the `overflow` mode table | yes |
+
+Two have already drifted, and neither drift announces itself:
+
+- **`split`** — `README.md:138` and `SPEC-V2-FRAMEWORK.md:3694` both give `"vertical"` /
+  `"horizontal"`. `SplitValues` is `{ "none", "horizontal", "vertical" }`. Both omit `none`.
+- **`distribute`** — `README.md:142` gives `"min-rows"` alone. `DistributeValues` is
+  `{ "greedy", "min-rows" }`. It omits `greedy`.
+
+**The instructive one is `SPEC-V2-FRAMEWORK.md:3693–3696`, because that paragraph states the rule
+and breaks it in the same sentence.** It is arguing that §9.4.1's trigger must be a predicate rather
+than a list, and it says of `distribute`: *"writing its members out here is how this list was wrong
+about that key too, so it is cited rather than copied."* In the same sentence it copies `split`'s
+members — and gets them wrong, omitting `none`, the identical omission as `README.md:138` — and
+copies `colorSystem`'s three in full. The discipline was discovered, written down, and not applied
+to the two keys either side of the clause stating it.
+
+That is not carelessness any more than §1.1.1's border row was. Citing costs a lookup at writing
+time; copying is free and reads better. Nothing checks the difference, so the cheaper habit wins
+every time, exactly as §1.1 predicts.
+
+##### Why the docs must not be generated from the registry
+
+The tempting fix is to make the prose derive from the registry, so a fifth copy cannot drift. Do
+not do this. **The README currently knows strictly more than the registry does.**
+
+`README.md:140` documents `size` as a column count, a percentage, `"content"`, or `"fill"` — and
+then says `"auto"` is a **deprecated alias for `"fill"`**, and that it does *not* mean `"content"`.
+`SizeValues` at `ConfigCheck.cs:290` carries none of that: no deprecation, no aliasing, and no
+warning about the wrong guess a reader is actually likely to make. Generating that row from the
+registry would delete three facts to gain a consistency the row did not lack.
+
+This is §1.1.1's `size` exemption arriving a second time, in a second medium, for the same reason.
+§1.1.1 refused to force `size` into the registry because its list is "three literals and two
+descriptions of a *form*". Prose is that observation generalised: **documentation's job is to
+describe a form, and a registry can only hold a set.** Where the two coincide, generation is
+possible; where they do not, generation destroys the part that was worth writing.
+
+##### The three kinds, and the seam between them
+
+The seam is §1.1.1's own: does the thing being written down have members, or does it have a shape?
+
+1. **Enumerable** — `border.style`, `valign`, `align`, `overflow`, `case`, `split`, `distribute`,
+   `colorSystem`. Eight of the nine. A closed set of literals, and the registry §1.1.1 specifies
+   holds exactly that set. Prose here quotes real tokens, and a quoted token that is not in the
+   registry is a defect with a victim: someone writes it into a config and the binary rejects it.
+2. **A form with special cases** — `size`, and only `size`. Cannot be checked for completeness
+   against anything, because there is no set to be complete against. `"an integer"` is not a value
+   anyone types; it is English describing a shape.
+3. **Illustrative mention** — `README.md:195`, `SPEC-V2-FRAMEWORK.md:1104`, `:1106`, `:3027–3031`,
+   and every other example config that happens to contain `"overflow": "wrap"`. These are not lists
+   of accepted values. They are one value, chosen because it demonstrates something.
+
+**Kind 3 must never be checked for completeness, and the reason is not cost.** An example naming
+one token is not claiming the others do not exist, and a check that demanded otherwise would flag
+every example in the document. Worse, the only way to satisfy such a check is to make examples
+exhaustive — which makes every example worse to read in order to make a checker quiet. A rule that
+degrades the artifact it protects is not a rule worth having.
+
+##### The ruling
+
+**1. The check is a subset assertion, never an equality assertion.** Every literal token quoted in
+`README.md` or `SPEC-V2-FRAMEWORK.md` as an accepted value of an enumerable key must be a token the
+registry accepts. The docs are **not** required to name every token the registry holds.
+
+The direction is the whole design. Docs ⊆ registry catches the failure with a victim — prose
+promising a value the binary rejects. Docs = registry would additionally demand that `README.md:138`
+list `none` and `README.md:142` list `greedy`, which are omissions an author made on purpose:
+`none` means "this is not a split", and `greedy` is the default the key exists to opt out of.
+Forcing them in makes the table more complete and less useful. The asymmetry also disposes of
+`size` for free — a subset check has nothing to say about a key with no set, so no exemption
+machinery is needed.
+
+**2. The authority on the full accepted set is `--check`, not the prose.** `ConfigCheck`'s
+`UnknownEnumValue` and `FormatAccepted` (`ConfigCheck.cs:401–410`) already emit the complete list —
+*"'ellipsis' is not a overflow — expected wrap, truncate, or overflow"* — at the one moment a reader
+needs it, having just typed something wrong. That is a better delivery mechanism than a table read
+weeks earlier, and it is already built. The docs' job is to be a guide that points at the authority,
+not a second authority competing with it.
+
+**3. Consequently, `README.md:136`'s column heading must stop saying `accepted values`.** It
+promises completeness the table has never had and, under ruling 1, is not required to have. Retitle
+the column, and state once near the table that `--check` reports the full accepted set for any key.
+
+**The two drifts above are symptoms of that heading, not defects in their own right, and they are
+discharged by retitling it — not by adding the missing tokens.** Once the column no longer claims to
+be exhaustive, `README.md:138` omitting `none` and `README.md:142` omitting `greedy` are correct as
+written and must be left alone. Do not "finish the job" by adding them afterwards; that reinstates
+the completeness claim in the table body after removing it from the heading, which is worse than
+either position held consistently.
+
+> **Ruling 3 is a product call rather than an architectural one.** It was escalated and approved
+> before adoption. The alternative — keep the promise and make the table genuinely complete — is
+> coherent, merely more brittle and less readable. Reversing it costs one column heading, so it is
+> cheap to revisit if the README's audience turns out to want exhaustiveness.
+
+**4. Spec prose cites; it does not copy.** `SPEC-V2-FRAMEWORK.md:3694` already got this right for
+`distribute` and wrong for `split` and `colorSystem` in the same sentence. Generalise the practice
+it discovered: when this document needs to refer to the members of an enumerable key, cite the
+section that defines them.
+
+At `SPEC-V2-FRAMEWORK.md:3694` specifically, **the fix is to replace `split`'s copied members with a
+citation, not to add the missing `none`.** That paragraph is an argument about §9.4.1's trigger; it
+has no reason to enumerate anything, and completing the list there would create a fifth maintained
+copy in the act of fixing the fourth. Converting all prose everywhere to citations is not in scope —
+the three known sites are `:3693–3696`, `:2622`, and `:160–168`.
+
+##### Where the check may live, and where it may not
+
+`tools/check-all.sh:15–19` already rules on this and the ruling is inherited, not remade:
+`check-docs.sh` must run on a machine with no toolchain, and **must never learn to skip a check it
+cannot perform**. A docs-versus-registry check reads a compiled artifact. It therefore **cannot** go
+in `check-docs.sh` without breaking that guarantee, and it must not be added there with a
+skip-if-unavailable branch — that is precisely the failure mode `check-all.sh` was created to end.
+
+It belongs on the toolchain side, alongside `tools/check-examples.sh`, invoked from
+`tools/check-all.sh`. Precedent: §9.6.2.2's drift test already checks item examples against the
+binary; this is the same shape applied to a different kind, and should not become a second
+independently-written mechanism if the existing one can carry it.
+
+##### Sequencing — nothing in this section is buildable yet
+
+This section rules on the docs question and deliberately depends on a registry that **does not exist
+today**. §1.1.1 specified it; no implementation followed (`ConfigCheck.cs` is untouched since the
+Phase 5 CLI commit). Anything below therefore queues:
+
+```
+#37  ScanReferences / ReferenceExtractors  (in flight)
+  └── #38  the registry §1.1.1 specifies   (reopened; waits on #37 — shares ItemValueResolver.cs)
+        └── the external door onto the registry   (needs-implementation, below)
+              └── the subset check of this section
+```
+
+**The external door is a required prerequisite and is not scope creep.** The subset check must read
+the accepted set as data from outside the assembly, and a registry no external consumer can read is
+a `switch` with extra steps — the exact object §1.1.1 was written to eliminate. The repo already has
+the pattern: `--items` and `--colors` enumerate their kinds through the CLI. Tokens want the same
+door, whether as a new command or folded into an existing one.
+
+That door is a **public surface addition and must be specified before it is built**, not chosen
+mid-task by whoever picks up the check. It is a consumer of #38's output and cannot start before
+#38 lands.
+
+##### NEEDS-EVIDENCE
+
+Not answerable by reading, and deliberately not answered here. Each outcome selects a different
+implementation, so measure before building:
+
+1. **Can `tools/check-examples.sh` host the token check, or does it need a sibling?** Read its
+   structure and report whether it is parameterised over "thing extracted from markdown, compared
+   against binary output" or hard-wired to item examples.
+   *If parameterised* — extend it; no new file.
+   *If hard-wired* — add `tools/check-doc-tokens.sh` and wire it into `tools/check-all.sh:42–43`.
+2. **What is the true extraction rule for "a quoted token asserted as an accepted value"?** Kind 3
+   must not be swept up. Determine empirically, by running a candidate extractor over both files,
+   how many kind-3 mentions a naive backtick-scan falsely captures.
+   *If near zero* — an extractor scoped to the table and the prose lists is sufficient.
+   *If material* — the docs need an explicit marker, and that is a spec change, not a script change.
+3. **Does `tools/check-docs.sh` still complete on a toolchain-free machine after the change?** The
+   guarantee at `check-all.sh:15–19` is the one thing here that cannot be verified by inspection.
+   *If it does not* — the check was added in the wrong file; move it, do not add a skip.
+
+##### What must not change
+
+- **`size` gains no registry entry and no completeness check**, here or downstream. §1.1.1 exempted
+  it; this section exempts it again, for the same reason, in a second medium.
+- **The two drifts are not fixed by adding tokens.** See ruling 3. `README.md:138` and `:142` stay
+  as written once the column heading is retitled.
+- **Example configs are not touched.** No example is made exhaustive to satisfy a checker.
+- **`check-docs.sh` does not learn about the registry** and does not gain a skip branch.
+- **`ItemValueResolver.cs` is not touched by this section.** It is in flight under #37, and `case`'s
+  registry row belongs to #38's rebuild, which waits for #37 to land.
+- **This section does not specify the registry.** It depends on §1.1.1's design and must not restate
+  it; if the two ever disagree, §1.1.1 governs.
+
+##### Verification
+
+1. `README.md:136`'s column no longer claims `accepted values`, and the table is followed by one
+   sentence naming `--check` as the authority on the full set.
+2. `README.md:138` still omits `none` and `README.md:142` still omits `greedy` — confirming ruling 3
+   was applied as a heading change rather than a completion exercise.
+3. `SPEC-V2-FRAMEWORK.md:3694` cites rather than enumerating `split`'s members.
+4. The subset check fails when a token is added to `README.md:144` that the registry does not accept.
+   **This must be demonstrated by making it fail, not by asserting it would** — a check whose red
+   path has never run is what `tools/check-all.sh:4–10` exists to prevent, and asserting this one
+   works without watching it fail would reproduce that exact defect inside its own remedy.
+5. The check passes against the docs as they stand, with the omissions in item 2 intact — confirming
+   subset semantics rather than equality.
+6. `tools/check-docs.sh` still runs to completion on a machine with no .NET toolchain.
+
 ## 2. The render surface and panes
 
 ### 2.1 What the surface is
