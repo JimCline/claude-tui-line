@@ -3692,6 +3692,37 @@ the first tests in this suite to do so, mirroring `EndToEndItemValuesTests.cs`'s
 Merged (non-fast-forward, main had moved) after a clean build. No conflicts — only the new test file.
 Landed as `041770b`, pushed.
 
+### #4: Defect 12, empty pane still drew its border (§2.4/§2.11/§2.11.1/§2.11.2)
+
+New `PaneCollapse.cs`: a pre-pass, run before `SizeResolver.Resolve`, that collapses a leaf pane
+(no border/gutter/space) when it's content/fill-sized, has no `minSize`, and every item resolved to
+no value — excluding items whose command genuinely failed or was unavailable (§2.11.2's carve-out),
+so a real failure still shows rather than silently vanishing. A split pane collapses bottom-up when
+every child collapses. A pane with an explicit `minSize` keeps its border even when empty (§2.11.1).
+
+Distinguishing "resolved to nothing" from "resolution failed" required widening two return types:
+`CommandProvider.ResolveAsync` now returns `CommandResolution(string? Value, bool Unavailable)`,
+`ItemValueResolver.ResolveAsync` now returns `Resolution(Values, UnavailableIds)` — both were bare
+value/dictionary before. `Program.cs` threads `unavailableIds` into `ComputeRows`, and the collapse
+pass only runs on the split-pipeline branch; the legacy no-surface leaf path (no items configured,
+fall back to v1 defaults) is a different semantic and was left alone.
+
+Two things flagged, neither treated as a defect:
+- A split-child pane with `items:[]` (or omitted) now collapses instead of falling through to
+  `PaneAssembler`'s default 14-builtin-segment fallback. Checked: nothing in the suite relies on
+  that fallback for a split child specifically.
+- §2.11.3's ruling to exempt "the SafeLoadAll fallback Pane" from collapse doesn't apply — that
+  architecture is gone (zero `SafeLoadAll` hits). The unreadable-config case already short-circuits
+  via `ConfigUnreadableMessage.Format` before `ComputeRows`/`DrawRows` run at all, which independently
+  satisfies §9.2.1's intent. Spec section is stale, not wrong-and-acted-on; tracked as #47 rather than
+  edited now.
+
+Full suite run (justified — public return-type contract change with call sites outside the feature):
+1174/1174, plus 3 targeted `--preview` repros matching the literal defect-12 shape and §2.11.1's
+minSize-keeps-border case. Test fixups: `CommandProviderTests.cs` (3 call sites, `.Value` added),
+`EndToEndItemValuesTests.cs` (1 call site, `.Values` added). Committed directly to main (in-tree work,
+not a worktree task) as `62a5741`, fast-forward, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
