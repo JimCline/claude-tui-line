@@ -41,6 +41,7 @@ status=0
 # afternoon.
 ./tools/check-docs.sh || status=1
 ./tools/check-examples.sh || status=1
+./tools/check-doc-tokens.sh || status=1
 
 if [[ $status -ne 0 ]]; then
     echo >&2

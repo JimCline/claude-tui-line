@@ -312,22 +312,98 @@ That door is a **public surface addition and must be specified before it is buil
 mid-task by whoever picks up the check. It is a consumer of #38's output and cannot start before
 #38 lands.
 
+##### The extraction rule
+
+§1.1.2's NEEDS-EVIDENCE 1 and 2 are resolved here, both by inspection.
+
+**1 — a sibling, not an extension.** `tools/check-examples.sh` is hard-wired to item examples: all
+four of its rules key on item ids and `--items --json` output. It is not parameterised over
+"thing extracted from markdown, compared against binary output". Per that item's own branch: add
+`tools/check-doc-tokens.sh` and wire it into `tools/check-all.sh:42–43`.
+
+**2 — the docs carry an explicit marker, and the marker convention already exists.** A naive
+backtick-scan does sweep kind-3 mentions in material quantity, so this is that item's second branch.
+But the marker it calls for is not a new invention: `check-examples.sh` rule C already anchors a
+checkable table on an in-band HTML comment, `README.md:168` already carries one, and that script's
+header names the pane-keys table as a thing deliberately left unscanned *by it*. The convention
+carries over unchanged.
+
+**The scanned region.** `check-doc-tokens.sh` scans exactly those markdown tables preceded by a
+`pane-token-table` HTML comment marker, in the files it is given. The pane-keys table in `README.md`
+gains one, in the same self-describing form rule C's uses — naming the checker and what it compares
+against, so a reader of the README learns the table is checked without leaving the README:
+
+```
+<!-- pane-token-table: quoted literals checked against `--accepted --json` by tools/check-doc-tokens.sh -->
+```
+
+Nothing else is scanned. No prose sentence, no fenced block, no unmarked table, in either file. The
+rule is general — any file, any marked table — so a spec table can be brought in later by marking it,
+with no script change. None is marked today.
+
+**What counts as a checkable token.** Within a scanned table's body rows:
+
+- **Column 1 names one or more keys**, each a backtick-fenced token with no quotes inside the
+  backticks. `` `minSize` / `maxSize` `` is a real two-key row today, so multiple keys per row is
+  the specified case, not an accident to be tolerated.
+- **A checkable token is a backtick-fenced, double-quoted literal**, anywhere in the row —
+  `` `"vertical"` ``. A backtick-fenced *bare* token is a key name, never a value, and is never
+  checked.
+- **Every checkable token in a row must be accepted by every key column 1 names.** Sharing a row is
+  an assertion that the row's values apply to all of the keys in it.
+
+This is a rule the README already obeys, unprompted, in all thirteen of its current rows: values are
+written `"quoted"`, key names bare. That is what makes it a discovered convention rather than an
+imposed one, and it is why it needs no exception list. It disposes of the `split` row's mention of
+`` `children` `` and the `border` row's `` `enabled` ``, `` `style` ``, `` `color` `` — key names,
+correctly written bare, correctly not checked — with no heuristic and no hand-listing.
+
+**Keys with no closed set are skipped, visibly.** `--accepted --json` reports `accepted: null` for
+`size`, whose `alsoAccepted` is a *prose description* (`AcceptedCommand.cs:46` renders it through
+`FormatAccepted`), not a second token list. There is nothing there to compare against, which is
+§1.1.2's `size` exemption arriving a third time. A row whose keys all report `accepted: null` is
+skipped — **and the script prints the keys it skipped.** A skip set that silently grows past `size`
+is how an exemption becomes a hole; naming it on every run is what stops that.
+
+**An unknown key is fail-closed, not skipped.** If column 1 names a key `--accepted --json` does not
+report, the row contributes no checkable tokens — but if such a row *contains* a quoted literal, that
+is a failure, reported as such. The README today has six rows for keys the registry does not govern
+(`children`, `gutter`, `ellipsis`, `maxRows`, `border`, `items`) and none of them contains a quoted
+literal, which is precisely why the rule is safe to state fail-closed now rather than after the first
+one appears. Same shape as §9.5.1's `PendingForm` and `AcceptedCommand.ValidateInvariant`: a gap is
+stated, never silently emitted.
+
+**The uncheckable sites are removed, not excepted.** §1.1.2's inventory lists prose sites the marker
+cannot reach. Three of the four are disposed of without the checker growing a second mechanism:
+
+- **`README.md:152–153`, `border.style`'s six literals in prose** — `border.style` is a first-class
+  key in `--accepted --json` (`AcceptedCommand.cs:37`). Move the six literals into the pane-keys
+  table as a `` `border.style` `` row, where the existing extractor checks them for free, and let the
+  sentence go. The README loses nothing: the sentence was a table row that had been written as prose.
+- **The `split`/`colorSystem`/`distribute` sentence in this document** — ruling 4 already requires it
+  to cite rather than copy. Once applied, it holds no literals and there is nothing to check. **This
+  addendum's scoping depends on that ruling actually being applied**, which is why it is in #43's
+  scope below rather than deferred.
+- **The `overflow` schema sketch (`Overflow   wrap | truncate | overflow`)** — deliberately left
+  uncovered, and named here so it is a known gap rather than a silent one. Its tokens are unquoted,
+  so they do not match the convention above; it sits inside a fenced block, which is where kind 3
+  lives and which the extractor must never scan; and converting it to a citation would gut a sketch
+  whose entire job is to show shape. Three independent reasons, and the honest disposition is to say
+  so rather than to widen the extractor until it reaches one line.
+
+**What this check does not do.** It is a subset assertion over the tokens the docs *do* quote. It
+says nothing about a key the docs do not document at all — `height` is a registry key with no README
+row today, and that is permitted by ruling 1's direction and must not fail this check. It is a docs
+gap for someone to own separately, not a check failure.
+
 ##### NEEDS-EVIDENCE
 
-Not answerable by reading, and deliberately not answered here. Each outcome selects a different
-implementation, so measure before building:
+One item remains. Two others were closed by reading rather than measurement — see **The extraction
+rule** above; the prediction that the marker question needed an experiment was wrong, because the
+answer was already in `tools/check-examples.sh`. The remaining item is not answerable by reading
+and must be measured before the change is called done:
 
-1. **Can `tools/check-examples.sh` host the token check, or does it need a sibling?** Read its
-   structure and report whether it is parameterised over "thing extracted from markdown, compared
-   against binary output" or hard-wired to item examples.
-   *If parameterised* — extend it; no new file.
-   *If hard-wired* — add `tools/check-doc-tokens.sh` and wire it into `tools/check-all.sh:42–43`.
-2. **What is the true extraction rule for "a quoted token asserted as an accepted value"?** Kind 3
-   must not be swept up. Determine empirically, by running a candidate extractor over both files,
-   how many kind-3 mentions a naive backtick-scan falsely captures.
-   *If near zero* — an extractor scoped to the table and the prose lists is sufficient.
-   *If material* — the docs need an explicit marker, and that is a spec change, not a script change.
-3. **Does `tools/check-docs.sh` still complete on a toolchain-free machine after the change?** The
+1. **Does `tools/check-docs.sh` still complete on a toolchain-free machine after the change?** The
    guarantee at `check-all.sh:15–19` is the one thing here that cannot be verified by inspection.
    *If it does not* — the check was added in the wrong file; move it, do not add a skip.
 
@@ -358,6 +434,19 @@ implementation, so measure before building:
 5. The check passes against the docs as they stand, with the omissions in item 2 intact — confirming
    subset semantics rather than equality.
 6. `tools/check-docs.sh` still runs to completion on a machine with no .NET toolchain.
+7. The pane-keys table in `README.md` carries a `pane-token-table` marker, and
+   `tools/check-doc-tokens.sh` reports a nonzero count of tokens checked. A run that checks zero
+   tokens and exits 0 is the failure mode the marker exists to prevent, so the count is part of the
+   output, not an internal detail.
+8. The script names, on every run, the keys it skipped for having no closed set. Today that list is
+   exactly `size`.
+9. `border.style`'s six literals are a row in the pane-keys table and are checked by item 7's run;
+   the prose sentence that carried them is gone.
+10. Adding `` `"diagonal"` `` to the `split` row makes the check fail, and adding `` `"none"` `` to
+    it does not. The first proves the subset direction is enforced; the second proves it is a subset
+    rather than an equality check, against a token the registry accepts and the docs deliberately
+    omit. **Both must be demonstrated by running them**, for verification item 4's reason.
+11. Removing the marker line makes the check fail rather than pass vacuously.
 
 #### 1.1.3 The external door — one command that reports what the binary accepts
 
@@ -4454,10 +4543,10 @@ error and we would be back at "does the renderer cope" under a new name.
 
   **The trigger is the predicate, not a list.** As written this section named six keys — `size`,
   `style`, `align`, `valign`, `overflow`, `case` — and the list was short by at least three:
-  `split` (`"vertical"` / `"horizontal"`), `distribute` (§2.3 — and writing its members out here
-  is how this list was wrong about that key too, so it is cited rather than copied), and top-level
-  `colorSystem` (`"standard"` / `"256"` / `"truecolor"`). Every one of those three fails silently
-  and consequentially:
+  `split` (§2.2 — cited rather than copied, for the same reason as `distribute` below), `distribute`
+  (§2.3 — and writing its members out here is how this list was wrong about that key too, so it is
+  cited rather than copied), and top-level `colorSystem` (§6.2 — cited for the same reason). Every
+  one of those three fails silently and consequentially:
 
   - A misspelled `split` turns a container into something that is not a container. The pane's
     `children` are then a key nothing reads, and half the statusline disappears.
