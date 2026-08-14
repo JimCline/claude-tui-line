@@ -1178,4 +1178,204 @@ public class ConfigCheckTests
         Assert.DoesNotContain(diagnostics, d => d.Code is "unknown-item-id" or "placeholder-derived-source" or
             "placeholder-command-source" or "placeholder-self-reference" or "placeholder-env-collision");
     }
+
+    // ---- §9.4.2: unknown-key diagnostic. Fixtures are parsed JSON, not object initializers —
+    // extension data only exists on the deserialized shape. ----
+
+    private static UserConfig Parse(string json) =>
+        System.Text.Json.JsonSerializer.Deserialize(json, ConfigJsonContext.Default.UserConfig)!;
+
+    [Fact]
+    public void UnknownKeyOnItem_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"items":[{"item":"context","colour":"aqua"}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Severity == DiagnosticSeverity.Warning &&
+            d.Path == "/items/0/colour" && d.Message == "unknown key 'colour' on an item — did you mean 'color'?");
+    }
+
+    [Fact]
+    public void UnknownKeyOnItem_AbbreviationPrefixRule_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"items":[{"ttl":5}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/items/0/ttl" &&
+            d.Message == "unknown key 'ttl' on an item — did you mean 'ttlSeconds'?");
+    }
+
+    [Fact]
+    public void UnknownKeyOnItem_NoQualifyingSuggestion_OmitsDidYouMean()
+    {
+        var config = Parse("""{"items":[{"zzzzzz":1}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/items/0/zzzzzz" &&
+            d.Message == "unknown key 'zzzzzz' on an item");
+    }
+
+    [Fact]
+    public void UnknownKeyOnItem_CaseOnlyMismatch_IsReportedAndSuggested()
+    {
+        var config = Parse("""{"items":[{"Color":"red"}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/items/0/Color" &&
+            d.Message == "unknown key 'Color' on an item — did you mean 'color'?");
+    }
+
+    [Fact]
+    public void UnknownKeyAtTopLevel_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"colour":"red"}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/colour" &&
+            d.Message == "unknown key 'colour' on the top-level config — did you mean 'colors'?");
+    }
+
+    [Fact]
+    public void UnknownKeyOnNestedPane_Reports()
+    {
+        // TASK-21-SPEC.md §9.1 item 6 names 'maxRows' as the expected suggestion, but
+        // EditDistance("maxLines", "maxRows") == 4, which clears neither the §5 distance bound
+        // (<=2) nor the prefix rule — per §5's own authority over any conflicting worked example,
+        // the algorithm governs: no candidate qualifies, so no suggestion is offered. Flagged to
+        // the Orchestrator as a spec/example discrepancy.
+        var config = Parse("""{"surface":{"pane":{"split":"vertical","children":[{"maxLines":3}]}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" &&
+            d.Path == "/surface/pane/children/0/maxLines" &&
+            d.Message == "unknown key 'maxLines' on a pane");
+    }
+
+    [Fact]
+    public void UnknownKeyOnBorderObject_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"border":{"styl":"rounded"}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/border/styl" &&
+            d.Message == "unknown key 'styl' on a border — did you mean 'style'?");
+    }
+
+    [Fact]
+    public void BorderShorthandString_ProducesNoUnknownKeyDiagnostics()
+    {
+        var config = Parse("""{"border":"outline"}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "unknown-key");
+    }
+
+    [Fact]
+    public void UnknownKeyOnColorRuleInsideItem_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"items":[{"item":"x","color":{"from":"y","defualt":"red"}}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/items/0/color/defualt" &&
+            d.Message == "unknown key 'defualt' on a color rule — did you mean 'default'?");
+    }
+
+    [Fact]
+    public void ColorsTableTokenNames_AreNeverUnknownKeys()
+    {
+        var config = Parse("""{"colors":{"my-weird-name":{"from":"x","default":"red"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "unknown-key");
+    }
+
+    [Fact]
+    public void CleanConfig_ProducesNoUnknownKeyDiagnostic()
+    {
+        var config = Parse("""
+        {
+            "border": {"enabled": true, "style": "rounded"},
+            "layout": {"chromeReserve": 3},
+            "surface": {
+                "maxRows": 8,
+                "pane": {
+                    "split": "vertical",
+                    "children": [
+                        {"size": "fill", "items": [{"item": "directory"}]},
+                        {"size": "fill", "items": [{"item": "model"}]}
+                    ]
+                }
+            },
+            "colors": {"accent": {"from": "directory", "default": "blue"}}
+        }
+        """);
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "unknown-key");
+    }
+
+    [Fact]
+    public void MultipleUnknownKeysOnOneObject_ComeOutInOrdinalKeyOrder()
+    {
+        var config = Parse("""{"items":[{"zoo":1,"alpha":2}]}""");
+
+        var diagnostics = ConfigChecker.Check(config)
+            .Where(d => d.Code == "unknown-key")
+            .ToList();
+
+        var alphaIndex = diagnostics.FindIndex(d => d.Path == "/items/0/alpha");
+        var zooIndex = diagnostics.FindIndex(d => d.Path == "/items/0/zoo");
+
+        Assert.True(alphaIndex >= 0 && zooIndex >= 0 && alphaIndex < zooIndex);
+    }
+
+    [Fact]
+    public void UnknownKeyDiagnostics_AreNeverErrorSeverity()
+    {
+        var config = Parse("""
+        {
+            "colour": "red",
+            "items": [{"item":"x","colour":"aqua","ttl":5,"zzzzzz":1,"Color":"red","color":{"from":"y","defualt":"red"}}],
+            "border": {"styl":"rounded"},
+            "surface": {"pane": {"split":"vertical","children":[{"maxLines":3}]}}
+        }
+        """);
+
+        var unknownKeyDiagnostics = ConfigChecker.Check(config).Where(d => d.Code == "unknown-key").ToList();
+
+        Assert.NotEmpty(unknownKeyDiagnostics);
+        Assert.All(unknownKeyDiagnostics, d => Assert.Equal(DiagnosticSeverity.Warning, d.Severity));
+    }
+
+    [Fact]
+    public void BorderConfig_KnownKeySet_ExcludesShorthand()
+    {
+        // TASK-21-SPEC.md §9.3: the executable form of §3's NEEDS-EVIDENCE item. On this runtime,
+        // [JsonIgnore] does not remove Shorthand from .Properties (it stays present, IsExtensionData
+        // == false) — confirmed by the raw-properties assertion below — so ConfigCheck.cs's
+        // KnownKeys() also filters it out by name; the second assertion is that effective set,
+        // which is what actually reaches the unknown-key/suggestion diagnostic.
+        var rawNames = ConfigJsonContext.Default.BorderConfig.Properties.Select(p => p.Name).ToList();
+        Assert.Contains("Shorthand", rawNames);
+
+        var knownNames = ConfigJsonContext.Default.BorderConfig.Properties
+            .Where(p => !p.IsExtensionData && p.Name != "Shorthand")
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.Equal(
+            new[] { "enabled", "color", "style", "edges", "collapse" }.OrderBy(n => n, StringComparer.Ordinal),
+            knownNames.OrderBy(n => n, StringComparer.Ordinal));
+    }
 }

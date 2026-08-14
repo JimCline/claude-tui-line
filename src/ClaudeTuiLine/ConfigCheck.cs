@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Spectre.Console;
 
 namespace ClaudeTuiLine;
@@ -75,6 +77,7 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckStructuralSizes(root, rootPath, topLevel.Collapse));
         diagnostics.AddRange(CheckOverflowPosition(root, rootPath));
         diagnostics.AddRange(CheckEmptyPanes(root, rootPath));
+        diagnostics.AddRange(CheckUnknownKeys(config));
         return diagnostics;
     }
 
@@ -735,6 +738,183 @@ public static class ConfigChecker
             foreach (var entry in WalkPanes(pane.Children[i], $"{path}/children/{i}"))
             {
                 yield return entry;
+            }
+        }
+    }
+
+    // ---- §9.4.2: keys no config object defines. Captured by [JsonExtensionData] during binding
+    // (so per-object scoping falls out of the deserializer rather than a second shape mirror) and
+    // compared against ConfigJsonContext's own JsonTypeInfo — the same metadata the binder used ----
+
+    // §9.4.2: the known-key set is the *same* metadata the deserializer binds with, so it cannot
+    // disagree with what actually parses. Reflection is forbidden here — PublishAot trims it and
+    // the resulting short/empty set only misfires in the shipped binary.
+    //
+    // TASK-21-SPEC.md §3 NEEDS-EVIDENCE fallback: [JsonIgnore] on BorderConfig.Shorthand does not
+    // remove it from JsonTypeInfo.Properties on this runtime (confirmed by the §9.3 guard test), so
+    // it is filtered out here by name rather than left to leak in as a false "known key" — which
+    // would let a nearby typo get suggested toward a name that isn't part of the config language.
+    private static string[] KnownKeys(JsonTypeInfo typeInfo) =>
+        typeInfo.Properties
+            .Where(p => !p.IsExtensionData && p.Name != nameof(BorderConfig.Shorthand))
+            .Select(p => p.Name)
+            .ToArray();
+
+    private static IEnumerable<Diagnostic> CheckUnknownKeys(UserConfig? config)
+    {
+        if (config is null)
+        {
+            yield break;
+        }
+
+        foreach (var (extra, typeInfo, label, path) in WalkRawObjects(config))
+        {
+            if (extra is not { Count: > 0 })
+            {
+                continue;
+            }
+
+            var known = KnownKeys(typeInfo);
+            foreach (var key in extra.Keys.OrderBy(k => k, StringComparer.Ordinal))
+            {
+                var suggestion = KeySuggestion.Suggest(key, known);
+                var tail = suggestion is null ? "" : $" — did you mean '{suggestion}'?";
+                yield return new Diagnostic($"{path}/{key}", DiagnosticSeverity.Warning, "unknown-key",
+                    $"unknown key '{key}' on {label}{tail}");
+            }
+        }
+    }
+
+    private static IEnumerable<(Dictionary<string, JsonElement>? Extra, JsonTypeInfo TypeInfo, string Label, string Path)>
+        WalkRawObjects(UserConfig config)
+    {
+        yield return (config.Extra, ConfigJsonContext.Default.UserConfig, "the top-level config", "");
+
+        if (config.Border is { } border)
+        {
+            foreach (var e in WalkBorder(border, "/border")) yield return e;
+        }
+
+        if (config.Layout is { } layout)
+        {
+            yield return (layout.Extra, ConfigJsonContext.Default.LayoutConfig, "layout", "/layout");
+        }
+
+        if (config.Surface is { } surface)
+        {
+            yield return (surface.Extra, ConfigJsonContext.Default.SurfaceConfig, "surface", "/surface");
+            if (surface.Border is { } surfaceBorder)
+            {
+                foreach (var e in WalkBorder(surfaceBorder, "/surface/border")) yield return e;
+            }
+
+            if (surface.Pane is { } pane)
+            {
+                foreach (var e in WalkPaneObjects(pane, "/surface/pane")) yield return e;
+            }
+        }
+
+        // §6.3 of TASK-21-SPEC.md: unlike CheckEnums, this walks both surface.pane and top-level
+        // items unconditionally — an unknown key in an items array that resolution ignores (because
+        // surface.pane is present) is still a typo worth reporting, and reporting it costs nothing.
+        if (config.Items is { } items)
+        {
+            for (var i = 0; i < items.Count; i++)
+            {
+                foreach (var e in WalkItemObjects(items[i], $"/items/{i}")) yield return e;
+            }
+        }
+
+        if (config.Colors is { } colors)
+        {
+            foreach (var (name, rule) in colors.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                if (rule is not null)
+                {
+                    foreach (var e in WalkRuleObjects(rule, $"/colors/{name}")) yield return e;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<(Dictionary<string, JsonElement>? Extra, JsonTypeInfo TypeInfo, string Label, string Path)>
+        WalkBorder(BorderConfig border, string path)
+    {
+        yield return (border.Extra, ConfigJsonContext.Default.BorderConfig, "a border", path);
+
+        if (border.Edges is { } edges)
+        {
+            yield return (edges.Extra, ConfigJsonContext.Default.BorderEdgesConfig, "border edges", path + "/edges");
+        }
+
+        if (border.Color?.Rule is { } rule)
+        {
+            foreach (var e in WalkRuleObjects(rule, path + "/color")) yield return e;
+        }
+    }
+
+    private static IEnumerable<(Dictionary<string, JsonElement>? Extra, JsonTypeInfo TypeInfo, string Label, string Path)>
+        WalkPaneObjects(PaneConfig pane, string path)
+    {
+        yield return (pane.Extra, ConfigJsonContext.Default.PaneConfig, "a pane", path);
+
+        if (pane.Border is { } border)
+        {
+            foreach (var e in WalkBorder(border, path + "/border")) yield return e;
+        }
+
+        if (pane.Items is { } items)
+        {
+            for (var i = 0; i < items.Count; i++)
+            {
+                foreach (var e in WalkItemObjects(items[i], $"{path}/items/{i}")) yield return e;
+            }
+        }
+
+        if (pane.Children is { } children)
+        {
+            for (var i = 0; i < children.Count; i++)
+            {
+                foreach (var e in WalkPaneObjects(children[i], $"{path}/children/{i}")) yield return e;
+            }
+        }
+    }
+
+    private static IEnumerable<(Dictionary<string, JsonElement>? Extra, JsonTypeInfo TypeInfo, string Label, string Path)>
+        WalkItemObjects(PaneItemJsonConfig item, string path)
+    {
+        yield return (item.Extra, ConfigJsonContext.Default.PaneItemJsonConfig, "an item", path);
+
+        if (item.Color?.Rule is { } rule)
+        {
+            foreach (var e in WalkRuleObjects(rule, path + "/color")) yield return e;
+        }
+    }
+
+    private static IEnumerable<(Dictionary<string, JsonElement>? Extra, JsonTypeInfo TypeInfo, string Label, string Path)>
+        WalkRuleObjects(ColorRuleJsonConfig rule, string path)
+    {
+        yield return (rule.Extra, ConfigJsonContext.Default.ColorRuleJsonConfig, "a color rule", path);
+
+        if (rule.Thresholds is { } thresholds)
+        {
+            for (var i = 0; i < thresholds.Count; i++)
+            {
+                if (thresholds[i] is { } threshold)
+                {
+                    yield return (threshold.Extra, ConfigJsonContext.Default.ThresholdJsonConfig, "a color threshold", $"{path}/thresholds/{i}");
+                }
+            }
+        }
+
+        if (rule.Match is { } match)
+        {
+            for (var i = 0; i < match.Count; i++)
+            {
+                if (match[i] is { } m)
+                {
+                    yield return (m.Extra, ConfigJsonContext.Default.MatchJsonConfig, "a color match", $"{path}/match/{i}");
+                }
             }
         }
     }

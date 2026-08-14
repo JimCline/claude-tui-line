@@ -27,6 +27,14 @@ public sealed class UserConfig
     /// <summary>SPEC-V2-FRAMEWORK.md §6.3: named, reusable colour tokens, referenced elsewhere as <c>"@name"</c>.</summary>
     [JsonPropertyName("colors")]
     public Dictionary<string, ColorRuleJsonConfig>? Colors { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 public sealed class BorderConfig
@@ -51,6 +59,7 @@ public sealed class BorderConfig
     /// object — set by <see cref="BorderConfigConverter"/>'s string branch, never bound by ordinary
     /// property deserialization (deliberately no <see cref="JsonPropertyNameAttribute"/>).
     /// </summary>
+    [JsonIgnore]
     public string? Shorthand { get; set; }
 
     /// <summary>
@@ -63,6 +72,14 @@ public sealed class BorderConfig
     /// </summary>
     [JsonPropertyName("collapse")]
     public bool? Collapse { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>SPEC-V2-FRAMEWORK.md §2.10: an explicit per-edge <c>border.edges</c> declaration; an omitted field defaults to <c>true</c> (§2.9's "default is bordered" philosophy applied per edge).</summary>
@@ -79,12 +96,28 @@ public sealed class BorderEdgesConfig
 
     [JsonPropertyName("left")]
     public bool? Left { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 public sealed class LayoutConfig
 {
     [JsonPropertyName("chromeReserve")]
     public int? ChromeReserve { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>SPEC-V2-FRAMEWORK.md §2.2/§8: the pane tree, present only once splits are configured.</summary>
@@ -100,6 +133,14 @@ public sealed class SurfaceConfig
     [JsonPropertyName("border")]
     [JsonConverter(typeof(BorderConfigConverter))]
     public BorderConfig? Border { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 public sealed class PaneConfig
@@ -150,6 +191,14 @@ public sealed class PaneConfig
 
     [JsonPropertyName("items")]
     public List<PaneItemJsonConfig>? Items { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 public sealed class PaneItemJsonConfig
@@ -199,6 +248,14 @@ public sealed class PaneItemJsonConfig
     /// <summary><c>"upper"</c>/<c>"lower"</c>; any other value passes the (post-<see cref="Extract"/>) text through unchanged.</summary>
     [JsonPropertyName("case")]
     public string? Case { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>
@@ -290,6 +347,14 @@ public sealed class ColorRuleJsonConfig
 
     [JsonPropertyName("default")]
     public string? Default { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 public sealed class ThresholdJsonConfig
@@ -299,6 +364,14 @@ public sealed class ThresholdJsonConfig
 
     [JsonPropertyName("color")]
     public string? Color { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>SPEC-V2-FRAMEWORK.md §6.4: each entry carries exactly one predicate — <see cref="Contains"/> (case-insensitive substring) or <see cref="EqualsValue"/> (case-insensitive full match), no regex.</summary>
@@ -312,6 +385,14 @@ public sealed class MatchJsonConfig
 
     [JsonPropertyName("color")]
     public string? Color { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
+    /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
+    /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>
@@ -378,6 +459,13 @@ internal sealed class BorderConfigConverter : JsonConverter<BorderConfig?>
 [JsonSerializable(typeof(UserConfig))]
 [JsonSerializable(typeof(ColorRuleJsonConfig))]
 [JsonSerializable(typeof(BorderConfig))]
+[JsonSerializable(typeof(BorderEdgesConfig))]
+[JsonSerializable(typeof(LayoutConfig))]
+[JsonSerializable(typeof(SurfaceConfig))]
+[JsonSerializable(typeof(PaneConfig))]
+[JsonSerializable(typeof(PaneItemJsonConfig))]
+[JsonSerializable(typeof(ThresholdJsonConfig))]
+[JsonSerializable(typeof(MatchJsonConfig))]
 public partial class ConfigJsonContext : JsonSerializerContext
 {
 }
