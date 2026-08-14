@@ -3643,9 +3643,22 @@ So the assertion splits by what the entry is:
 
 - the **sixteen theme colours** must parse *and* yield a foreground that is not `Color.Default` —
   the stronger form, and the one that actually catches a rename;
-- **`default`, `dim`, `bold`** must parse, and are asserted to be exactly the three entries that
-  resolve to `Color.Default`. Pinning the count is what stops a real colour quietly joining them
-  through a future rename, which is the failure the weaker assertion would have waved through.
+- **`default`, `dim`, `bold`** must parse, and are asserted to be exactly the three entries **of
+  this command's nineteen** that resolve to `Color.Default`. Pinning the count is what stops a real
+  colour quietly joining them through a future rename, which is the failure the weaker assertion
+  would have waved through.
+
+That scope is load-bearing and the sentence above is wrong without it. It is a claim about the
+curated list, **not** about Spectre's parser: `Style.TryParse` accepts every decoration keyword the
+library has, and each of them parses to a `Color.Default` foreground for exactly the reason `bold`
+and `dim` do. Written as a claim about the parser it is false, and an implementer who tests it that
+way — enumerating what parses rather than iterating the nineteen rows — gets a failure that looks
+like a defect in this ruling and is not. Iterate the list.
+
+The list is `ColorResolution.StandardColorNames` (sixteen, exactly the ANSI palette, closed by the
+standard rather than by Spectre's version) plus the three named here. Nineteen is that sum and not
+a number to hard-code — in the test or in this paragraph, which is why the sentence above names the
+sum rather than repeating the nineteen.
 
 Confirm the nullability against Spectre before relying on the reasoning above — it is read off a
 cast rather than off the library, which is precisely the standard of evidence §9.6.2.1 warns about.
@@ -4839,3 +4852,24 @@ citations**, and several of those quotes are deliberate paraphrase, which a chec
 failures. A fourth check would cover a fortieth of the surface while crying wolf on part of it —
 below the bar `check-counts.sh` sets in its own header, and an ignored check occupies the slot a
 real one would have. So this one stays manual, and stays written down.
+
+**It recurred within the hour, in the paragraph above's own author.** §9.6.3.1 was given a sentence
+ending "§13.1's rule applies to a count in prose the same as to one in code" — and §13.1 is *What
+`Plain.Length` costs, stated*, which has no rule about counts. Same session, minutes after the fix
+above was committed, by someone actively looking for this. That is the finding: "be more careful"
+is not a mitigation, because the failure is not carelessness. Writing a citation is an act of
+recall, and recall returns a number that feels right; nothing in the act of writing it prompts a
+lookup, and the prose reads correctly either way.
+
+What caught it was cheap and mechanical enough to be a habit rather than a discipline: **read the
+cited heading's title, not just its number.** One `grep` against the heading, and the mismatch
+between "what I am about to claim it says" and "what it is called" is immediate — it needs no
+judgement and no reading of the section body. The citation that survives that check can still be
+wrong, but it can no longer be wrong in the way both of these were, which is the common way: not a
+subtly misread section, but an entirely unrelated one whose number was close to hand.
+
+The instructive part is that the sentence was fixed by **deleting the citation** rather than
+repointing it. There is no section stating that rule; the sentence never needed a pointer, and the
+citation was there for the authority it borrowed rather than for anything a reader would follow. A
+citation that cannot be checked in five seconds and that the sentence does not need is not neutral
+— it is the next entry in this table.

@@ -2116,6 +2116,35 @@ would flag wrongly. A check covering a fortieth of the surface while crying wolf
 below the bar `check-counts.sh` sets in its own header. Left manual, and written into §13.3 so the
 next person knows it was a decision rather than an oversight.
 
+**Then it happened again, minutes later, in my own new text.** §9.6.3.1 got a sentence citing
+"§13.1's rule" about hard-coded counts; §13.1 is *What `Plain.Length` costs, stated* and has no such
+rule. Same session, immediately after writing the warning above, while looking for exactly this.
+So the mitigation is not care — it is a habit: **`grep` the cited heading and read its title.**
+Five seconds, no judgement, and it catches the common form, which is not a subtly misread section
+but a wholly unrelated one whose number was close to hand. The fix was to *delete* the citation
+rather than repoint it: no section states that rule, and the pointer was there for borrowed
+authority rather than for anything a reader would follow.
+
+### The `--colors` round-trip assertion was scoped wrong
+
+§9.6.3.1 said `default`, `dim` and `bold` are "exactly the three entries that resolve to
+`Color.Default`". True of the nineteen rows `--colors` prints; false of Spectre's parser, which
+accepts every decoration keyword it has (`italic`, `underline`, `invert`, `conceal`,
+`strikethrough`, the blinks) and should resolve each to the same value for the same reason.
+
+An implementer testing "everything that parses" rather than iterating the nineteen rows gets a
+failure that looks like a defect in the ruling and is not. Sent to the implementor before they
+pinned the count, along with the confirmation that `StandardColorNames` is exactly the sixteen ANSI
+names — so nineteen is `Count + 3` and not a literal, in the test or in the prose.
+
+The implementor had already gone further than asked on the half of this that *was* right: rather
+than trust §9.6.3.1's reasoning about `Style.Foreground` being non-nullable — which the section
+itself flagged as read off a cast rather than off the library — they built a throwaway console app
+against the pinned Spectre 0.57.2 and ran it. `Style` is a value type, `Foreground` reflects as a
+non-nullable `Color`, and `{default, dim, bold}` empirically resolve to `Color.Default` while all
+sixteen names do not. The section's "confirm this before relying on it" line is now discharged, and
+by evidence rather than by agreement.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
