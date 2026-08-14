@@ -47,8 +47,8 @@ public class EndToEndItemValuesTests
         }
 
         var ctx = new ItemContext(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
-        var values = await ItemValueResolver.ResolveAsync(
-            pane, ctx, topLevel.Colors, rawStdinJson: null, cacheDir: Path.GetTempPath());
+        var values = (await ItemValueResolver.ResolveAsync(
+            pane, ctx, topLevel.Colors, rawStdinJson: null, cacheDir: Path.GetTempPath())).Values;
 
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new RenderNoteCollector());

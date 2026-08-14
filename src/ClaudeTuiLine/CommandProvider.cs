@@ -20,12 +20,22 @@ public static class CommandProvider
     private const int DefaultTtlSeconds = 30;
     private const int DefaultTimeoutMs = 150;
 
-    public static async Task<string?> ResolveAsync(
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.11.2: <see cref="Value"/> as <see cref="ResolveAsync"/> always
+    /// returned, plus <see cref="Unavailable"/> — true only when this render's fresh spawn attempt
+    /// failed (timed out, exited nonzero, or could not start) and there was no cached value to fall
+    /// back on, i.e. exactly the case <see cref="Value"/> is null for a reason other than "the
+    /// command legitimately printed nothing." A TTL-fresh cache hit and a stale-on-failure fallback
+    /// to a cached value are both <see cref="Unavailable"/> = false, since both answered.
+    /// </summary>
+    public readonly record struct CommandResolution(string? Value, bool Unavailable);
+
+    public static async Task<CommandResolution> ResolveAsync(
         PaneItem item, string? rawStdinJson, string? cwd, string cacheDir, bool paneWidthEligible)
     {
         if (item.Id is not { Length: > 0 } id || item.Command is not { Count: > 0 } command)
         {
-            return null;
+            return new CommandResolution(null, Unavailable: false);
         }
 
         var ttl = TimeSpan.FromSeconds(item.TtlSeconds is > 0 ? item.TtlSeconds.Value : DefaultTtlSeconds);
@@ -35,18 +45,18 @@ public static class CommandProvider
         var cached = ItemCache.TryRead(cacheDir, key);
         if (cached is { } fresh && DateTimeOffset.UtcNow - fresh.CapturedAt < ttl)
         {
-            return fresh.Value;
+            return new CommandResolution(fresh.Value, Unavailable: false);
         }
 
         var previousPaneWidth = paneWidthEligible ? cached?.PaneWidth : null;
         var spawned = await RunAsync(item, command, rawStdinJson, cwd, timeout, previousPaneWidth).ConfigureAwait(false);
         if (spawned is not { } result)
         {
-            return cached?.Value;
+            return new CommandResolution(cached?.Value, Unavailable: cached?.Value is null);
         }
 
         ItemCache.Write(cacheDir, key, new CacheEntry(result.Value, DateTimeOffset.UtcNow, result.ExitCode, cached?.PaneWidth));
-        return result.Value;
+        return new CommandResolution(result.Value, Unavailable: false);
     }
 
     private readonly record struct SpawnResult(string? Value, int ExitCode);

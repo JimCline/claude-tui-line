@@ -18,7 +18,7 @@ public class CommandProviderTests
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false);
 
-        Assert.Null(value);
+        Assert.Null(value.Value);
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class CommandProviderTests
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false);
 
-        Assert.Equal("hi", value);
+        Assert.Equal("hi", value.Value);
     }
 
     [Fact]
@@ -40,6 +40,6 @@ public class CommandProviderTests
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false);
 
-        Assert.Equal("hi", value);
+        Assert.Equal("hi", value.Value);
     }
 }

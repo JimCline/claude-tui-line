@@ -61,7 +61,7 @@ public static class ItemValueResolver
     /// widen id collection (§6.3), not to resolve any colour itself (§6.5 resolves colour
     /// separately, from this method's returned values).
     /// </summary>
-    public static async Task<IReadOnlyDictionary<string, string?>> ResolveAsync(
+    public static async Task<Resolution> ResolveAsync(
         Pane root,
         ItemContext ctx,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens,
@@ -73,7 +73,7 @@ public static class ItemValueResolver
         Walk(root, "", items, colorExprs);
 
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        var commandTasks = new List<(string Id, Task<string?> Task)>();
+        var commandTasks = new List<(string Id, Task<CommandProvider.CommandResolution> Task)>();
 
         foreach (var id in CollectIds(items, colorExprs, tokens))
         {
@@ -91,14 +91,30 @@ public static class ItemValueResolver
         }
 
         await Task.WhenAll(commandTasks.Select(t => t.Task)).ConfigureAwait(false);
+        var unavailableIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (id, task) in commandTasks)
         {
-            values[id] = task.Result;
+            values[id] = task.Result.Value;
+            if (task.Result.Unavailable)
+            {
+                unavailableIds.Add(id);
+            }
         }
 
         ResolveDerived(items, values);
-        return values;
+        return new Resolution(values, unavailableIds);
     }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.11.2: <see cref="ResolveAsync"/>'s full result — <see cref="Values"/>
+    /// as the method always returned, plus <see cref="UnavailableIds"/>, the subset of command item
+    /// ids that did not answer this render (§7's 150ms budget expired, the process exited nonzero,
+    /// or it could not start, with no cached value to fall back on) rather than legitimately
+    /// resolving to nothing. <see cref="PaneCollapse"/> is the one caller that reads
+    /// <see cref="UnavailableIds"/>; every other caller of <see cref="ResolveAsync"/> just wants
+    /// <see cref="Values"/>, the same as before this type existed.
+    /// </summary>
+    public readonly record struct Resolution(IReadOnlyDictionary<string, string?> Values, IReadOnlyCollection<string> UnavailableIds);
 
     // §9.4/§9.5: the JSON-Pointer path each entry was found at, alongside the same (Item, Eligible)
     // pair Walk always tracked — production ignores Path (every call site here passes "" as the

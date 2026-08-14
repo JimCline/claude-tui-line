@@ -84,13 +84,17 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         var tokens = topLevel.Colors;
         var cacheDir = ItemCache.ResolveCacheDir();
         IReadOnlyDictionary<string, string?> values;
+        IReadOnlyCollection<string> unavailableIds;
         try
         {
-            values = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir).ConfigureAwait(false);
+            var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir).ConfigureAwait(false);
+            values = resolution.Values;
+            unavailableIds = resolution.UnavailableIds;
         }
         catch
         {
             values = ItemValueResolver.Resolve(pane, ctx, tokens);
+            unavailableIds = UnresolvedCommandIds(pane);
         }
 
         // §11: splits only size once a real width is known. A configured split with COLUMNS unset
@@ -105,7 +109,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // ComputeRows, shared with RunPreview below, so the real render and a preview capture
         // can't compute that decision two different ways.
         var (rows, renderingPanel, boxBorder, borderColor) =
-            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, cacheDir, stampWidths: true);
+            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, cacheDir, stampWidths: true, unavailableIds);
         DrawRows(console, rows, renderingPanel, boxBorder, borderColor, surfaceWidth);
 
         return 0;
@@ -155,14 +159,25 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
     RenderNoteCollector notes,
     string? cwd,
     string cacheDir,
-    bool stampWidths)
+    bool stampWidths,
+    IReadOnlyCollection<string> unavailableIds)
 {
     var useSplitPipeline = surfaceWidth is int
         && (pane.Items.Count > 0 || (pane.Split != PaneSplit.None && pane.Children.Count > 0));
 
     if (useSplitPipeline)
     {
-        var resolvedRoot = SizeResolver.Resolve(pane, surfaceWidth!.Value, ctx, values, notes);
+        // SPEC-V2-FRAMEWORK.md §2.11: collapse-eligible panes are pruned from the raw tree before
+        // sizing ever sees them, so a collapsed pane never reserves width or draws a border, and a
+        // fully-collapsed root emits zero rows — the same shape as the empty-segments short-circuit
+        // the legacy leaf path below already takes.
+        var collapsedPane = PaneCollapse.Collapse(pane, values, ctx, unavailableIds);
+        if (collapsedPane is null)
+        {
+            return (Array.Empty<PaneRow>(), false, null, Style.Plain);
+        }
+
+        var resolvedRoot = SizeResolver.Resolve(collapsedPane, surfaceWidth!.Value, ctx, values, notes);
         if (stampWidths)
         {
             StampPaneWidths(resolvedRoot, cwd, cacheDir);
@@ -209,6 +224,17 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
 
     return (rows, renderingPanel, renderingPanel ? pane.Border.Style : null, borderColor);
 }
+
+// §2.11.2: the sync fallback (ItemValueResolver.Resolve) never spawns commands at all, so it has
+// no way to tell "this command legitimately printed nothing" from "it didn't answer" apart. Treating
+// every placed command item as unavailable here is the conservative read of that gap — collapsing a
+// pane on a signal this path can't actually produce is exactly the flicker §2.11.2 rules out.
+static IReadOnlyCollection<string> UnresolvedCommandIds(Pane root) =>
+    ItemValueResolver.WalkItems(root, "")
+        .Select(e => e.Item)
+        .Where(item => item.Command is { Count: > 0 } && item.Id is { Length: > 0 })
+        .Select(item => item.Id!)
+        .ToHashSet(StringComparer.Ordinal);
 
 // The one place either drawing form (bordered Panel vs plain per-row MarkupLine) is produced, so
 // RunAsync's real console and RunPreview's captured one can't draw the same rows two different ways.
@@ -338,13 +364,17 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     var tokens = topLevel.Colors;
     var cacheDir = ItemCache.ResolveCacheDir();
     IReadOnlyDictionary<string, string?> values;
+    IReadOnlyCollection<string> unavailableIds;
     try
     {
-        values = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir).ConfigureAwait(false);
+        var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir).ConfigureAwait(false);
+        values = resolution.Values;
+        unavailableIds = resolution.UnavailableIds;
     }
     catch
     {
         values = ItemValueResolver.Resolve(pane, ctx, tokens);
+        unavailableIds = UnresolvedCommandIds(pane);
     }
 
     var notes = new RenderNoteCollector();
@@ -357,7 +387,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
         // cached width at a different one. §9.3.4: this is permanent, not a placeholder — it stays
         // until §5.0.1's widths store is keyed by resolved surface width.
         var (jsonRows, jsonRenderingPanel, jsonBoxBorder, jsonBorderColor) =
-            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false);
+            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds);
 
         // §9.3.4: a row is a line of the rendered surface, borders included — the same draw the
         // bare form produces, captured through the same console configuration rather than a second
@@ -414,7 +444,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     }
 
     var (bareRows, renderingPanel, boxBorder, borderColor) =
-        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false);
+        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds);
 
     // §9.3.2: bare --preview writes through the render path's own console configuration (forced
     // ANSI, not the auto-detecting instance --colors uses), captured first so the columns/notes
