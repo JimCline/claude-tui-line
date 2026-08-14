@@ -1807,10 +1807,11 @@ with the statusline path (no args ⇒ render, exactly as now):
 - `--items` — emit the registry as JSON, in **two sections**: `items`, one row per builtin id, and
   `kinds`, the key vocabulary of each way an item can be written. See §9.6.2 for the shape and for
   why the keys are not per-row.
-- `--colors` — print every accepted colour name **rendered in its own colour**, so the choice is
+- `--colors` — print the **recommended** palette **rendered in its own colour**, so the choice is
   made by looking rather than by guessing what `olive` is. `--colors --json` emits the same list
-  unstyled for a program. The palette is theme-mapped (§6.2), so printing it through the user's
-  own terminal is the only honest preview; a swatch in documentation shows the author's theme.
+  unstyled for a program, and must declare that it is a recommendation rather than the accepted
+  set — see §9.6.3. The palette is theme-mapped (§6.2), so printing it through the user's own
+  terminal is the only honest preview; a swatch in documentation shows the author's theme.
 
 `--items` exists because §12's authoring tools need to know what the framework can do, and any
 other way of knowing it is a copy. A skill or command with an item list embedded in its prose is
@@ -2171,6 +2172,58 @@ knows). §12.2's migration depends on that bit: an item that will not render unl
 placed is a different mapping decision from one that appears on its own, and a tool that cannot
 tell them apart will map a branch readout onto `remote-url` and produce a config that renders
 short with nothing wrong in it.
+
+### 9.6.3 `--colors` prints a recommendation, because the accepted set is not ours and is not finite
+
+This bullet used to say "print every accepted colour name". It cannot, and the reason is
+structural rather than a matter of effort.
+
+**There is no colour registry in this codebase, and there should not be one.**
+`ColorResolution.ResolveLiteral` is two lines: it hands the string to
+`Spectre.Console.Style.TryParse` and takes the resulting `Foreground`. The accepted set is
+therefore Spectre's entire table — roughly 256 named colours — plus `#rrggbb` hex, which is
+infinite. No file in `src/` enumerates the sixteen; they are named only in prose. `--colors`
+consequently has nothing to enumerate, and the two ways of giving it something are both wrong:
+
+- **Hardcode our own list of accepted names.** This is a second registry of a table we do not
+  own, drifting against a third-party library on every upgrade — worse than the §1 case, because
+  no amount of care on our side keeps it true.
+- **Reflect over Spectre's `Color` statics.** Same table, so no drift — but it is reflection over
+  a library type in a Native AOT binary, and printing 256 swatches answers a question nobody
+  asked. A person scanning for a colour is not helped by 256 of them.
+
+So `--colors` prints a **curated recommendation**: the sixteen theme colours plus `default`,
+`dim`, and `bold`. That list is a genuine new thing and must live in exactly one place in code,
+because it exists nowhere today.
+
+**Its correctness condition is testable, and the test is the point.** A curated list can rot in a
+way a derived one cannot — a Spectre upgrade could rename a colour and the list would go on
+recommending it, with the failure landing on the user as a silently uncoloured item (§7). So every
+entry is asserted to round-trip: each name through `ResolveLiteral`, non-null result. The list is
+allowed to be hand-written precisely because that test refuses to let it be wrong.
+
+**`--colors --json` must say which set it is.** This matters more than it sounds, and it is the
+same failure as §9.6.2's missing `kinds` section wearing different clothes. §12's authoring tools
+treat `--colors` as authority the way they treat `--items`, and §12.2 instructs the migrator to
+preserve colours "by name, from `--colors`". A bare list of nineteen names reads as exhaustive, so
+a model asked for `#ff8800` — which parses fine and always has — will consult the list, not find
+it, and refuse or silently substitute. The output therefore carries the distinction explicitly:
+
+```json
+{
+  "recommended": [ { "name": "olive", "themeMapped": true } ],
+  "alsoAccepted": "Any Spectre.Console color name (256-palette, e.g. deepskyblue1) or #rrggbb hex.
+                   These parse everywhere a name is accepted; how faithfully they render depends on
+                   `colorSystem` (§6.2), which defaults to `standard` and approximates them to the
+                   nearest of the sixteen."
+}
+```
+
+`themeMapped` is the reason to recommend these nineteen at all, and it is the honest form of the
+advice: the sixteen follow the user's terminal theme, so a statusline built from them stays
+readable when the theme changes, and one built from hex does not. That is a recommendation with a
+stated reason, which a model can weigh against a user who explicitly wants `#ff8800` — unlike a
+bare list, which it can only obey or violate.
 
 ### 9.7 `--version`, and the two places a version number wants to live
 

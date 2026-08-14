@@ -435,6 +435,41 @@ list against the record that has to supply it found a field that cannot exist an
 never asked for. Same move both times: put the scattered thing next to the single thing that owns
 it, and the holes stop being invisible.
 
+### Fifth batch — `--colors`, and a registry that should not be built (§9.6.3)
+
+Ran the same check on `--items`' sibling flag, which was specified to "print every accepted colour
+name". It cannot, and this one is structural rather than an oversight.
+
+**There is no colour registry in `src/`, and there should not be one.**
+`ColorResolution.ResolveLiteral` is two lines — it hands the string to `Spectre.Console.Style.TryParse`
+and takes the `Foreground`. So the accepted set is Spectre's whole table plus `#rrggbb` hex, which
+is infinite. The sixteen are named only in prose; no `.cs` file lists them. Both ways of giving
+`--colors` something to enumerate are wrong: hardcoding the accepted names is a second registry of
+a table we do not own, drifting against a library upgrade with no care on our side able to prevent
+it; reflecting over Spectre's `Color` statics has no drift but means reflection over a library type
+in an AOT binary, to print 256 swatches nobody wants to read.
+
+**Ruling: `--colors` prints a curated recommendation** — the sixteen plus `default`/`dim`/`bold` —
+and that list is a genuine new artefact, since it exists nowhere in code today. A curated list can
+rot in a way a derived one cannot, so every entry is asserted to round-trip through `ResolveLiteral`
+non-null. **The list is allowed to be hand-written precisely because that test refuses to let it be
+wrong** — without it, a renamed colour would go on being recommended and fail as a silently
+uncoloured item under §7.
+
+**The failure that made this urgent is the `kinds` failure again in different clothes.** §12's
+tools read `--colors` as authority, and §12.2 told the migrator to preserve colours "by name, from
+`--colors`". A bare list of nineteen names reads as exhaustive — so a model asked for `#ff8800`,
+which parses fine and always has, would consult the list, not find it, and refuse or silently
+substitute. **An authority list that omits a valid form causes the tool to refuse valid work.**
+`--colors --json` now carries `recommended` and `alsoAccepted` as separate keys, and each
+recommended entry carries `themeMapped: true` — the reason to prefer it, stated, so a model can
+weigh it against a user who explicitly wants a specific shade instead of merely obeying it.
+
+`commands/migrate.md` corrected to match: standard ANSI in the original maps to a recommended name
+(theme-mapped, same behaviour as before), but a *specific* shade in the original maps to a 256 name
+or hex, with `colorSystem` flagged in the report — reproducing a truecolor escape by nearest name
+is a downgrade, and the old instruction mandated it.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

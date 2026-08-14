@@ -102,7 +102,14 @@ looks wrong precisely when the user notices.
 failed to carry across will quietly lose an element, and the user will not find out until the day
 they needed it. Do not stretch tier 2 to avoid an empty tier-3 list.
 
-Preserve colours by name, from `--colors`, where the original used raw ANSI. If the original varied
+Preserve colours by name, from `--colors`'s `recommended` list, where the original used one of the
+standard ANSI colours — those are theme-mapped, so they keep following the user's terminal theme
+exactly as the original did. Where the original used a *specific* shade (a 256-palette index or a
+truecolor escape), reproducing it by name is a downgrade: use the 256 name or `#rrggbb` hex, which
+parse everywhere a name does, and say in your report that this also needs `"colorSystem"` set
+(§6.2 — the default profile approximates them to the nearest of the sixteen). `--colors`'s
+`recommended` list is a recommendation, not the accepted set; do not refuse a colour for being
+absent from it. If the original varied
 a colour by value — red above a threshold, a different colour per model — that is a colour rule
 with `match` or `thresholds`, not a fixed colour. An OSC 8 escape becomes a `link` on the item.
 
