@@ -6231,6 +6231,52 @@ statusline executes. That is §14.1's original drift with the two directories re
 scenario §14.2's hash discipline was invented for — which is the argument for §9.7 again, since a
 version answers *which tree* while a hash only answers *which file*.
 
+#### 14.2.2 §9.7's test compares two files in the source tree, and the deploy check is still unwritten
+
+§14.2.1 ruled that provenance requires asking the artifact, and named §9.7's `<Version>`/`--version`
+as the mechanism. That is right about the mechanism and too quick about the check. §9.7's test
+compares the **assembly version against `plugin.json`** — both of which live in the source tree,
+next to each other, and are read by the same test run. It proves the tree is internally consistent.
+It cannot observe `publish/` at all, and nothing else does either.
+
+So the check §14 actually needs is a distinct step that does not exist yet: **run the deployed
+binary and ask it.** `publish/claude-tui-line --version`, compared against the version the tree
+declares. That is the only reading that crosses the boundary where the failure lives.
+
+It cannot be a unit test, and the reason is the whole point rather than a limitation. A test runs
+against what the test run just built; the artifact in question is one somebody deployed at some
+earlier time, which is precisely the fact under investigation. A test that built its own copy to
+interrogate would be asking the fresh build whether the fresh build is fresh. This belongs in
+§14.2's verification step, beside the hash and doing the half the hash cannot: **the hash names the
+file, `--version` dates it.**
+
+The failure it catches, stated concretely because every existing check is green throughout it: bump
+the version, rebuild, and deploy the *previous* binary. `.csproj` and `plugin.json` agree, so §9.7's
+drift test passes. The deployed file hashes consistently with itself on every subsequent check, so
+§14.2 passes. §14.3's single-command rule was never violated — the right command ran, it simply ran
+before the change. Nothing anywhere is red, and the running statusline is last week's. That is
+§14.1's drift surviving every mechanism §14 built to stop it, because all of them measure the
+artifact and none of them ask it.
+
+**This does not create the third home §9.7 forbids**, and the distinction is worth stating because
+the sentence there reads as though it might. §9.7 rules out a third place a version is *authored* —
+`marketplace.json` gaining a hand-maintained copy that the drift test does not cover. The deployed
+binary's reported version is not authored anywhere; it is generated from the `.csproj` by the build.
+Reading a value back out of a derived artifact is a *check* on the registry, not a second registry.
+That is the same authored-versus-derived line §1 turns on, and it is the line that decides whether
+adding a reader is a cost or a safeguard.
+
+**One open question, flagged rather than ruled, because ruling it without evidence is how §9.7 got
+its own defect.** §14.3 says a reviewer "reproduces a hash" from the SDK-default output directory
+while deploys go to `publish/`. That comparison is only meaningful if a native AOT publish is
+byte-identical across two different `-o` destinations from the same source. Modern MSBuild is
+deterministic by default, and `obj/` is shared regardless of `-o`, both of which point toward yes —
+but AOT binaries can embed build paths, and "points toward" is not a measurement. **Someone must
+publish the same commit to two scratch directories and compare the hashes before §14.3's
+reproduce-a-hash sentence is relied on.** Neither directory may be `publish/`. If they differ, §14.3
+loses its verification story and §14.2's hash becomes a check only the deployer can perform — which
+would not be fatal, but is the opposite of what §14.3 currently claims.
+
 ### 14.3 Producing the artifact and deploying it are different acts, and only the second is restricted
 
 `publish/` is what the user's live statusline executes, so writing there replaces something of the
