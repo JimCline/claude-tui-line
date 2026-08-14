@@ -25,8 +25,55 @@ costs *one registry row* plus whatever is genuinely unique about it, and zero ed
 renderer, the compositor, the layout engine, or any test harness. If adding an item means
 touching `SegmentBuilder`'s control flow, the abstraction has not landed.
 
-Concretely: `SegmentBuilder.Build`'s current 14 hand-written `if` blocks collapse into a loop
-over a resolved item list. The per-item logic that survives lives in the row.
+Concretely, and stated as the history it now is: this rule was written against a
+`SegmentBuilder.Build` that dispatched per item through a long run of hand-written `if` blocks. They
+were to collapse into a loop over a resolved item list, with the per-item logic that survives living
+in the row. That collapse has landed — see §1.1, which also explains why this paragraph must not be
+rewritten to describe the code as it stands today.
+
+### 1.1 The half of this rule that everything cites, and that is not written above
+
+Two problems, and the second is the one that matters.
+
+**The paragraph above is stale, and stale in the way it exists to forbid.** `SegmentBuilder.Build`
+is now fourteen lines containing exactly one `if` — a null check — around
+`foreach (var id in ItemRegistry.DefaultIds)`. The collapse it calls for has already happened. What
+remains is a present-tense claim about live code (*"current 14 hand-written `if` blocks"*), which is
+a number written into prose about a thing that changes — which is, in those exact words, the defect
+§4 names when it rules that a flag belongs on a row because *"a number written into prose is a
+second registry that goes stale."* §1 demonstrates the failure it defines, in its only worked
+example. The number is now true by coincidence: fourteen is the method's line count.
+
+Do not repair this by writing a fresh count. That re-commits it. The before-state is real history
+and worth keeping, so it is stated as history: the rule was written against a `Build` that dispatched
+per item through hand-written branches. What must not persist is prose asserting what the code looks
+like *today*.
+
+**The rule above is about cost, and every section that cites it is about drift.** Read the rule
+literally: adding an item costs one registry row and zero edits elsewhere. That is a claim about how
+*expensive extension* is, and it is satisfied completely by a registry that is trivial to append to
+and silently missing half its entries. Now read what §1 is actually invoked for — Defect 11's
+resolution set behind the config surface, §9.5.1's extractor table behind it, §9.4.2's unknown keys,
+§9.6.2.2's version drift, §12.7.1's payload copied into three commands. Not one of those is "adding
+a thing was expensive." Every one is **a registry that fell behind the surface it mirrors, with
+nothing to notice.** The document has been citing §1 for a failure mode §1's letter does not
+describe, and getting the right answer for eight sections by borrowing its spirit.
+
+**Ruled, as the second half of the load-bearing rule: a registry must be mechanically tied to the
+kind it enumerates.** One registry is necessary and not sufficient — the cheap-to-extend registry
+and the silently-incomplete registry are the same object, and only a check distinguishes them.
+"Mechanically" excludes a sentence instructing whoever comes next, because Defect 11 and §9.5.1 are
+both that sentence, already ignored once each. In practice this means the enumeration is derived
+from the types (§9.4.2's `[JsonExtensionData]`, §9.6.1's code registry), or a test fails when the two
+disagree (§9.6.2.2's drift test), or coverage **fails closed** so an unclassified new member breaks
+the build rather than going unchecked (§9.5.1).
+
+And the test §1 offers — *"if adding an item means touching `SegmentBuilder`'s control flow, the
+abstraction has not landed"* — is by its own terms a one-time test, phrased for a landing that has
+now happened. It cannot fail again, because nothing runs it. A rule whose only check was a
+milestone is a rule that stops being enforced the moment it succeeds, which is precisely how a
+registry begins falling behind: not by anyone deciding to duplicate it, but by the check that would
+have caught them having been retired as passed.
 
 ## 2. The render surface and panes
 

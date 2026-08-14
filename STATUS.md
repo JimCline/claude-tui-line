@@ -3202,6 +3202,44 @@ one payload in one session.
 Worth recording as process: this is the third time this session that checking the code before
 finalizing a ruling changed the ruling. Here it changed it in the cheaper direction.
 
+## §1 was cited nine times for a rule it does not state (§1.1)
+
+Best finding of the session, and found purely by structure: §1 is ten lines with no subsections, and
+eleven sections cite it. Highest-leverage target in the document — a gap there is inherited
+everywhere.
+
+**Its worked example was stale, in the way it exists to forbid.** `SegmentBuilder.Build` is now
+fourteen lines with exactly one `if` (a null check) wrapping
+`foreach (var id in ItemRegistry.DefaultIds)`. The collapse §1 demands **has already landed**. The
+spec still said *"current 14 hand-written `if` blocks"* — present tense, a number in prose about live
+code, which is verbatim the defect §4 names ("a number written into prose is a second registry that
+goes stale"). §1 demonstrated the failure it defines, in its only example. `14` survives as
+coincidence: it is now the method's line count.
+
+Repaired as *history*, not as a fresh count — writing a new number re-commits the defect. The
+before-state is real and worth keeping; what must not persist is prose asserting what the code looks
+like today.
+
+**The bigger half: §1 is about cost, and every citation of it is about drift.** Read literally, §1
+says adding an item costs one registry row and zero edits elsewhere — a claim about *expensive
+extension*, satisfied completely by a registry that is trivial to append to and silently missing half
+its entries. Now read what §1 actually gets invoked for: Defect 11's resolution set behind the config
+surface, §9.5.1's extractor table behind it, §9.4.2's unknown keys, §9.6.2.2's version drift,
+§12.7.1's payload copied into three commands. Not one is "adding a thing was expensive." Every one is
+a registry that fell behind the surface it mirrors with nothing to notice. The document has been
+borrowing §1's spirit and getting the right answer anyway.
+
+Ruled as the rule's second half: **a registry must be mechanically tied to the kind it enumerates.**
+One registry is necessary, not sufficient — the cheap-to-extend registry and the silently-incomplete
+one are the same object, and only a check tells them apart. "Mechanically" excludes a sentence
+addressed to whoever comes next, because Defect 11 and §9.5.1 are each that sentence, already ignored
+once.
+
+**And §1's own test was a milestone, not a check.** *"If adding an item means touching
+`SegmentBuilder`'s control flow, the abstraction has not landed"* cannot fail again — the landing
+happened and nothing runs it. That is how a registry starts falling behind: not by anyone deciding to
+duplicate it, but by the check that would have caught them being retired as passed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
