@@ -25,7 +25,7 @@ public partial class AcceptedJsonContext : JsonSerializerContext
 
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §1.1.3: reads no config and probes nothing — every value comes from the
-/// eight parser-colocated registries #38 built plus <see cref="ConfigChecker.SizeValues"/>, so
+/// nine parser-colocated registries #38 built plus <see cref="ConfigChecker.SizeValues"/>, so
 /// there is no failure mode here beyond a crash. Always exits 0.
 /// </summary>
 public static class AcceptedCommand
@@ -42,6 +42,7 @@ public static class AcceptedCommand
             new("distribute", PaneDistributeParsing.AcceptedTokens, null),
             new("overflow", OverflowModeParsing.AcceptedTokens, null),
             new("case", ItemValueResolver.CaseAcceptedTokens, null),
+            new("height", PaneHeightParsing.AcceptedTokens, null),
             new("size", null, ConfigChecker.FormatAccepted(ConfigChecker.SizeValues)),
         };
 
