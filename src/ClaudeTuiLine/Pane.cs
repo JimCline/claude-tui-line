@@ -107,12 +107,15 @@ public static class PaneAlignParsing
 /// SPEC-V2-FRAMEWORK.md §2.3.1: how a vertical split's <c>content</c>/<c>fill</c> children divide
 /// their share of the width. <see cref="Greedy"/> is the existing single-pass allocation (§2.3),
 /// unchanged and still the default; <see cref="MinRows"/> searches for the width split that
-/// minimizes the tallest candidate's row count instead.
+/// minimizes the tallest candidate's row count instead; <see cref="Even"/> divides the remaining
+/// extent equally among them, ignoring intrinsic measurement and the content/fill distinction
+/// entirely, so the layout holds still as content changes (§2.3/§2.4).
 /// </summary>
 public enum PaneDistribute
 {
     Greedy,
     MinRows,
+    Even,
 }
 
 public static class PaneDistributeParsing
@@ -121,6 +124,7 @@ public static class PaneDistributeParsing
     {
         ("greedy", PaneDistribute.Greedy),
         ("min-rows", PaneDistribute.MinRows),
+        ("even", PaneDistribute.Even),
     };
 
     public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
