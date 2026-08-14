@@ -133,7 +133,9 @@ rows of columns.
 
 Pane keys:
 
-| key | accepted values |
+<!-- pane-token-table: quoted literals checked against `--accepted --json` by tools/check-doc-tokens.sh -->
+
+| key | notes |
 |---|---|
 | `split` | `"vertical"`, `"horizontal"` — makes this a container for `children` |
 | `children` | child panes |
@@ -147,10 +149,8 @@ Pane keys:
 | `ellipsis` | the marker used when truncating |
 | `maxRows` | integer — cap on rows this pane may occupy |
 | `border` | `enabled`, `style`, `color` |
+| `border.style` | `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or `"none"` |
 | `items` | the items to render, for a leaf pane |
-
-Border `style` is one of `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or
-`"none"`.
 
 `size: "content"` measures the pane's own text and asks for exactly that much. `distribute:
 "min-rows"` is the interesting one: rather than letting each pane grab what it wants in order, it
@@ -158,7 +158,9 @@ searches for the width split that makes the *whole statusline* as short as possi
 
 > Unrecognised values are accepted silently at render time rather than rejected — an unknown
 > `size` falls back to `"fill"`, an unknown `style` to `"rounded"`. Run `--check` against your
-> config first: it reports every one of these instead of swallowing them.
+> config first: it reports every one of these instead of swallowing them. For any key above,
+> `--check` reports the complete accepted set the moment it flags a bad value — this table is a
+> guide to that set, not the definitive list of it.
 
 ### Items
 
