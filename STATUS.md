@@ -3548,6 +3548,56 @@ and string-collection members; each must be covered or exempted **with a printed
 measurement gate before building: report the candidate count. Tens is the honest price of failing
 closed; two hundred means the filter is wrong.
 
+### #37 step 5: promotion landed clean; the coverage test's own scope had a gap in exactly the corner it exists to guard
+
+Step 4 (the equivalence test, both walks over a 10-member corpus harvested from `ConfigCheckTests.cs`)
+came back green, 1164/1164 — no live `--check` defect, the two implementations already agreed.
+Step 5a promoted `ScanReferencesViaExtractors`'s body into `ScanReferences`, deleted the now-redundant
+second implementation and its equivalence test, held at 1154/1154 — the step-3 baseline count, proof the
+promotion changed no behaviour.
+
+Step 5b — the fail-closed coverage test itself — is where the implementor's own measurement pass
+surfaced a real classification error, caught by `cdtui-architect` on review rather than by the
+implementor: the proposed reflection roots were `PaneItem`, `ColorExpr`, `ColorRule` — the three types
+`ScanContext` exposes — on the reasoning that `Pane` is "pure tree-navigation." False: `Pane.cs:149`
+gives every pane a non-nullable `PaneBorder Border`, and `PaneBorder.Color` is a full `ColorExpr` — a
+reference-carrying member of a type the root set excluded. `Walk` already scans it correctly
+(`ItemValueResolver.cs:110`); the bug was never live. But the coverage test, as scoped, could never
+catch a reference field added later to `Pane` or `PaneBorder` — precisely where §3.3's compound items
+will land. It would have stayed green across the one class of change it exists to guard against.
+
+Second finding: `PaneItem.Command` was proposed exempt as "a literal/config value." `ItemValueResolver.cs:138`'s
+own comment says otherwise — "Adding a form (§4.2's argv placeholders...) means appending here."
+`Command` **is** argv; it just has no reference form *yet*. Filing it next to `PaneItem.Case` in an
+undifferentiated exempt bucket means nothing prompts reclassification when §4.2 ships. **Ruled:
+exemptions come in two kinds** — `NeverAReference` and `PendingForm` (the latter carrying the spec
+section that will make it live) — not one undifferentiated bucket. Same shape as the `ReferenceForm?`
+nullable rejected earlier this section: a category that silently absorbs a case it should force a
+decision on.
+
+Also ruled: this test is **fail-closed over members, fail-open over sites** — reflection proves every
+reference-carrying member is handled, never that `Walk` visits every place those types live. It would
+stay exactly as green today with `ItemValueResolver.cs:110` deleted outright. Paired with a cheap fixture
+assertion (step 5c: one config exercising all four `ColorExpr` sources, asserting the resulting path set
+literally) rather than fixed by widening reflection further, because that is a different question
+reflection cannot see. The registry form of `Walk` itself (walk sites as data) was recorded as the
+eventual durable answer and deliberately not mandated now — three sites, twenty lines, not worth it
+until §3.3 adds a fourth.
+
+Landed as a new subsection of §9.5.1 rather than a chat-log ruling, same reasoning as §1.1.2: "what does
+covered mean" is exactly the kind of definition that rots silently if it only ever existed in a message.
+Fragment delivered by `cdtui-architect` (no Edit access, by design), verified against source before I
+spliced it, `check-docs.sh` green afterward (112 cited sections, unchanged). Two NEEDS-EVIDENCE items
+left for the implementor to resolve while building: whether a `PendingForm` row can detect its own spec
+section has landed, and whether the stated candidate filter actually reproduces 16 (now 19, with the two
+new `Pane` exemptions and the `PaneBorder.Style` foreign-type row) when run against the real code.
+
+One aside surfaced and deliberately left unruled: a colour token (`@name`) can only appear in the
+`ColorExpr` position, never inside a `MatchRule`/`ThresholdRule` branch, because `@`-prefix resolution
+happens once at parse time (`Config.cs:537`, the only such site in the codebase). Unclear whether that's
+a deliberate product boundary or an accident of how rules were built. Not blocking #37; flagged for a
+future task if it turns out to matter.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

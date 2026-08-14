@@ -4268,6 +4268,240 @@ buying: not that coverage is complete today, but that it **fails closed** — th
 announces itself at the commit that causes it rather than in a statusline that renders short. A test
 that can only pass by someone remembering something is the sentence again, compiled.
 
+##### What "covered" means, and what this check cannot prove
+
+Written against the code at `4ef9c7d`; every claim below was verified by reading `src/ClaudeTuiLine/`
+directly, and the line citations are as of that commit, subject to the re-pointing rule in *What must
+not change*, item 4 below.
+
+A first pass at the coverage test proposed reflecting over `PaneItem`, `ColorExpr`, and `ColorRule` —
+the three types `ScanContext` exposes — with a filter picked by inspection rather than stated as a
+rule, yielding 16 candidates split 6 covered / 10 exempt. Checked against the code, that classification
+has one defect and one omission, both worth recording because a fail-closed test is only as good as
+what it fails closed *over*.
+
+###### The candidate filter, stated
+
+A count is only meaningful if the rule that produced it is written down. "Plausible reference-carrying"
+is a judgement, and a judgement re-made per member is how a real reference gets waved through. The rule
+is mechanical: for each root type, and transitively for each type reached from one —
+
+1. A member whose type is a record declared in `ClaudeTuiLine` — or a collection of one — is
+   **recursed into**, and is not itself a candidate.
+2. A member whose type is declared *outside* the `ClaudeTuiLine` assembly is not recursed. It gets an
+   explicit exempt row naming the foreign type, so it is visible rather than silently absent. (Today:
+   `PaneBorder.Style`, a Spectre.Console `BoxBorder?`.)
+3. Otherwise, a member is a **candidate** iff its type transitively contains `string` — a `string`, a
+   `string?`, a collection of `string`, a dictionary keyed or valued by `string`, a tuple containing one.
+4. Everything else — `bool`, `int?`, every enum — is out of scope and needs no row.
+
+Rule 3 is deliberately wider than "is a string": a future `IReadOnlyDictionary<string, string> Args`
+would carry references and must land in the candidate set without anyone deciding it should. Enums are
+excluded by rule 4 rather than exempted by hand — an enum's values are a closed set fixed at compile
+time and cannot name an item.
+
+When a root or reached type is abstract, reflect over the abstract type's own declared members **and**
+each concrete subtype's. `ColorExpr` today declares nothing of its own and each of
+`Literal`/`TokenRef`/`Inline` declares only its own positional property, so nothing is lost today — but
+a member added to the `ColorExpr` base later would be invisible to a walk that used `DeclaredOnly` on
+the subtypes alone. Walking both is one extra line and removes the footgun permanently.
+
+###### Roots: `Pane` and `PaneBorder` must be included
+
+The proposed root set excluded `Pane` on the grounds that "no extractor bucket reads a `Pane`-level
+property directly; `Pane` is pure tree-navigation that `Walk` consumes." The first clause is true and
+the second is false. `Pane.cs:18` —
+
+```csharp
+public sealed record PaneBorder(ColorResolution.ColorExpr Color, BoxBorder? Style);
+```
+
+— and `Pane.cs:149` gives every `Pane` a **non-nullable** `PaneBorder Border`. A pane's border carries
+a full `ColorExpr`, which may be a `TokenRef` (an `@name` colour-token reference) or an `Inline` rule
+whose `From` is an item-id reference. `Pane.Border` is not navigation; it is a reference-carrying
+member.
+
+`Walk` handles it correctly today — `ItemValueResolver.cs:110` adds `pane.Border.Color` at
+`<path>/border/color` before touching items, and the recursion at `:126` carries that to every child.
+**There is no live bug.** The defect is in the test, not the scanner: with `Pane` excluded, the
+candidate set can never grow when a reference-carrying field is added to `Pane` or `PaneBorder` — and
+those are precisely the types where §3.3's compound items and any future pane-level feature will land.
+The test would stay green across exactly the change it exists to catch, in the corner of the model most
+likely to change.
+
+Adding both roots costs two new exempt rows and buys the coverage:
+
+| Member | Disposition | Reason |
+|---|---|---|
+| `Pane.Size` | exempt — never a reference | A size *form* (§4.1): an integer, a percentage, or one of `content`/`fill`/`auto`. Never an id. |
+| `Pane.Ellipsis` | exempt — never a reference | Literal display text substituted on truncation. |
+| `Pane.Border` | recursed | → `PaneBorder` |
+| `Pane.Items` | recursed | → `PaneItem` |
+| `Pane.Children` | recursed | → `Pane` |
+| `PaneBorder.Color` | recursed | → `ColorExpr` |
+| `PaneBorder.Style` | exempt — foreign type | Spectre.Console `BoxBorder?`; not recursed per filter rule 2. |
+
+`Pane`'s remaining members — `Split`, `Overflow`, `MaxRows`, `MinSize`, `MaxSize`, `Gutter`, `Valign`,
+`Align`, `Distribute` — are enums and numerics, excluded by filter rule 4.
+
+###### Covered (6) — confirmed
+
+These map one-to-one onto the five `ReferenceExtractors` and the single `ColorTokenExtractors` entry at
+`ItemValueResolver.cs:140–189`, verified against each extractor body:
+
+| Member | Extractor | Form |
+|---|---|---|
+| `PaneItem.Id` | #1 | `Declaration` |
+| `PaneItem.Item` | #1 | `ItemSelector` |
+| `PaneItem.From` | #2 | `DerivedFrom` |
+| `PaneItem.Link` | #3, via `LeafContent.LinkPlaceholderIds` | `LinkPlaceholder` |
+| `ColorRule.From` | #4 (inline) and #5 (`colors`-table token) | `ColorFrom` |
+| `ColorExpr.TokenRef.Name` | colour-token extractor | `ColorTokenReference` |
+
+Note on `ColorRule.From`: `Config.cs:540` parses an inline rule as
+`new Inline(ParseColorRule(rule, rule.From ?? owningItemId))`, so `From` is populated with the owning
+item's id even when the config omits it — extractor #4 then yields that id and it must resolve. For a
+border, `Config.cs:512` passes `owningItemId: null`, so a border's `from`-less rule yields no candidate.
+That is the behaviour `ColorResolution.cs:30` already documents, and it is correct.
+
+###### Exempt — nine confirmed, one rejected
+
+**`PaneItem.Command` is not exempt.** The proposed reason was "a literal/config value, not a
+reference." `ItemValueResolver.cs:135–139` says the opposite in the codebase's own words:
+
+```csharp
+// Adding a form (§4.2's argv placeholders, §3.3's compound-item parts) means appending here,
+// not editing either consumer.
+```
+
+`Command` **is** argv. §4.2's placeholders will land in exactly this member. Filing it under the same
+undifferentiated "exempt" bucket as `PaneItem.Case` means that when §4.2 ships, nothing prompts anyone
+to revisit the row — the test stays green across the one change it was built to catch. See below for
+the fix.
+
+The other nine hold, several for stronger reasons than first given — the reason is the durable part of
+a row; "a config value" tells a future reader nothing they can check:
+
+| Member | Reason |
+|---|---|
+| `PaneItem.Format` | A format string substitutes `{}` with the item's **own** value and nothing else — `LeafItems.cs:53` is a literal `.Replace("{}", value)`, not a pattern match. Contrast `Link`, whose `LeafContent.cs:22` regex `\{([^{}]*)\}` matches `{other-id}` and *is* a reference form. `LeafContent.cs:65–67` states outright that a `format` string has no bearing on the URL. |
+| `PaneItem.Extract` | A regex pattern applied to the item's own value (`ExtractValue`). Never an id. |
+| `PaneItem.Case` | One of a closed set of case-transform tokens. Never an id. |
+| `ColorRule.Default` | A literal colour spec. `ColorResolution.cs:82` returns it directly to `ResolveLiteral`; never re-entered into `ColorExpr` parsing. `Config.cs:537` is the **only** `@`-prefix site in the codebase, so a `@token` cannot hide here. |
+| `ColorExpr.Literal.Spec` | Same: `ColorResolution.cs:59` returns it as a spec. Anything `@`-prefixed became a `TokenRef` at parse time (`Config.cs:537–538`) and is therefore already covered. |
+| `MatchRule.Color` | Same species as `Default` — a literal colour spec, no `@` handling. |
+| `ThresholdRule.Color` | Same. |
+| `MatchRule.Contains` | A predicate over an item's **value**, not over ids. |
+| `MatchRule.EqualsValue` | Same. |
+
+The four colour-valued strings share one reason, worth stating once: **`@name` is resolved into a
+`TokenRef` at parse time, so any string still holding an `@` prefix at runtime is a literal, not a
+reference.** That single fact is what makes all four safe, and it is the fact that would change if
+anyone ever taught a rule branch to accept a token.
+
+> Aside, not a ruling: a consequence of the above is that a colour token cannot be used *inside* a rule
+> branch — only in the `ColorExpr` position. Whether that is a deliberate product decision or an
+> accident is unresolved.
+
+###### Exemptions come in two kinds
+
+A single `exempt` bucket cannot distinguish "this can never be a reference" from "this is not a
+reference *yet*", and that difference is the entire value of the row. Require two:
+
+```csharp
+enum ExemptionKind
+{
+    // The member's contents can never name another item or colour token,
+    // by the shape of the value itself.
+    NeverAReference,
+
+    // The member will become a reference form under a spec section not yet
+    // implemented. Carries that section so whoever implements it is routed here.
+    PendingForm,
+}
+```
+
+Every `PendingForm` row carries the spec section that will make it live. Today there is exactly one:
+
+| Member | Kind | Spec |
+|---|---|---|
+| `PaneItem.Command` | `PendingForm` | §4.2 — argv placeholders |
+
+`ItemValueResolver.cs:138` also names *§3.3's compound-item parts*. That form has no member to hang a
+row on yet; when §3.3 introduces one it lands as a candidate by construction under the filter above, and
+must be classified then.
+
+The enforcement test asserts every candidate is covered, `NeverAReference`, or `PendingForm`. Whether it
+can additionally fail on a `PendingForm` row whose named section has since landed is NEEDS-EVIDENCE
+below; if not cheaply detectable, the row's presence in the test source is still the marker, and §4.2's
+definition of done must include "reclassify `PaneItem.Command`".
+
+###### The standing limit: fail-closed over members, fail-open over sites
+
+Reflection over the types `ScanContext` exposes proves that **every reference-carrying member of a
+scanned type is handled**. It does not — and cannot — prove that **`Walk` visits every place those
+types live**. The test would be exactly as green today if `ItemValueResolver.cs:110` were deleted and
+pane border colours were never scanned at all. That is not a flaw to be fixed by widening the roots; it
+is a different question. Member coverage is a property of the type graph; site coverage is a property of
+a hand-written traversal body. Reflection sees the first and is blind to the second.
+
+Pair the coverage test with a cheap, deterministic complement that pins the traversal: scan a fixture
+config exercising, in one document, a top-level pane border colour, a nested child pane's border colour,
+an item-level `color`, and a `colors`-table token, and assert the set of JSON-Pointer paths in the
+resulting `ScanContext.ColorExprs` equals an expected literal set. That anchors
+`ItemValueResolver.cs:110`, `:120`, and the recursion at `:126` — the three statements reflection cannot
+see — with no new machinery. A deleted or mis-pathed walk site fails it immediately.
+
+The registry form of `Walk` — declaring its walk sites as data, a table of `(container type, member
+selector, path segment)` that `Walk` iterates, at which point reflection could assert site coverage too
+— is the durable answer for when `Walk` grows a fourth and fifth site, which §3.3 will supply. It is not
+mandated here: `Walk` is 20 lines with three sites today, and the fixture assertion covers it at a
+fraction of the cost. Recorded so the choice is a decision rather than a drift.
+
+###### What must not change
+
+1. **`Walk`'s behaviour.** It is correct as written. Nothing above licenses editing
+   `ItemValueResolver.cs:108–128`; the tests are being fitted to the scanner, not the reverse.
+2. **The extractor tables' shape.** `ReferenceExtractors` and `ColorTokenExtractors` stay two separate
+   tables. `ItemValueResolver.cs:177–180` already rules on why, and that ruling stands: `IdCandidate`
+   must never have to mean "an id or a colour-token name depending on which `Kind` this is."
+3. **The six covered rows.** They are the extractor table's contents. If a covered row and an extractor
+   ever disagree, the extractor is right.
+4. **Line citations.** Every `ItemValueResolver.cs:NNN` and `Pane.cs:NNN` reference above is invalidated
+   by construction if that code is restructured. Any task that restructures cited code must include
+   re-pointing these citations in its definition of done.
+
+###### Verification
+
+1. The enforcement test enumerates candidates from roots
+   `{Pane, PaneBorder, PaneItem, ColorExpr, ColorRule, ThresholdRule, MatchRule}` by the filter above,
+   and every candidate is covered, `NeverAReference`, or `PendingForm`.
+2. Deleting any one entry from `ReferenceExtractors` fails the test, naming the member that lost
+   coverage. Six deletions, six distinct failures.
+3. Adding a `string? Foo` to `PaneItem`, to `Pane`, **or to `PaneBorder`** fails the test until
+   classified. The `PaneBorder` case is the one the original root set could not catch and is the reason
+   this section exists.
+4. Adding a `string` member to the `ColorExpr` **abstract base** fails the test (guards the
+   `DeclaredOnly` footgun above).
+5. The exemption table distinguishes `NeverAReference` from `PendingForm`, and `PaneItem.Command` is the
+   latter, citing §4.2.
+6. The fixture assertion passes, and fails if `ItemValueResolver.cs:110` is deleted.
+7. `tools/check-all.sh` green.
+
+###### NEEDS-EVIDENCE
+
+- **Can a `PendingForm` row detect that its spec section has landed?** Check whether §4.2's
+  implementation introduces a distinguishable marker the test could assert on — a `ReferenceForm` enum
+  member, a new extractor count, anything. If yes, add the assertion to Verification item 5. If no, drop
+  it and put "reclassify `PaneItem.Command`" into §4.2's definition of done instead. Either outcome is
+  acceptable; leaving it undecided is not.
+- **Does the candidate filter above actually yield 16 on the current code?** Run the enumeration and
+  print the candidate list. Expected: the 16 already identified, plus `Pane.Size`, `Pane.Ellipsis`,
+  `PaneBorder.Style` — 19. A different number means the filter as written does not match the traversal
+  as implemented, and the filter text is what must be corrected, not the number.
+- **Does `BoxBorder` recursion terminate if filter rule 2 is dropped?** Only matters if someone later
+  argues foreign types should be recursed. Not blocking.
+
 ### 9.6 JSON shapes
 
 `--json` applies to `--check`, `--items`, `--preview`, and `--colors`.
