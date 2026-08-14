@@ -2868,6 +2868,33 @@ different counts in one sentence are both right. Fixed in the prose instead — 
 places:" — and it now fires at `SPEC:5461`. Worth knowing while writing: a lead-in that states its
 count twice has one guarded copy and one that can drift.
 
+## `check-notes.sh`: the note-pinning rule, mechanised — and red on purpose
+
+§9.3.4 ruled that a render note is an interface and that every note's text is pinned in §9.8.1.
+That ruling sat undischarged for several commits — §9.8.1 had no list at all — and the only reason
+it surfaced is that the implementor read HEAD instead of taking my claim on trust. The ruling is
+now discharged (`23ebe22`) and, more usefully, checked: `tools/check-notes.sh` extracts every
+`*Notes.Add($"…")` literal under `src/`, collapses `{placeholder}` to `{}` on both sides, and fails
+on anything the pinned block does not list.
+
+One direction only. A pinned note with no producer is not an error, because §4.0.1's `maxLines`
+note is pinned and cannot fire until `maxLines` exists; encoding "not built yet" into the block
+would make it something other than the exact strings it is supposed to be.
+
+Wired into `check-docs.sh`, not `check-examples.sh`. It reads C# — but as *text*, with no build —
+and `check-examples.sh` sat unrun for its entire existence because it needs a binary. The
+distinction that matters for where a check lives is toolchain, not subject matter.
+
+**It is red right now, and that is the point.** `PaneRenderer.cs:33` says `segment truncated: no
+width remained at {width} columns` where width plainly remained — the pane note keeps that phrase
+because for that pane none did. §9.8.1 pins the corrected `segment truncated to fit {columns}
+columns`, and the one-line fix is with the implementor. Both directions were proved before
+committing: a throwaway worktree carrying only that one-line change ran `check-docs` to `exit=0`,
+so the check is known to go green rather than merely known to complain.
+
+A red gate with a named owner and a known-green proof is a gate. A red gate nobody is fixing is
+noise, and the next person silently stops reading the whole runner.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

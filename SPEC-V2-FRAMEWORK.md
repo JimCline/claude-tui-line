@@ -4404,11 +4404,18 @@ living only at the `Add` call site. `migrate.md` teaches a model to tell a width
 drifts with nothing failing. Placeholders are written `{like this}` and are substituted at the call
 site:
 
+<!-- pinned-notes: checked against the collector's call sites by tools/check-notes.sh -->
 ```
 pane {n} dropped: no width remained at {columns} columns
 segment truncated to fit {columns} columns
 item '{id}' emitted {n} lines; {kept} kept (maxLines)
 ```
+
+The block above is checked mechanically, because "adding a producer means adding a line here" is
+an instruction to a future editor and every other instruction of that shape in this document has
+already decayed once. `tools/check-notes.sh` reads every `RenderNoteCollector.Add` call site in
+`src/` and fails if its text is not in the list, and `check-docs.sh` runs it — a check whose only
+runner is an unproven runner is not in service, which §9.6.2.2 learned the expensive way.
 
 The first two are the live producers §9.8.2 adds; the third is §4.0.1's and does not fire until
 `maxLines` exists. Adding a producer means adding a line here in the same change — this list is

@@ -23,7 +23,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
 status=0
-for check in check-citations check-counts; do
+# check-notes.sh reads C# sources, which makes it look like it belongs with check-examples.sh
+# below. It does not: it reads them as *text*, needs no build, and runs anywhere the repo is
+# checked out. The distinction that matters here is toolchain, not subject matter.
+for check in check-citations check-counts check-notes; do
     if ! "./tools/$check.sh"; then
         status=1
     fi
