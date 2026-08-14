@@ -2829,12 +2829,24 @@ Config is still read on every render, so an edit takes effect within a second (S
 
 ## 9. CLI surface
 
-The binary currently does exactly one thing. v2 needs three more, none of which may interfere
-with the statusline path (no args ⇒ render, exactly as now):
+v1's binary did exactly one thing: render. v2 adds the modes below, none of which may interfere
+with the statusline path — **no args ⇒ render**, unchanged.
+
+> **Discharged.** This paragraph used to read "the binary currently does exactly one thing. v2 needs
+> three more", and both halves had gone stale. `--check`, `--items`, `--colors` and `--version` have
+> since shipped (`--preview` is the one still in progress), so the present tense sent readers to
+> build what was already built. Worse, `--version` was specified later, in §9.7, and never added
+> here — so a count written before it existed sat above a list that had also drifted, and this
+> paragraph became a second authority on *how many modes there are*, disagreeing with the one that
+> is right. **§9.4 owns that question**, and owns it in a form that survives the next command being
+> added. What follows defines what each mode *does*; it does not define the set.
 
 - `--check` — validate config, print human-readable diagnostics for unknown ids, bad colors,
   malformed panes, sizes that cannot fit, and `overflow: "overflow"` on a pane inside a split
   (§2.6); exit nonzero on error.
+- `--version` — print the version and exit 0, reading it from the assembly so there is one source
+  rather than a string maintained here. It is a mode like the rest, and the only one with no JSON
+  shape, which is why `--version --json` is a usage error (§9.4). See §9.7.
 - `--preview [--columns N]` — render to stdout at a fixed width, for iterating on a config
   without waiting for the real statusline. Prints each row's measured width alongside, so
   overflow and ragged compositing are visible rather than inferred.

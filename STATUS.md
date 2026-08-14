@@ -2608,6 +2608,31 @@ neighbouring case rather than auditing their own file. §12.1.1's "same root cau
 sibling here — *a sentence explaining why two things must agree* is a search key for the two things
 not agreeing.
 
+## §9's opening was a second, stale authority on how many CLI modes exist
+
+Found by the same search key that produced the §11 discharge: present-tense critiques whose fix
+already landed. §9's lead paragraph read *"The binary currently does exactly one thing. v2 needs
+three more"* — stale twice over, and the second way was the interesting one.
+
+- **Stale in tense.** `--check`, `--items`, `--colors` and `--version` have all shipped. A reader
+  acting on the sentence would go build them again.
+- **Stale as a count, in a way nothing checked.** It said "three more" above a list of four, and the
+  list itself omitted `--version` — which §9.7 specifies and §9.4 counts as a mode. So the numeral,
+  the list, and the real mode set were three different answers. `check-counts` never fired: the
+  numeral and the list are separated by "none of which may interfere…", so it did not read as a
+  count-above-a-list at all. The checker guards a *shape*, and this claim had drifted out of it.
+
+The fix is the §11 shape — past tense plus an explicit discharge — with one addition: **§9.4 is
+named as the authority on the mode set**, and this list is demoted to defining what each mode
+*does*. §9.4 already states the rule in a form that survives the sixth command being added, so the
+opening had nothing to be right about; it only had something to disagree with. `--version` was also
+added as a bullet, since a list that omits a mode is a trap even after it stops carrying a count.
+
+General shape, worth keeping: **an enumeration written before a later section added a member is a
+count that decays without anybody editing it.** The section that adds the member has no reason to
+look upstream, and the upstream list has no way to notice. Wherever a spec states a set and a later
+subsection extends it, the earlier statement is a defect waiting for a reader who trusts it.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
