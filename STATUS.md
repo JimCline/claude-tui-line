@@ -2459,6 +2459,41 @@ own terminal, which is the only place the real width exists.
 Fixed in all four prompts and in §12.1 and §12.4, which both instructed the impossible width. No
 `$(tput` remains anywhere in `commands/` or `docs/`.
 
+### §12.6 was where the shared authoring rules got written, and it is the wrong place (§12.1.2)
+
+Naming the §12.1.1 pattern made it searchable, so I ran it against all ten of §12.6's rules asking
+one question: *is this caused by the transport, or by a condition the slash commands also meet?*
+**Four are conditions.** §12.6 was written last and most carefully, so it became where cross-cutting
+rules landed, each scoped to the server because that was what was on the page at the time.
+
+The tell is now written down: a section opening **"same root cause as §…"** marks a rule whose scope
+was drawn at the layer it was *noticed* in rather than the layer it *holds* at.
+
+- **§12.6.2** — the environment is not the user's shell. §12.3 already said "do not assume the
+  default" and "say which path you wrote". §12.4 did not: its step 8 report listed what changed, the
+  checkpoint, and every choice made on the user's behalf, and **never named the file it wrote**. The
+  failure it leaves is the one with no symptom — the user's shell resolves one config, the command
+  resolves another, nothing errors, the report is honest, and nothing changes.
+- **§12.6.3** — no terminal. Hoisted an hour ago as §12.1.1.
+- **§12.6.5** — concurrent writes. Its own opening sentence is *"an MCP call, **a slash command**,
+  and a hand edit in an editor can now interleave"*. It names the command layer in the premise and
+  hands the mechanism to the server alone. `edit` read the config at step 2 and wrote it at step 5
+  with four steps in between; it now re-reads immediately before writing, which plus §12.2's
+  checkpoint is the whole of that layer's protection.
+- **§12.6.7** — the complete write list. An explicit boundary existed for the *ambient* layer and
+  not for the one a user invokes deliberately, which is backwards.
+
+**Hoisting verbatim would have been wrong, and that is the useful part.** The command layer's write
+list is genuinely different in three ways: §12.6.7 says `settings.json` may be written "only from
+`revert`", true only because there is no `setup` *tool* — copied across, it forbids §12.7 from doing
+the one thing it exists for. The command layer needs a fifth entry for build outputs, since no MCP
+tool compiles anything. And §12.6.7's ban on temp files outside the target directory is a constraint
+on the file being atomically renamed, not on scratch files — §12.3 and §12.4 both draft configs and
+capture stderr under `/tmp` and are right to.
+
+So §12.1.2 states the rule (transport → §12.6; condition → §12.1) and writes the command layer's own
+list out rather than cross-referencing one that is subtly false here.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

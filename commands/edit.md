@@ -95,6 +95,12 @@ If the checkpoint cannot be written, stop and report.
 
 ## 5. Edit — and change only what was asked
 
+**Re-read the config file immediately before you edit it**, rather than editing the copy you read
+at step 2. Several steps have happened since, and an MCP call, another session, or the user in an
+editor can have written it in between (§12.1.2). You have no `baseRevision` to refuse a stale write
+with, so re-reading is the whole of your protection — that, and step 4's checkpoint, which is what
+makes a clobber recoverable rather than preventable.
+
 **Never widen the request.** Do not reformat the JSON, reorder untouched keys, add borders, or
 "tidy" adjacent items while you are in there. Reformatting the whole config while adding one item
 makes the diff unreviewable and buries an unintended change where nobody will look for it.
@@ -180,6 +186,11 @@ of what you changed is not.
 Then, short:
 
 - what changed, in a line or two
+- **the config file you wrote, by full path** — not "your config". `$CLAUDE_TUI_LINE_CONFIG` set in
+  the user's interactive shell need not be visible to yours, so §5's search order can resolve to a
+  different file for each of you, and nothing errors (§12.1.2). The user reads the path and sees
+  immediately that you edited the wrong one; without it they see a successful report and no change,
+  which is the one failure with no symptom pointing at its cause.
 - which ledger checkpoint it can be undone to
 - anything you chose for them — a reading you picked, a `ttlSeconds` you invented, a colour you
   approximated

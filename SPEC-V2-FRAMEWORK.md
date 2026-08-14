@@ -4408,6 +4408,56 @@ stdout alone is not.** Report the second as inconclusive, name both reasons it c
 the user the one-line command to run in their own terminal — which is the only place the real width
 exists, and which is a thing to hand over rather than to simulate.
 
+#### 12.1.2 §12.6 is where the shared rules got written, and it is the wrong place
+
+§12.1.1 is not a one-off. §12.6 was written last and most carefully, so it became the place
+cross-cutting rules for the whole authoring surface landed — and each was scoped to the server
+because that was what was being written at the time. **A rule caused by the transport belongs in
+§12.6. A rule caused by a condition belongs here, where every command reads it.** The tell is a
+section that opens "same root cause as §…": that phrase marks a rule whose scope was drawn at the
+layer it was noticed in rather than the layer it holds at.
+
+Four of §12.6's ten are conditions the slash commands share:
+
+- **§12.6.2 — the environment is not the user's shell.** `$CLAUDE_TUI_LINE_CONFIG` set in an
+  interactive shell need not be visible to a non-interactive one, so §5's search order, run
+  identically in both places, resolves to a *different file*. Nothing errors, and every layer
+  honestly reports success. §12.3 already says "do not assume the default"; what was missing is the
+  other half of §12.6.2 — **the report names the config path that was actually written.** §12.4
+  step 8's report listed what changed, the checkpoint, and every choice made for the user, and
+  never once said which file it wrote.
+- **§12.6.3 — no terminal.** Hoisted as §12.1.1.
+- **§12.6.5 — concurrent writes.** Its own first sentence reads "an MCP call, **a slash command**,
+  and a hand edit in an editor can now interleave" — it names the command layer in the premise and
+  then gives the mechanism to the server alone. The commands have no `baseRevision`, so their
+  protection is the weaker pair §12.6.5 already names as the fallback: re-read the config
+  immediately before writing rather than trusting a copy read several steps ago, and rely on §12.2's
+  checkpoint to keep a clobber recoverable.
+- **§12.6.7 — the complete list of files that may be written.** A boundary this explicit should not
+  exist for the ambient layer and be absent from the layer a user invokes deliberately.
+
+**The command layer's write list, which is not §12.6.7's.** Hoisting that list verbatim would have
+been wrong, and the differences are the reason this needed writing out rather than cross-referencing:
+
+1. the config file, at the resolved or explicitly-given path — §12.3 and §12.4 only
+2. the ledger and its artifacts under `~/.claude/claude-tui-line/backups/` — append-only, per §12.2
+3. `~/.claude/settings.json`, **only** the `statusLine` key, preserving every other key and the
+   file's formatting — from §12.5 **and §12.7**. §12.6.7 says "only from `revert`" because there is
+   no `setup` tool; at this layer that clause is false, and copying it across would have forbidden
+   §12.7 from doing the one thing it exists to do.
+4. the `scriptOriginalPath` recorded on the entry being restored — **only** from §12.5, **only**
+   when no file exists there, **never** overwriting one that does
+5. build outputs under the plugin's own data directory — §12.7 only, and the reason this layer needs
+   a fifth entry at all: no MCP tool compiles anything
+
+Scratch files are the other difference. §12.6.7 forbids temp files outside the target's directory
+because an atomic rename needs the same filesystem — that constraint binds only the file being
+renamed into place. Drafting a candidate config or capturing `--preview` stderr under `/tmp` is
+fine, and §12.3 and §12.4 both depend on it.
+
+Everything else §12.6.7 refuses, this layer refuses too: no logs, no caches, no state directory,
+and nothing outside `~/.claude` and the plugin's own data directory.
+
 ### 12.2 The backup ledger
 
 Shared by every command that writes. It lives at `~/.claude/claude-tui-line/backups/` — under
