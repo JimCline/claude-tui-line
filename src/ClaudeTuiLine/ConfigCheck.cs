@@ -286,26 +286,22 @@ public static class ConfigChecker
 
     // ---- §9.4.1: unknown enum values — any key with a closed value set, one shared code across all of them ----
 
-    private static readonly string[] BorderStyleValues = { "rounded", "square", "heavy", "double", "ascii", "none" };
+    // §1.1.1: every enumerable kind's accepted-token list now lives with its parser (see e.g.
+    // BorderStyleParsing.AcceptedTokens) so the diagnostic reads the same object the parser looks
+    // up, instead of a second hand-copied list. `size` has no closed token set — a mix of literals
+    // and form descriptions — so it stays a plain array here, per §1.1.1.
     private static readonly string[] SizeValues = { "an integer", "a percentage", "content", "fill", "auto" };
-    private static readonly string[] ValignValues = { "top", "middle", "bottom" };
-    private static readonly string[] AlignValues = { "left", "center", "right" };
-    private static readonly string[] OverflowValues = { "wrap", "truncate", "overflow" };
-    private static readonly string[] CaseValues = { "upper", "lower" };
-    private static readonly string[] SplitValues = { "none", "horizontal", "vertical" };
-    private static readonly string[] DistributeValues = { "greedy", "min-rows" };
-    private static readonly string[] ColorSystemValues = { "standard", "256", "truecolor" };
 
     private static IEnumerable<Diagnostic> CheckEnums(UserConfig? config)
     {
         if (!string.IsNullOrWhiteSpace(config?.Border?.Style) && !BorderStyleParsing.TryParse(config.Border.Style!, out _))
         {
-            yield return UnknownEnumValue("/border/style", config.Border.Style, "style", BorderStyleValues);
+            yield return UnknownEnumValue("/border/style", config.Border.Style, "style", BorderStyleParsing.AcceptedTokens);
         }
 
         if (ConfigLoader.IsUnrecognizedColorSystem(config?.ColorSystem))
         {
-            yield return UnknownEnumValue("/colorSystem", config?.ColorSystem, "colorSystem", ColorSystemValues);
+            yield return UnknownEnumValue("/colorSystem", config?.ColorSystem, "colorSystem", ConfigLoader.ColorSystemAcceptedTokens);
         }
 
         if (config?.Surface?.Pane is { } surfacePane)
@@ -345,32 +341,32 @@ public static class ConfigChecker
 
         if (PaneValignParsing.IsUnrecognized(pane.Valign))
         {
-            yield return UnknownEnumValue(path + "/valign", pane.Valign, "valign", ValignValues);
+            yield return UnknownEnumValue(path + "/valign", pane.Valign, "valign", PaneValignParsing.AcceptedTokens);
         }
 
         if (PaneAlignParsing.IsUnrecognized(pane.Align))
         {
-            yield return UnknownEnumValue(path + "/align", pane.Align, "align", AlignValues);
+            yield return UnknownEnumValue(path + "/align", pane.Align, "align", PaneAlignParsing.AcceptedTokens);
         }
 
         if (OverflowModeParsing.IsUnrecognized(pane.Overflow))
         {
-            yield return UnknownEnumValue(path + "/overflow", pane.Overflow, "overflow", OverflowValues);
+            yield return UnknownEnumValue(path + "/overflow", pane.Overflow, "overflow", OverflowModeParsing.AcceptedTokens);
         }
 
         if (!string.IsNullOrWhiteSpace(pane.Border?.Style) && !BorderStyleParsing.TryParse(pane.Border.Style!, out _))
         {
-            yield return UnknownEnumValue(path + "/border/style", pane.Border.Style, "style", BorderStyleValues);
+            yield return UnknownEnumValue(path + "/border/style", pane.Border.Style, "style", BorderStyleParsing.AcceptedTokens);
         }
 
         if (ConfigLoader.IsUnrecognizedSplit(pane.Split))
         {
-            yield return UnknownEnumValue(path + "/split", pane.Split, "split", SplitValues);
+            yield return UnknownEnumValue(path + "/split", pane.Split, "split", ConfigLoader.SplitAcceptedTokens);
         }
 
         if (PaneDistributeParsing.IsUnrecognized(pane.Distribute))
         {
-            yield return UnknownEnumValue(path + "/distribute", pane.Distribute, "distribute", DistributeValues);
+            yield return UnknownEnumValue(path + "/distribute", pane.Distribute, "distribute", PaneDistributeParsing.AcceptedTokens);
         }
 
         if (pane.Items is { } items)
@@ -389,12 +385,12 @@ public static class ConfigChecker
     {
         if (OverflowModeParsing.IsUnrecognized(item.Overflow))
         {
-            yield return UnknownEnumValue(path + "/overflow", item.Overflow, "overflow", OverflowValues);
+            yield return UnknownEnumValue(path + "/overflow", item.Overflow, "overflow", OverflowModeParsing.AcceptedTokens);
         }
 
         if (ItemValueResolver.IsUnrecognizedCase(item.Case))
         {
-            yield return UnknownEnumValue(path + "/case", item.Case, "case", CaseValues);
+            yield return UnknownEnumValue(path + "/case", item.Case, "case", ItemValueResolver.CaseAcceptedTokens);
         }
     }
 

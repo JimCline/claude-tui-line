@@ -380,13 +380,28 @@ public static class ConfigLoader
         return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, chromeReserve, colorSystem, colors);
     }
 
-    private static ColorSystemSupport? ParseColorSystemCore(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static readonly (string Token, ColorSystemSupport Value)[] ColorSystemAccepted =
     {
-        "standard" => ColorSystemSupport.Standard,
-        "256" => ColorSystemSupport.EightBit,
-        "truecolor" => ColorSystemSupport.TrueColor,
-        _ => null,
+        ("standard", ColorSystemSupport.Standard),
+        ("256", ColorSystemSupport.EightBit),
+        ("truecolor", ColorSystemSupport.TrueColor),
     };
+
+    internal static IReadOnlyList<string> ColorSystemAcceptedTokens { get; } = ColorSystemAccepted.Select(a => a.Token).ToArray();
+
+    private static ColorSystemSupport? ParseColorSystemCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in ColorSystemAccepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>SPEC-V2-FRAMEWORK.md §6.2: unrecognized/absent values fall back to "standard", the golden-parity-preserving default.</summary>
     private static ColorSystemSupport ParseColorSystem(string? value) => ParseColorSystemCore(value) ?? ColorSystemSupport.Standard;
@@ -456,13 +471,28 @@ public static class ConfigLoader
             PaneDistributeParsing.Parse(cfg.Distribute));
     }
 
-    private static PaneSplit? ParseSplitCore(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static readonly (string Token, PaneSplit Value)[] SplitAccepted =
     {
-        "none" => PaneSplit.None,
-        "horizontal" => PaneSplit.Horizontal,
-        "vertical" => PaneSplit.Vertical,
-        _ => null,
+        ("none", PaneSplit.None),
+        ("horizontal", PaneSplit.Horizontal),
+        ("vertical", PaneSplit.Vertical),
     };
+
+    internal static IReadOnlyList<string> SplitAcceptedTokens { get; } = SplitAccepted.Select(a => a.Token).ToArray();
+
+    private static PaneSplit? ParseSplitCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in SplitAccepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     private static PaneSplit ParseSplit(string? value) => ParseSplitCore(value) ?? PaneSplit.None;
 
@@ -622,22 +652,36 @@ public sealed record ConfigReadResult(ConfigReadStatus Status, UserConfig? Confi
 /// SPEC-V2-FRAMEWORK.md §2.9's five named border styles plus <c>"none"</c> (no border), the same
 /// set <see cref="ConfigLoader"/>'s border resolution has always accepted — pulled out to a named
 /// parser (mirroring <see cref="OverflowModeParsing"/>/<see cref="PaneValignParsing"/>) so <c>--check</c>
-/// can ask "was this string one of the recognized ones" through the exact same switch the loader
-/// uses, rather than a second copy of the token list.
+/// can ask "was this string one of the recognized ones" through the exact same accepted-token lookup
+/// the loader uses, rather than a second copy of the token list.
 /// </summary>
 internal static class BorderStyleParsing
 {
+    private static readonly (string Token, BoxBorder? Style)[] Accepted =
+    {
+        ("rounded", BoxBorder.Rounded),
+        ("square", BoxBorder.Square),
+        ("heavy", BoxBorder.Heavy),
+        ("double", BoxBorder.Double),
+        ("ascii", BoxBorder.Ascii),
+        ("none", null),
+    };
+
+    internal static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
     public static bool TryParse(string value, out BoxBorder? style)
     {
-        switch (value.Trim().ToLowerInvariant())
+        var normalized = value.Trim().ToLowerInvariant();
+        foreach (var (token, s) in Accepted)
         {
-            case "rounded": style = BoxBorder.Rounded; return true;
-            case "square": style = BoxBorder.Square; return true;
-            case "heavy": style = BoxBorder.Heavy; return true;
-            case "double": style = BoxBorder.Double; return true;
-            case "ascii": style = BoxBorder.Ascii; return true;
-            case "none": style = null; return true;
-            default: style = null; return false;
+            if (token == normalized)
+            {
+                style = s;
+                return true;
+            }
         }
+
+        style = null;
+        return false;
     }
 }

@@ -350,12 +350,27 @@ public static class ItemValueResolver
 
     private enum CaseMode { Upper, Lower }
 
-    private static CaseMode? ParseCaseMode(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static readonly (string Token, CaseMode Value)[] CaseAccepted =
     {
-        "upper" => CaseMode.Upper,
-        "lower" => CaseMode.Lower,
-        _ => null,
+        ("upper", CaseMode.Upper),
+        ("lower", CaseMode.Lower),
     };
+
+    internal static IReadOnlyList<string> CaseAcceptedTokens { get; } = CaseAccepted.Select(a => a.Token).ToArray();
+
+    private static CaseMode? ParseCaseMode(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in CaseAccepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     // §8: any case value other than "upper"/"lower" passes the text through unchanged.
     private static string ApplyCase(string value, string? caseMode) => ParseCaseMode(caseMode) switch

@@ -19,19 +19,34 @@ public enum OverflowMode
 
 public static class OverflowModeParsing
 {
+    private static readonly (string Token, OverflowMode Value)[] Accepted =
+    {
+        ("wrap", OverflowMode.Wrap),
+        ("truncate", OverflowMode.Truncate),
+        ("overflow", OverflowMode.Overflow),
+    };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
     /// <summary>
     /// Parses a config string ("wrap" | "truncate" | "overflow", case-insensitive). Returns null
     /// for an absent or unrecognized value — SPEC-V2-FRAMEWORK.md §2.6's default is deliberately
     /// context-sensitive (root pane vs. inside a split), so resolving "no value" to a concrete
     /// mode is the caller's job, not the parser's.
     /// </summary>
-    public static OverflowMode? Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    public static OverflowMode? Parse(string? value)
     {
-        "wrap" => OverflowMode.Wrap,
-        "truncate" => OverflowMode.Truncate,
-        "overflow" => OverflowMode.Overflow,
-        _ => null,
-    };
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// True when <paramref name="value"/> was present but matched none of the recognized tokens —

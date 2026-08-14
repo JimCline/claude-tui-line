@@ -27,13 +27,28 @@ public enum PaneValign
 
 public static class PaneValignParsing
 {
-    private static PaneValign? ParseCore(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static readonly (string Token, PaneValign Value)[] Accepted =
     {
-        "top" => PaneValign.Top,
-        "middle" => PaneValign.Middle,
-        "bottom" => PaneValign.Bottom,
-        _ => null,
+        ("top", PaneValign.Top),
+        ("middle", PaneValign.Middle),
+        ("bottom", PaneValign.Bottom),
     };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
+    private static PaneValign? ParseCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     public static PaneValign Parse(string? value) => ParseCore(value) ?? PaneValign.Top;
 
@@ -55,13 +70,28 @@ public enum PaneAlign
 
 public static class PaneAlignParsing
 {
-    private static PaneAlign? ParseCore(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static readonly (string Token, PaneAlign Value)[] Accepted =
     {
-        "left" => PaneAlign.Left,
-        "center" => PaneAlign.Center,
-        "right" => PaneAlign.Right,
-        _ => null,
+        ("left", PaneAlign.Left),
+        ("center", PaneAlign.Center),
+        ("right", PaneAlign.Right),
     };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
+    private static PaneAlign? ParseCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     public static PaneAlign Parse(string? value) => ParseCore(value) ?? PaneAlign.Left;
 
@@ -87,12 +117,27 @@ public enum PaneDistribute
 
 public static class PaneDistributeParsing
 {
-    private static PaneDistribute? ParseCore(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static readonly (string Token, PaneDistribute Value)[] Accepted =
     {
-        "greedy" => PaneDistribute.Greedy,
-        "min-rows" => PaneDistribute.MinRows,
-        _ => null,
+        ("greedy", PaneDistribute.Greedy),
+        ("min-rows", PaneDistribute.MinRows),
     };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
+    private static PaneDistribute? ParseCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
 
     public static PaneDistribute Parse(string? value) => ParseCore(value) ?? PaneDistribute.Greedy;
 
