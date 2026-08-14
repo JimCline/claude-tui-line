@@ -105,6 +105,14 @@ echo '{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}' \
 80 is written out rather than measured, and must stay that way (§12.1.1): you have no terminal, so
 `tput cols` returns terminfo's static 80 while looking like it adapted. Report "at 80 columns".
 
+**That payload is a placeholder, and the fix for it is not to make it bigger here.** SPEC §12.7.1
+rules that this preview should run against §9.3.1's complete fixture, so the user sees the whole
+statusline rather than a `cwd` and a model name. It cannot yet: the fixture lives inside the binary
+with no way to pipe it out, and step 5 must run `statusLine.command` verbatim, which rules out
+`--preview`'s empty-stdin fallback. Until the binary can emit it, this literal stays exactly as it
+is. Do not hand-roll a fuller one — §9.3 requires exactly one synthetic payload, and a second
+standing fixture in a command file is the defect §12.7.1 names, written once more.
+
 **Not `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`.** That path was already proven in step 2 and is
 not what is in doubt. The one untested thing after step 4 is *the expansion* — whether the absolute
 path you substituted is the path that exists. Testing the variable instead of the value verifies

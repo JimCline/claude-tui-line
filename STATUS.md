@@ -3090,6 +3090,32 @@ the mechanism is sound. And that stripping escapes leaves colour unverified with
 technically true, but `migrate.md:139-140` puts both renders side by side in front of the user and
 nothing is written before they approve, so the human eye is a real check, not an absent one.
 
+## One literal, three commands (§12.7.1)
+
+`{"cwd":"$PWD","model":{"display_name":"Claude Opus 5"}}` is character-for-character identical in
+`commands/setup.md`, `commands/migrate.md` and `commands/revert.md`. §12.3.1 read that as migrate's
+problem; it is not. §9.3 claims the fixture is "the only synthetic payload **in the binary**" —
+true, and the boundary is wrong, because the duplication is in the layer the user sees output from.
+§9.3's own case against a second constant applies verbatim to the command layer and was never made
+there.
+
+Ruled: setup previews at §9.3.1's fixture, and §12.7's "say the payload is minimal" is demoted from
+remedy to mitigation. It tells the user the tool is incomplete; §9.3's stderr admission tells them
+the data is invented. Only the second is true.
+
+The argument that makes task #36 load-bearing rather than a convenience: setup must run
+`statusLine.command` verbatim (§12.7, and correct — the expansion is the untested thing), which
+forecloses `--preview`'s empty-stdin fallback, because the verbatim command *is* the render path and
+the render path needs stdin. Verbatim-command and complete-payload are jointly satisfiable only once
+the binary can pipe its fixture out. #36 now covers three commands.
+
+Interim fix in `commands/setup.md` is a note pinning the literal in place — the tempting wrong fix
+is hand-rolling a fuller payload there, which is the same defect written once more.
+
+Resolved opposite to migrate deliberately: the fixture's `cwd` is not a real path, so
+filesystem-derived items blank out under it. Migrate needs verification coverage and so needs both
+payloads; setup needs one honest render and needs only this one.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

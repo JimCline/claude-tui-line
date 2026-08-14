@@ -3169,6 +3169,10 @@ than from stdin. Two constants would let `--items` and `--preview` disagree abou
 looks like, which is worse than either being wrong alone: `/migrate` consults both in the same
 session and has no way to notice they were built from different inputs.
 
+**"In the binary" is a boundary, and §12.7.1 finds three payloads outside it.** The same argument
+governs the command layer and was never made there. Read that section together with this paragraph;
+the uniqueness this one claims is not yet a property of what ships.
+
 `--columns N` sets the width. Absent, use `COLUMNS`, then a default of 100. The usable width
 is still `N - chromeReserve`; preview must not quietly render 3 columns wider than reality, or
 it will disagree with the statusline exactly at the width where wrapping starts to matter.
@@ -5657,7 +5661,8 @@ that runs on every install.
 **Say that the preview payload is minimal.** It carries a `cwd` and a model name and nothing else,
 so items depending on workspace, session, or usage fields render absent and will appear once it is
 live. Unsaid, a correct install reads as a half-broken one and the user's first act is debugging
-something that works.
+something that works. *This ruling is superseded by §12.7.1 — saying it is a mitigation, and the
+problem has a fix.*
 
 **If the backup was a `checkpoint` rather than an `origin`, say so and give its timestamp.** Bare
 `/claude-tui-line:revert` then does *not* restore the state just backed up — it restores the older
@@ -5670,6 +5675,54 @@ writing there needs approval. `setup` writes to the plugin's data directory inst
 that belongs to the installed plugin, that survives plugin updates, and that cannot collide with a
 working tree the user may also be building in. §14.1's one-command rule still applies to what it
 runs; what differs is the destination, and that a user invoking `setup` has plainly asked for it.
+
+#### 12.7.1 One literal, three commands, and a uniqueness claim scoped to the wrong boundary
+
+`{"cwd":"$PWD","model":{"display_name":"Claude Opus 5"}}` appears character-for-character in
+`commands/setup.md`, `commands/migrate.md` and `commands/revert.md`. §9.3 says of its fixture: **"It
+is also the only synthetic payload in the binary."** Narrowly true, and the boundary is wrong. The
+duplication lives in the command layer, which is the layer the user actually sees output from.
+
+§9.3's own argument against a second constant was that *"two constants would let `--items` and
+`--preview` disagree about what an item looks like … `/migrate` consults both in the same session
+and has no way to notice they were built from different inputs."* Every word of that applies to the
+three copies above, and none of it was said there. `docs/backup-ledger.md` exists as a separate file
+for exactly this reason — four commands need the procedure and four copies would drift. This is the
+same shape, unextracted, and the copies have already begun to acquire separate prose explaining
+them.
+
+The three uses are not one use, which is why a single apology does not cover them:
+
+- **`setup`** shows the render to a first-time user, under the heading *"Show the user what they
+  will get."* Under this payload they get a `cwd` and a model name. §12.7's remedy is to *say* the
+  render is minimal — a mitigation for a problem that has a fix. The question a new user is actually
+  asking is whether the install worked, and a third of the surface rendering blank answers it wrong.
+  §12.7 says so itself — *"a correct install reads as a half-broken one and the user's first act is
+  debugging something that works"* — and then offers the sentence as the cure.
+- **`migrate`** compares two renders of it, which is §12.3.1: the check passes on the empty set.
+- **`revert`** runs the restored command against it to prove the string executes. This is the one
+  case minimality does not damage, because an empty render still demonstrates the command ran.
+
+**Ruled: `setup` previews at §9.3.1's fixture.** With every field populated the render is complete,
+the user sees the statusline they are getting, and the "it is minimal" paragraph is not needed —
+replaced by §9.3's stderr admission, which says *the data is invented*. §12.7's paragraph says *the
+tool is incomplete*. Those are different messages and only one of them is true.
+
+**This is why §12.3.1's emit flag is not migrate's alone.** Setup's step 5 must run
+`statusLine.command` **verbatim** — §12.7's ruling above, and correct, since the expansion is the
+untested thing. That forecloses `--preview`'s empty-stdin fallback: the verbatim command is the
+render path, and the render path requires a payload on stdin. Verbatim-command and complete-payload
+become jointly satisfiable only once the binary can hand its fixture to a pipe. The flag is
+therefore load-bearing for three commands, not a convenience for one, and `revert` should use it as
+well — for consistency rather than because its own case is broken, since three copies of a literal
+is how the fourth comes to be written.
+
+Note the tension §12.3.1 rule 3 already identified, and that it resolves the other way here. The
+fixture's `cwd` is `/home/you/code/acme-web`, deliberately not a real path, so filesystem-derived
+items go blank under it. Migrate needs verification coverage and therefore needs both payloads;
+setup needs one honest, good-looking render and needs only this one. A git item reading blank
+against an invented path, with stderr saying the payload is invented, is legible. Two-thirds of the
+statusline blank with a paragraph of explanation is not.
 
 ## 13. Out of scope for v2
 
