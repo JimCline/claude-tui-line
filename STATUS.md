@@ -897,6 +897,35 @@ That marker then propagated into `/edit` twice, and the second was a defect the 
    data and the things reading it silently stop meaning what they said. Now it distinguishes
    `null` (looked, found nothing — fine) from missing (never looked — stop).
 
+### `migrate` walked — one defect, one clean result, and a rule written out three times
+
+The last command. It held up better than the others, which is worth saying plainly.
+
+**The defect is step 8.** After writing the config it said to point `statusLine.command` at the
+binary "following the ledger procedure". The backup was already taken at step 2 — deliberately,
+before this command reads anything — so running the procedure again appends a second entry whose
+config capture is *the config you just wrote*. That is a restore point for a state that existed
+for one instant and that nobody would ever want back: migrated config, original statusline. The
+phrase had two readings and the wrong one produces a plausible, permanent, useless ledger entry.
+Now it says the backup is done and cites the write rules instead. Also spelled out that config
+must be written before `statusLine` is repointed, since the other order gives the user a second of
+built-in defaults they never approved at step 7.
+
+**The clean result is step 6.** It pipes one payload into both the original script and
+`--preview`, which would be worthless if `--preview` ignored stdin — two renders compared across
+two different inputs, differences and matches both meaningless. §9.3 already rules it: stdin has
+data, use it; stdin empty or a TTY, use the fixed synthetic payload **and say so on stderr**. It
+even names `/migrate` as the reason. Checked and correct.
+
+**And the third copy.** Chasing my own dangling reference to "the ledger's writing rules" found
+that there is no such section — the rules were written out inline in `setup`, `revert` and
+`migrate`, three times, in three wordings. Three copies is how two of them drift. `backup-ledger.md`
+now has one **Writing `settings.json`** section with the four rules, and the commands cite it
+while keeping only the emphasis specific to them: `setup` on expansion, `revert` on the
+wholesale-copy temptation that is strongest exactly when a user asks to go back.
+
+That is every command and every doc walked.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

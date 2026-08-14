@@ -171,8 +171,19 @@ somewhere else and you write the default anyway, the renderer reads the file you
 nothing errors, the statusline does not change, and every step above still reports success. Say
 which path you wrote.
 
-Then point `statusLine.command` at the binary following the ledger procedure (only the `statusLine`
-key, atomically, other keys preserved).
+Write the config **before** repointing `statusLine`. The moment `statusLine.command` changes, the
+binary starts running once a second — with whatever config is on disk at that instant. In the other
+order that is a second of built-in defaults, which is a statusline the user did not ask for and did
+not approve at step 7.
+
+Then point `statusLine.command` at the binary, using the ledger's *writing* rules — only the
+`statusLine` key, atomically, every other key and the file's formatting preserved.
+
+**Do not run the ledger procedure again here.** The backup was taken at step 2, deliberately, before
+this command read anything. Re-running it now would append a second entry whose config capture is
+the config *you just wrote* — a restore point for a state that existed for one instant and that
+nobody would ever want back: migrated config, original `statusLine`. The procedure is for the
+command that has not yet backed up. This one has.
 
 Report, in this order:
 

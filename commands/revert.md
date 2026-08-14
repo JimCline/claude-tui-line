@@ -65,10 +65,11 @@ for them.
 
 ## 5. Restore
 
-Restore the entry's `statusLine` value verbatim into `~/.claude/settings.json` — **only** that key,
-written atomically, every other key and the file's formatting preserved. Never copy the backed-up
-settings file wholesale over the live one; the user may have changed unrelated settings since, and
-a wholesale copy silently reverts those too.
+Restore the entry's `statusLine` value verbatim into `~/.claude/settings.json`, per **"Writing
+`settings.json`"** in `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`. Rule 1 is the one that bites
+here: the temptation is to copy the backed-up settings file wholesale, since a whole file is
+right there and the user asked to go back. It reverts every unrelated setting they have changed
+since, silently, while the report says one key was restored.
 
 **A restored `statusLine` points at a path, not at contents.** So check the script the entry
 recorded, at its original path, and handle three cases rather than one:

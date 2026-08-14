@@ -73,8 +73,11 @@ Edit `~/.claude/settings.json` to set:
 ```
 
 Expand `${CLAUDE_PLUGIN_DATA}` to a real absolute path — settings.json does not interpolate plugin
-variables. Write **only** the `statusLine` key, atomically (temp file in the same directory, then
-rename), preserving every other key and the file's formatting. Edit it; do not rewrite it.
+variables, so the literal would be written through and Claude Code would run a command that does
+not exist. Step 5 is what catches that, and only if you follow it as written.
+
+Write the file per **"Writing `settings.json`"** in `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`:
+only that key, atomically, everything else preserved.
 
 ## 5. Show the user what they will get — by running what you actually wrote
 

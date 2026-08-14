@@ -190,6 +190,23 @@ agree — the whole point of recording the hash is to notice this, and silently 
 the only information the check produced. For a modified script, the choice is between the live
 version and the backed-up copy, and they need to see that it is a choice.
 
+## Writing `settings.json`
+
+Every command here eventually writes that file, and they must all write it the same way. This is
+the one definition; the commands cite it rather than restating it.
+
+1. **Write only the `statusLine` key.** Never copy a backed-up `settings.json` wholesale over the
+   live one. The user may have changed unrelated settings since the backup was taken, and a
+   wholesale copy reverts those too — silently, and with no mention in any report, because the
+   command believes it restored one key.
+2. **Atomically** — temp file in the same directory, then rename. A statusline command runs once a
+   second, so a torn write is read almost immediately.
+3. **Preserve every other key and the file's formatting.** Edit it; do not regenerate it. A
+   reformatted settings.json makes the real change unreviewable and buries anything unintended.
+4. **`"statusLine": null` restores by removing the key.** There genuinely was no statusline, and
+   the absence of the key is the faithful reproduction of that state — not an empty object, and
+   not a no-op.
+
 ## The procedure, in order
 
 Any command that is about to write `settings.json` or `claude-tui-line.json`:
