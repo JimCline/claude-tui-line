@@ -1303,14 +1303,23 @@ Two kinds in v2. The provider is the *only* thing that differs between a built-i
 user-defined one — everything downstream is identical.
 
 **`builtin`** — a function of the parsed stdin JSON plus render context (git branch, engram
-telemetry). These are the 14 captured segments, each registered as one row in a single static
-table keyed by id: `directory`, `git-branch`, `repo`, `worktree`, `pr`, `model`, `effort`,
-`thinking`, `output-style`, `context`, `rate-limits`, `agent`, `engram`, `vim` — plus
-`model-short`, a shortened form for narrow anchor panes, which appears only if it is explicitly
-configured, since adding it to the default list would change the parity baseline.
+telemetry), each registered as one row in a single static table keyed by id.
 
 The registry is the ONLY place the set of builtins is enumerated. No second list anywhere —
-not in tests, not in config validation, not in docs generation.
+not in tests, not in config validation, not in docs generation, **and not in this paragraph**.
+What follows is orientation for a reader, not a definition: `directory`, `git-branch`, `repo`,
+`worktree`, `pr`, `model`, `effort`, `thinking`, `output-style`, `context`, `rate-limits`,
+`agent`, `engram`, `vim`, plus two that render only where explicitly configured — `model-short`,
+a shortened form for narrow anchor panes, and `remote-url` (§5.1), which shells out to git.
+`--items` is the authority; if it and this list disagree, this list is the one that is wrong.
+
+**Membership in the default list is a `default` flag on the row, not a count.** The rows carrying
+it are exactly the captured segments, so adding a row without the flag — which is what both
+opt-ins are — extends the framework without touching the parity baseline. Do not restate the
+size of either set anywhere: §8 gets its default list by reading the flag, `--items` reports the
+flag per row, and a number written into prose is a second registry that goes stale on the next
+row. That the default set and the captured set happen to be the same size as each other is a
+fact about today's rows, not a rule, and nothing may be derived from it.
 
 **Every registry row carries a default `format`, and it is the only place an item's display
 text is constructed.** A row resolves a *raw value* (`62`, `high`, `approved`) and a `format`
@@ -1381,7 +1390,7 @@ parity against the captured bash output. The parity baseline is not a preference
 makes the unification checkable.
 
 The consequence that matters: **the default list is not a separate rendering path.** A leaf with
-no `items` renders the 14 default-set builtins (§8) through exactly the code an explicit `items`
+no `items` renders the default-set builtins (§8) through exactly the code an explicit `items`
 array uses, with
 the same formats. If a configured `{ "item": "context" }` and the default list can produce
 different text for the same item, there are two display implementations and the framework is
@@ -1464,10 +1473,19 @@ the framework does not use, and is no longer evidence about the framework at all
   pane has a width yet; and for a `content` pane the demand is backwards anyway, since the item
   determines the pane's width rather than the reverse. The resolution:
   - The variable carries the pane's inner width **from the previous render**, recorded in the
-    cache entry at render time and read back on the next spawn. A statusline redraws every
-    second and layouts are stable, so this is correct on all but the first tick after a resize.
-  - It is **absent on the first render**, and absent for items in a **`content`-sized pane**. A
-    script must treat it as optional and behave sensibly without it.
+    §5.0.1 widths store at render time and read back on the next spawn. A statusline redraws
+    every second and layouts are stable, so this is correct at every tick where the terminal
+    width has not just changed.
+  - **The record lives in `widths/`, not in the cache entry**, and §5.0.1 is the reason: the
+    value cache is machine-wide and pane width is per-terminal, so putting them in one record
+    hands each concurrent session the other's width once a second. The store is keyed by the
+    cache key *and* `COLUMNS`, which is also what makes the resize case fall out correctly —
+    a new terminal width is a new key with no record yet, so the tick after a resize reports
+    **absent** rather than confidently reporting the old width.
+  - It is **absent on the first render**, absent for the first tick at a new terminal width, and
+    absent for items in a **`content`-sized pane**. A script must treat it as optional and behave
+    sensibly without it. Absent is a real state a script can detect and fall back from; a
+    plausible wrong number is not, which is why nothing here ever substitutes a guess.
   - Omitting it for `content` panes is what makes this safe rather than merely stale: it
     removes any path where a script's output width feeds the width it is told about. A `fill`,
     percent, or fixed pane absorbs its remainder independently of its own content, so no
@@ -1477,9 +1495,22 @@ the framework does not use, and is no longer evidence about the framework at all
 - **cwd**: the session's `.cwd`, so `git`-flavored commands behave as the user expects.
 - **Output**: stdout with the trailing newline stripped. Each line becomes one row of the item's
   block (§3.1), capped at `maxLines` (default 4) so a runaway script cannot flood the surface;
-  excess lines are dropped and `--check` reports the cap was hit. Empty output ⇒ item suppressed.
-  Nonzero exit ⇒ treated as empty (see §7). ANSI in the output is passed through but its width
-  is measured stripped, so a script may color itself.
+  excess lines are dropped. **`--preview` names the item and the cap on stderr when it drops
+  lines** — not `--check`, which never runs the command and therefore cannot know (§9.1.1), and
+  not stdout, which stays byte-comparable so `/migrate` can diff a preview against the original
+  script's output. stderr already carries §9.3's "this payload is synthetic" notice: facts about
+  the preview run that are not part of the rendered surface.
+
+  ANSI in the output is passed through but its width is measured stripped, so a script may color
+  itself.
+
+  **Empty output ⇒ the item is `absent`. A timeout, a nonzero exit, or a kill ⇒ the item is
+  `unavailable`.** These are not the same outcome and §2.11.2 is why: the collapse pre-pass reads
+  the distinction, so a pane whose only item timed out keeps its extent instead of vanishing and
+  returning once a second as a script drifts across its budget. An earlier draft of this bullet
+  read "nonzero exit ⇒ treated as empty", which is the collapse-on-timeout behaviour §2.11.2
+  exists to forbid, written into the section that produces the value. §7 still governs what the
+  *user sees* for both — nothing — but what the layout is told differs.
 
   *This previously read "first line of stdout", which contradicted §3's block model — §3 defines
   a multi-row block as "a user-defined item whose command emitted multiple lines", and §3.1
@@ -2116,12 +2147,15 @@ Later, with splits:
   adding a split to a config must never silently add chrome: under a uniform default, nesting
   three deep would spend 12 columns on boxes before any content existed. The border stays on the
   panes that hold content, which is also where its color is worth setting.
-- `items` **absent** in a leaf ⇒ the default list: the **fourteen builtins whose `default` is
-  true**, in CAPTURE.md order. That is fourteen *of sixteen*, not all of them — `model-short` and
-  `remote-url` are opt-in and render only where an author places them. Read as "all builtins" the
-  default set gains `remote-url`, which shells out to git on every render, and the promise that
-  you only pay for that if you asked for it is quietly broken. §9.6.2's `default` flag is the one
-  definition of which is which; this sentence must never become the second.
+- `items` **absent** in a leaf ⇒ the default list: **the builtins whose `default` flag is true**,
+  in CAPTURE.md order. That is a proper subset, not all of them — `model-short` and `remote-url`
+  are opt-in and render only where an author places them. Read as "all builtins" the default set
+  gains `remote-url`, which shells out to git on every render, and the promise that you only pay
+  for that if you asked for it is quietly broken. §9.6.2's `default` flag is the one definition
+  of which is which; this sentence must never become the second — which is also why it states a
+  predicate rather than a count. A count here is a second registry with one entry, and the way it
+  fails is that both numbers stay in the prose long after a row lands and only one of them is
+  still true (§4).
 - `items` **present** ⇒ exactly those, in that order. An unknown builtin id is **suppressed at
   render time and reported by `--check` as `unknown-item-id` (error)**. Both halves are the rule:
   suppression alone is §7.1's third outcome — a config that renders short, plausibly, forever,
@@ -2173,6 +2207,43 @@ argv only far enough to notice it is empty, and take the existing path when it i
 
 No flag may change what the no-flag path emits. A flag that alters rendering is not a CLI
 feature, it is a second renderer, and §12.6's "two adapters over one core" applies here first.
+
+#### 9.1.1 `--check` never executes a `command` item; `--preview` always does
+
+This was never written down, and both halves are load-bearing in opposite directions.
+
+**`--check` is static.** It reads the config, resolves ids, validates the vocabulary, and runs
+nothing. Three independent reasons, any one of which is sufficient:
+
+- **Validation runs on configs nobody has approved yet.** `/edit` checks a config a model just
+  wrote; `/migrate` checks one it just generated from someone else's shell script; §12.6's tools
+  check whatever config path the caller names. If checking executed `command` items, then
+  "validate this config" would mean "execute the commands in this config", and the one operation
+  a user reaches for *before* trusting a file would be the operation that trusts it.
+- **`--check`'s answer must be a function of the config alone.** §9.8 already establishes this
+  for width; machine state and wall-clock time are the same argument. Running commands makes the
+  same config check clean at one moment and dirty at the next, and `--check`'s exit code is the
+  gate `/edit` and `/migrate` accept or reject a write on. A gate that flickers is not a gate.
+- **A check must not cost what a render costs.** §5's whole budget analysis is about paying for
+  subprocesses once per second, not once per validation of a config with a dozen items.
+
+The consequence to hold onto: **`--check` cannot report anything about a command's output** —
+not its width, not its line count, not whether it produced anything at all. Every diagnostic in
+§9.6.1 that touches a `command` item (`command-shape`, `command-shell-argv`, the `placeholder-*`
+codes) is a statement about the *declaration*, and that is not an accident of what has been
+specified so far. It is the boundary.
+
+**`--preview` is the opposite, deliberately.** It runs the same pipeline the statusline runs
+(§9.3), which means it spawns the user's commands, honours their TTLs, and shows their real
+output. A preview that skipped `command` items would show a statusline nobody will ever see, and
+§12.3 and §12.4 both put a preview in front of the user as the *evidence* for accepting a write.
+Evidence assembled by skipping the interesting half is not evidence.
+
+So the pair is: `--check` answers "is this config well-formed?" without side effects, and
+`--preview` answers "what does this actually look like?" by accepting them. The authoring
+commands call both, back to back, on the same file — which is exactly why the difference has to
+be stated rather than inferred from each command's description. §12.6.7 bounds what an MCP tool
+may *write*; this bounds what validating one may *run*.
 
 ### 9.2 `--config <path>` — global, and the reason the authoring surface works
 
@@ -2530,9 +2601,10 @@ stdin, which `--items` must not do.
 load-bearing. `reports` is the description, and it belongs on `ItemDefinition` as a **required**
 positional field rather than a lookup table beside it — required is the whole point, because it
 makes "add a row without describing it" fail to compile instead of silently shipping an item that
-`--items` announces as a bare id. `default` distinguishes the fourteen items in the default
-pipeline from `model-short` and `remote-url`, which are opt-in (`ItemRegistry.DefaultIds` already
-knows). §12.2's migration depends on that bit: an item that will not render unless explicitly
+`--items` announces as a bare id. `default` distinguishes the items in the default pipeline from
+`model-short` and `remote-url`, which are opt-in (`ItemRegistry.DefaultIds` already knows). The
+flag is what a consumer reads; the size of either group is not reported and must not be inferred
+from the row count of one `--items` run (§4). §12.2's migration depends on that bit: an item that will not render unless explicitly
 placed is a different mapping decision from one that appears on its own, and a tool that cannot
 tell them apart will map a branch readout onto `remote-url` and produce a config that renders
 short with nothing wrong in it.
@@ -3124,7 +3196,7 @@ is narrow, because `/claude-tui-line:setup` builds both from one tree. A gate th
 is a worse outcome than the skew it prevents for a user whose statusline is working fine. Report
 it, and let the model raise it if something looks wrong.
 
-#### 12.6.9 Three more rulings the wire contract needed
+#### 12.6.9 Four more rulings the wire contract needed
 
 **`confirm: true` requires an explicit `target`.** The table marks `target` optional while
 §12.6.4's text says "called with `confirm: true` and an explicit `target`, it restores", which
@@ -3153,6 +3225,23 @@ rows — and §12.6 has just told the model that looking at rows is how it check
 diagnostics, "the preview looked right" is evidence for a config `set_config` will reject. The
 check has already run; returning it costs nothing and stops preview from being quietly weaker
 than the loop it anchors.
+
+**`preview` executes the config's `command` items — including an inline one — and is therefore
+not the cautious call.** §9.1.1 splits the two: `check` runs nothing, `preview` runs the real
+pipeline. Over MCP that split matters more than it does at the CLI, because the inline `config`
+argument the ruling above just made useful means a caller can hand the server a config that was
+never written to disk and have its commands spawned. Ruled: it still runs them. A preview that
+skipped them would return rows that no statusline will ever produce, and the model would accept a
+config on the strength of a picture of a different config — the §7.1 outcome, arriving through
+the tool built to prevent it.
+
+What has to be said instead is the ordering, because the tool surface invites the opposite guess.
+`check` is cheap, side-effect-free, and safe to call on anything; `preview` is neither, and
+"I'll preview it first, just to be safe" is backwards. **A caller entitled to call `preview` on a
+config is a caller entitled to call `set_config` with it** — same trust, one step earlier. The
+tool descriptions must say so, since a model reads them and nothing else, and both §12.6.4's
+look-before-you-leap default and §12.6.6's no-improvising rule work by making the cautious call
+the obvious one. That only holds if the model knows which call is the cautious one.
 
 ## 13. Out of scope for v2
 

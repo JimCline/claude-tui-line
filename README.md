@@ -162,8 +162,8 @@ searches for the width split that makes the *whole statusline* as short as possi
 
 ### Items
 
-Sixteen items ship built in, and **fourteen of them are in the default set** — the list you get
-when a pane omits `items`. The two marked *(opt-in)* render only where you place them yourself:
+These ship built in. The ones marked *(opt-in)* render only where you place them yourself;
+everything else is in the **default set** — the list you get when a pane omits `items`:
 
 | | |
 |---|---|

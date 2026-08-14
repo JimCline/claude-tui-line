@@ -1032,6 +1032,69 @@ second. Steady state is now zero writes.
   two callers, and the contract belongs to the caller. §9.1's "the render path is untouched" is
   this same boundary drawn from the other side.
 
+### §4 walked — the section forbidding second registries kept one, and `--check` had no boundary
+
+Four findings, and the first two are both cases of §4 breaking its own rule one paragraph after
+stating it.
+
+- **§4 enumerated the builtins in prose, immediately after declaring the registry the only place
+  they are enumerated** — and the prose list was wrong: it omitted `remote-url`, which §5.1
+  specifies and §9.3 names as one of the canned `ItemContext` fields. It also opened with "the 14
+  captured segments", a number that collides by coincidence with §8's default-set size. Rewritten:
+  the list stays, demoted explicitly to orientation, with `--items` named as the authority and the
+  instruction that if the two disagree the prose is the one that is wrong. Membership in the
+  default set is now stated as a **flag on the row, never a count**, and the coincidence of the two
+  sizes is called out as a fact about today's rows that nothing may be derived from.
+
+  The same count was restated in three more places. §8's definition, §9.6.2's `default` field, and
+  the README all now state the predicate instead. The README's version was the worst of them: it
+  said "sixteen ship built in, fourteen in the default set" directly above a table that marks each
+  opt-in row — so the sentence added nothing except a second thing to keep true.
+
+- **§4 still recorded `paneWidth` in the cache entry**, which is the design §5.0.1 removed two
+  hours earlier. Two sections describing one mechanism, disagreeing about which file it lives in,
+  with the implementation not yet written — the reader who gets there first decides. Rewritten to
+  cite the widths store, and the new keying turned out to *improve* §4's own claim: the old text
+  admitted the value is "correct on all but the first tick after a resize", i.e. wrong for one
+  tick. Keying by `COLUMNS` makes a resize a key miss instead, so that tick reports **absent**
+  rather than a confidently stale number — and absent is a state a script can branch on.
+
+- **"Nonzero exit ⇒ treated as empty" was the exact behaviour §2.11.2 exists to forbid**, written
+  into the section that produces the value. §2.11.2's whole argument is that an item that did not
+  answer is not an empty item, because collapsing on a 150 ms timeout makes the line jump once a
+  second. Fixed to `absent` vs `unavailable`, with the old wording quoted in place — it is a
+  reading someone will arrive at again from §7, which genuinely does treat both as "renders
+  nothing". §7 governs what the user sees; §2.11.2 governs what the layout is told.
+
+- **`--check` was said to report a runtime fact, and that exposed a missing ruling.** The `maxLines`
+  bullet ended "excess lines are dropped and `--check` reports the cap was hit" — a diagnostic with
+  no code in §9.6.1, which per that registry means it does not exist, and which `--check` could
+  only produce by executing the user's commands. Nothing in the spec said whether it does.
+
+  Ruled in a new **§9.1.1**: `--check` never executes a `command` item; `--preview` always does.
+  Three reasons for the first half, and the first is the one that matters — `/edit`, `/migrate`,
+  and §12.6's tools all run `--check` on a config a model has just written, so "validate this
+  file" must not mean "run the commands in this file". The other two: `--check`'s answer must be a
+  function of the config alone (§9.8 already argues this for width; machine state and wall-clock
+  are the same argument, and its exit code is the gate a write is accepted on), and a validation
+  must not cost what a render costs. The consequence is a boundary worth having in writing:
+  **`--check` cannot report anything about a command's output**, which is why every `command`
+  diagnostic in §9.6.1 is a statement about the declaration.
+
+  `--preview` is the deliberate opposite, since §12.3 and §12.4 both put a preview in front of the
+  user as the evidence for accepting a write, and evidence assembled by skipping the interesting
+  half is not evidence. The `maxLines` notice moved there, on **stderr** — the channel §9.3 already
+  uses for "this payload is synthetic", and not stdout, which stays byte-comparable so `/migrate`
+  can diff a preview against the original script.
+
+  That ruling then landed on §12.6, which had just made `preview` accept an **inline** config: a
+  caller can hand the server a config that was never written to disk and have its commands spawned.
+  Added as §12.6.9's fourth ruling — it still runs them, for the same evidence argument, but the
+  ordering is now stated because the tool surface invites the opposite guess. `check` is the
+  cautious call; `preview` is not, and a caller entitled to preview a config is a caller entitled
+  to write it. §12.6.4's look-before-you-leap default only works if the model knows which call is
+  which.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
