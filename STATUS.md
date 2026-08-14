@@ -234,6 +234,43 @@ Still needed **before making it public**:
   `directory` item derives from that path and a shorter path would have moved the golden-parity
   baseline. Verified rather than assumed: full suite 1069/1069, exit 0, parity gate included.
 
+## Session log — overnight, 13→14 Aug 2026
+
+All design, no implementation: the implementor holds `src/` for §9, so I stayed out of it. Nine
+commits, all pushed.
+
+- **Genericized the hardcoded home path** (`6dcb68f`) — the last pre-public item. Preserved path
+  depth and final segment so the golden-parity baseline could not move; suite 1069/1069.
+- **Specified the MCP wire contract**, §12.6.1–12.6.8 (`d18b9b8`). Phase 7 was the last surface
+  not specified to §9's depth. Four hazards ruled on, the sharpest being that an MCP stdio server
+  does not inherit the user's shell environment — so §5's search order resolves a *different file*
+  in each place, and nothing errors.
+- **Added `--version`, §9.7** (`f14cd4b`). Found by checking cross-references: §12.6 surfaced a
+  `cliVersion` that §9 never defined. Brings a test, because the number lives in both the `.csproj`
+  and a hand-written `plugin.json` that cannot be generated.
+- **Ruled `--check` width-independent, §9.8** (`dff1fdc`) — raised by the implementor, who was
+  right that no existing invariant matched. Decisive argument: §12.6's `validate` calls `--check`
+  from a process with no terminal.
+- **Resolved a §9.4/§9.8 contradiction** (`eb42fe8`) — also the implementor's catch. `minSize >
+  maxSize` is an `error`. The severity discriminator had been left implicit and was therefore
+  re-derivable to opposite conclusions; it is now stated: **satisfiable vs unsatisfiable, not
+  "does the renderer cope."** Coping cannot be the test, because §7 makes the renderer cope with
+  everything.
+- **Fixed a poisoned-`origin` defect in the backup ledger** (`cb9f2bb`) — the most serious find of
+  the night, in the one component whose entire purpose is being trustworthy. Writing an `origin`
+  because none exists yet is insufficient; a user who hand-wires the binary and *then* runs setup
+  gets the tool recorded as its own escape hatch, permanently. Only `setup.md` was exposed —
+  `migrate.md` already guarded the case for an unrelated reason, which is why it hid.
+- **Fixed `migrate.md` ignoring `$CLAUDE_TUI_LINE_CONFIG`** (`dff1fdc`) and a stale backup-naming
+  instruction in `setup.md` (`6dcb68f`), both found by re-reading committed prompts rather than
+  trusting them.
+- **Verified the plugin scaffolding structurally**; STATUS now says what was actually checked
+  rather than "parses by inspection."
+
+A grep sweep of every flag and diagnostic code in the spec found no other dangling references. The
+two real inconsistencies both came from the implementor trying to build two sections at once —
+which is the argument for having a separate pair of eyes on the spec, not just a reader.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
