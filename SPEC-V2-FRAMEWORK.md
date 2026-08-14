@@ -4548,8 +4548,8 @@ error and we would be back at "does the renderer cope" under a new name.
   cited rather than copied), and top-level `colorSystem` (§6.2 — cited for the same reason). Every
   one of those three fails silently and consequentially:
 
-  - A misspelled `split` turns a container into something that is not a container. The pane's
-    `children` are then a key nothing reads, and half the statusline disappears.
+  - A misspelled `split` reverts to the default vertical axis; the pane stays a container with all
+    its children intact, and the difference is a silently wrong axis rather than a vanished one.
   - A misspelled `distribute` reverts to greedy sizing, which is exactly the layout the author
     wrote the key to avoid, and the difference is a row count rather than an absence.
   - `"colorSystem": "24bit"` falls back to `standard`, and the author then gets §6.2.1's
