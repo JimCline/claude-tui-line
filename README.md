@@ -1,0 +1,273 @@
+# claude-tui-line
+
+A statusline framework for [Claude Code](https://claude.com/claude-code). You compose your
+statusline out of panes and items — built-in ones, or your own shell and Python scripts — and it
+renders inside a bordered TUI surface instead of a single line of concatenated text.
+
+Written in C# on .NET 10 with [Spectre.Console](https://spectreconsole.net/), published as a
+Native AOT binary so it starts fast enough to run on every render.
+
+> **Status: pre-1.0 and moving.** The rendering engine is built and tested; the CLI, the authoring
+> commands, and the MCP tools are not. See [STATUS.md](STATUS.md) for what is done and what is
+> left, and [SPEC-V2-FRAMEWORK.md](SPEC-V2-FRAMEWORK.md) for the architecture.
+
+## Why a framework
+
+Claude Code's `statusLine` hook hands your program a JSON blob on stdin and prints whatever you
+write to stdout. That is enough to build anything, which in practice means everyone rewrites the
+same string-slicing and ANSI-escaping by hand, and it stops being maintainable the moment you want
+two columns.
+
+This takes over the layout. You describe *what* you want on the statusline; the framework decides
+how many rows it needs, how wide each pane is, where to wrap, where to truncate, and what to drop
+when the terminal gets narrow.
+
+## Install
+
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+```bash
+git clone https://github.com/JimCline/claude-tui-line.git
+cd claude-tui-line
+dotnet publish src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release -o publish
+```
+
+Then point Claude Code at the binary, in `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/absolute/path/to/claude-tui-line/publish/claude-tui-line",
+    "refreshInterval": 1
+  }
+}
+```
+
+`refreshInterval: 1` means the binary runs once per second, so **startup cost is render cost** —
+which is why this is AOT-compiled rather than a script.
+
+If you already have a statusline script, back it up before you replace it. (A `migrate` command
+that does this for you, and maps your existing script's elements onto items, is planned but not
+built.)
+
+## Configuration
+
+The config is a single JSON file, looked up in this order:
+
+1. `$CLAUDE_TUI_LINE_CONFIG` — an explicit path, if set
+2. `$HOME/.claude/claude-tui-line.json`
+3. no config — built-in defaults
+
+A minimal one:
+
+```json
+{
+  "surface": {
+    "pane": {
+      "border": { "enabled": true, "style": "rounded", "color": "grey" },
+      "items": [
+        { "item": "directory" },
+        { "item": "git-branch" },
+        { "item": "model" },
+        { "item": "context" }
+      ]
+    }
+  }
+}
+```
+
+### Panes
+
+A pane either holds items or splits into child panes. Splits nest, so you can build columns of
+rows of columns.
+
+```json
+{
+  "surface": {
+    "pane": {
+      "split": "vertical",
+      "gutter": 1,
+      "children": [
+        { "size": "fill",    "items": [ { "item": "directory" }, { "item": "git-branch" } ] },
+        { "size": "content", "items": [ { "item": "model" }, { "item": "context" } ] }
+      ]
+    }
+  }
+}
+```
+
+Pane keys:
+
+| key | accepted values |
+|---|---|
+| `split` | `"vertical"`, `"horizontal"` — makes this a container for `children` |
+| `children` | child panes |
+| `size` | a bare column count (`"24"`), a percentage (`"40%"`), `"content"`, or `"fill"` (also the default) |
+| `minSize` / `maxSize` | integers — clamps on the resolved width |
+| `distribute` | `"min-rows"` — size siblings to minimise total rows rather than greedily |
+| `gutter` | integer — columns between children |
+| `align` | `"left"` (default), `"center"`, `"right"` |
+| `valign` | `"top"` (default), `"middle"`, `"bottom"` |
+| `overflow` | `"wrap"`, `"truncate"`, `"overflow"` |
+| `ellipsis` | the marker used when truncating |
+| `maxRows` | integer — cap on rows this pane may occupy |
+| `border` | `enabled`, `style`, `color` |
+| `items` | the items to render, for a leaf pane |
+
+Border `style` is one of `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or
+`"none"`.
+
+`size: "content"` measures the pane's own text and asks for exactly that much. `distribute:
+"min-rows"` is the interesting one: rather than letting each pane grab what it wants in order, it
+searches for the width split that makes the *whole statusline* as short as possible.
+
+> Unrecognised values are currently accepted silently rather than rejected — an unknown `size`
+> falls back to `"fill"`, an unknown `style` to `"rounded"`. A `--check` command that reports
+> these instead of swallowing them is the next thing being built.
+
+### Items
+
+Sixteen items ship built in:
+
+| | |
+|---|---|
+| `directory` | the current working directory |
+| `git-branch` | current branch |
+| `repo` | the workspace repo, as `owner/name` |
+| `worktree` | worktree name and branch |
+| `pr` | pull request number and review state |
+| `model` | model display name |
+| `model-short` | abbreviated model name *(opt-in)* |
+| `effort` | reasoning effort level |
+| `thinking` | whether extended thinking is on |
+| `output-style` | active output style |
+| `context` | context window usage |
+| `rate-limits` | five-hour and seven-day usage |
+| `agent` | active agent name |
+| `engram` | Engram memory activity |
+| `vim` | vim mode, when enabled |
+| `remote-url` | the git remote URL *(opt-in)* |
+
+`model-short` and `remote-url` are opt-in rather than default — `remote-url` because resolving it
+shells out to git, which you should only pay for if you asked for it.
+
+Each item entry accepts:
+
+```json
+{ "item": "context", "format": "ctx {}", "color": "aqua", "overflow": "truncate" }
+```
+
+`format`'s `{}` is the item's value.
+
+### Custom items
+
+Anything you can run from a shell can be an item. Give it an `id`, a `command`, and how long to
+cache it:
+
+```json
+{
+  "id": "diffstat",
+  "command": ["git", "--no-pager", "diff", "--shortstat"],
+  "ttlSeconds": 5,
+  "timeoutMs": 200,
+  "format": "± {}",
+  "color": "olive"
+}
+```
+
+`command` is an argv array, passed to the process verbatim — no shell, so no quoting hazards and
+no command injection. Set `"shell": true` only if you genuinely need shell features, and
+understand what you're opting into. `ttlSeconds` caches the result so a slow command doesn't run
+on every render; `timeoutMs` bounds how long a render will wait for it.
+
+Python, a script in your repo, `curl` — anything that writes a line to stdout works.
+
+### Derived items
+
+An item can take another item's value and reshape it, without that source item being displayed:
+
+```json
+{
+  "id": "agent-short",
+  "from": "agent",
+  "extract": "[^:]+$",
+  "case": "upper",
+  "color": "aqua"
+}
+```
+
+The pipeline runs `from` → `extract` → `case` → `format`, in that order. `extract` is a regex
+applied to the raw provider value, so it sees the underlying data rather than the rendered text.
+
+### Colours
+
+Sixteen named colours, plus `default`, `dim`, and `bold`:
+
+```
+black   maroon  green   olive   navy    purple  teal    silver
+grey    red     lime    yellow  blue    fuchsia aqua    white
+```
+
+They're theme-mapped — your terminal decides what `blue` actually looks like. `tools/colors.sh`
+prints them all rendered in your own terminal.
+
+Colour can also be computed from a value. Define a named rule and reference it:
+
+```json
+{
+  "colors": {
+    "model-tone": {
+      "from": "model",
+      "match": [
+        { "contains": "Sonnet", "color": "blue" },
+        { "contains": "Opus",   "color": "yellow" },
+        { "contains": "Fable",  "color": "fuchsia" }
+      ],
+      "default": "grey"
+    }
+  }
+}
+```
+
+`thresholds` does the same for numbers — `{ "min": 80, "color": "red" }` — which is how `context`
+and `rate-limits` shade themselves as they fill up. A pane border and the text inside it can
+reference the same rule, so they change colour together.
+
+### Hyperlinks
+
+Items can carry an OSC 8 hyperlink, which terminals that support it render as clickable text:
+
+```json
+{ "item": "git-branch", "link": "{remote-url}/tree/{}" }
+```
+
+`{}` is this item's own value; `{other-id}` is another item's — and the referenced item does not
+need to be displayed anywhere. Terminals without OSC 8 support just show the text.
+
+## Layout, briefly
+
+Width is the hard constraint. The usable surface is `COLUMNS` minus a small reserve for Claude
+Code's own chrome, and every sizing decision follows from that. Panes are measured, not guessed:
+an item's *plain* text determines its width, and colour markup never does — so adding colour can
+never change the layout.
+
+When content genuinely doesn't fit, it degrades in a defined order rather than overflowing: wrap,
+then truncate, then drop.
+
+## Contributing
+
+The architecture lives in [SPEC-V2-FRAMEWORK.md](SPEC-V2-FRAMEWORK.md) and is the source of truth
+— it is written to be argued with, and sections are cited by number in commit messages and code
+comments. [STATUS.md](STATUS.md) tracks what is built.
+
+```bash
+dotnet build src/ClaudeTuiLine/ClaudeTuiLine.csproj
+dotnet test  tests/ClaudeTuiLine.Tests/ClaudeTuiLine.Tests.csproj
+```
+
+There is no solution file, so build and test commands name their project explicitly.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

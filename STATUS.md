@@ -28,8 +28,16 @@ not by itself enough; this project has twice had a green suite over a broken ins
 
 ## In flight
 
-- **Defect 11** (§5's resolution set) — dispatched to the implementor, scope narrowed to the link
-  resolver; see the defect row below.
+- **Defect 11** (§5's resolution set) — implementor reports it fixed; **held, not committed**, and
+  the fix is the prime suspect for defect 13 below. Its three files (`ItemValueResolver.cs`,
+  `LeafContent.cs`, `HyperlinkTests.cs`) were deliberately kept out of `8306620` and remain
+  uncommitted in the working tree. The fix itself looks right: `CollectIds` restructured into a
+  `ReferenceExtractors` array with one lambda per §5 reference form, so adding §4.2's argv
+  placeholder or §3.3's compound parts is an append rather than an edit — that array is now the
+  single definition of what ids a config references, and **`--check` must reuse it rather than
+  grow a second config walk**. Colour-token `from` was checked and is *not* affected, closing the
+  question STATUS previously left open at defect 11: the link resolver was the only broken form.
+- **Defect 13** — the reason defect 11 is held. See the defect table.
 
 Notes carried forward from `min-rows`, now in **Done and verified**: implementation is
 `PaneDistribute` → `ResolveVerticalMinRows` → `SolveMinRows` → `MinWidthForRowCount` →
@@ -107,6 +115,9 @@ defect is the link resolver specifically, and whatever mechanism makes derived `
 unplaced is a model to copy rather than replace. Colour-token `from` untested — check before
 assuming which side it lands on |
 | 12 | **An empty pane still renders its borders** | `{"items":[{"item":"repo"}]}` in this repo emits 674 bytes — top and bottom border, no content row. Collides with SPEC.md:353 *"no segments ⇒ zero output even with border enabled."* Separately, `repo` yielding nothing here may be correct de-duplication (repo name and directory name are both `claude-tui-line`) — that part is unconfirmed **Ruled** — §2.4 now carries it. SPEC.md:353 survives, applied at two levels: an empty *surface* emits zero bytes; an empty `content`/`fill` pane collapses with its gutter; an empty `fixed`/`percent` pane keeps extent and border, because the user named a number and §2.3's principle of not overruling explicit sizing applies here too. Queued behind defect 11. Whether `repo` yielding nothing here is correct de-duplication is still unconfirmed and tracked separately |
+| 13 | **min-rows packer invocations jump 45 → 314 under the defect-11 fix** — a 7x regression, caught by `MinRowsDistributeTests.Columns112_LiveConfig_PackerInvocationCountStaysBounded` (bound `1..300`) | Suite goes 1067/1067 → 1068/1069. Isolated by bisection: a clean checkout of `8306620` alone is **green at 1067/1067**, so min-rows is not the cause; the three uncommitted defect-11 files are. **Leading hypothesis: OSC 8 bytes are being counted as width inside the *sizing* path.** Defect 1 fixed that in the render path and was verified against rendered bytes there — but `RowCountAt` → `PaneRenderer.RenderLeaf` is a different caller, and before defect 11 the §3.2 worked-example link never resolved, so no OSC 8 ever reached the sizer on this config. Magnitude fits: a full GitHub URL is far longer than the branch name it wraps, and inflated content raises `maxT`, which `SolveMinRows` scans linearly. **If true the layout is wrong, not merely slow** | Open — with the implementor. Fix the measurement, not the bound, and **not** the search: bisecting `t` and memoizing `RowCountAt` are both available and both deliberately deferred, because either would mask a 7x regression by making the search cheap enough to hide it |
+
+Noted for later, filed rather than done: `SolveMinRows` scans `t` linearly from 1 to `maxT` while its own comment states `feasible(T)` is monotone — the property that licenses bisection. And `RowCountAt` rebuilds `CandidateSegments` on every probe, though §5 guarantees values are constant for the render, so `rows_i(w)` is pure within a render and every repeat probe is provably redundant. Both are real, neither is urgent at 45 calls, and **both stay unbuilt until defect 13 is understood.**
 
 ## Not started
 
@@ -140,7 +151,14 @@ Scanned before pushing: no credentials, no company data, no build artifacts.
 
 Still needed **before making it public**:
 
-- README, LICENSE (MIT recommended)
+- ~~README, LICENSE~~ — **done.** `LICENSE` is MIT. `README.md` documents install, the config
+  file and its lookup order, panes and every pane key, all sixteen built-in items, custom
+  `command` items, derived items, colours and colour rules, and hyperlinks. Every string value in
+  it was read out of the parsers rather than assumed — `align`/`valign`, `size` forms, `overflow`,
+  border `style`, the env var, and the published binary name (`claude-tui-line`, from
+  `AssemblyName`). It documents only what exists: no CLI flags are described, because `Program.cs`
+  has none yet. The silent-acceptance defects (3–6) are disclosed in a note rather than papered
+  over.
 - Genericize `/Users/jimcline/...` — it appears in `CAPTURE.md:9`, `bench/fixture.json:2`,
   `tests/.../fixtures/full.json:2`, and three test files. Not sensitive, but it is a username
   in a public tree. **Changing the fixture cwd risks the golden-parity baseline** — the
