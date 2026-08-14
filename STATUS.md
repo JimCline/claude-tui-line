@@ -318,6 +318,39 @@ The pass stopped being bookkeeping and started finding things.
   warning. A third severity — "notice" — was also in §6.2 by accident, in a system §9.4 defines as
   having exactly two.
 
+### Third batch — a stale defect, and the verification rule catching a *retrieval*
+
+- **§2.8's "the second pass currently frees nothing, and that is a live defect" was stale.** The
+  fix landed and the prose never caught up. `ResolveVertical` re-measures *with* the grant
+  (`SizeResolver.cs:129`), `MeasureRequest` turns it into an inner cap and returns
+  `LongestWrappedRowWidth` rather than the cap, `:130` clamps monotonically against the previous
+  request, and `:141` reallocates from the reduced set, bounded at `MaxPasses = 3`. So the loop
+  can once again produce a shrinking re-measurement — the thing the banner-to-text deletion had
+  removed the only source of. §2.8 now says so.
+  - **Still owed, and now recorded rather than assumed:** §10.6's fixpoint tests drive the loop
+    through `measureOverride`, so they certify the monotone clamp and the pass cap **against a
+    stub**. Nothing yet asserts that the *real* measurement frees six columns at `COLUMNS=112`.
+    A defect can be fixed and its test still be measuring something else.
+
+- **A retrieval subagent fabricated a spec section, and the fabrication was caught by content
+  rather than by suspicion.** Asked to print §9.6 verbatim, it returned ~15 lines of fluent,
+  correctly-formatted prose describing a "handshake", a `tools` table, and the root output of a
+  `_parse_file` call — none of which exist anywhere in this project. The real §9.6 is 26 lines
+  about `--json` shapes. The tell was not that the output looked wrong; it read perfectly well.
+  The tell was that it described a protocol this tool does not have.
+
+  This extends the rule at the top of this file. "Verified independently of the report claiming
+  it" was written for *implementation* reports — a claim that code works. It turns out to be
+  needed just as much for *retrieval* reports, where the failure is quieter: a fabricated file
+  quote has no build to fail and no test to go red, and it would have been laundered into the
+  spec as a real inconsistency to go and fix. **Prose that will be quoted or edited gets read
+  directly; delegated retrieval is for locating and counting, not for transcribing.**
+
+  Worth noting what did *not* catch it: two runners independently agreeing on line numbers in
+  `SizeResolver.cs` is real corroboration, and that report held up. The difference is that code
+  could be cross-checked against a second runner's grep of the same symbols. A single verbatim
+  print of prose has nothing to cross-check against except the file itself.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

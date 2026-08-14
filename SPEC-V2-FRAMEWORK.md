@@ -674,12 +674,12 @@ remaining 56, granting it and leaving the left pane nothing usable. It is the §
 `rem − reserve`, reserving the `fill` sibling's floor — that pulls the grant down to 32.
 **That cap is the mechanism; there is no "surface is too tight" predicate anywhere.**
 
-**The second pass currently frees nothing, and that is a live defect.** Under the 28-column
+**The second pass has to free something, and for a while it did not.** Under the 28-column
 inner grant the right pane wraps to three rows whose longest is 22, so it needs 26 columns, not
 32. §2.3 requires it to re-report that and hand the 6 columns back to its sibling — "freed space
-must reach the sibling" — and the build does not: it re-reports the width it was granted. The
-left pane is therefore squeezed to its 20-column floor and wraps `jimcline/claude-tui-line`
-mid-word while six columns sit unused inside the anchor.
+must reach the sibling" — and for a period the build re-reported the width it had been granted
+instead, squeezing the left pane to its 20-column floor so that `jimcline/claude-tui-line`
+wrapped mid-word while six columns sat unused inside the anchor.
 
 The cause is worth recording, because it was introduced by a deletion rather than by a bug: the
 degradation that used to shrink a re-measured request was the banner-to-text fallback, and when
@@ -688,6 +688,21 @@ while the only thing that made it converge to something *smaller* went away, lea
 that runs and cannot change its answer. **A re-measurement under a narrower grant must return the
 longest wrapped row, not the grant.** That is the wrap-aware measurement `distribute` also needs,
 so it is specified once, here, and used by both.
+
+**That requirement is now implemented, and the deletion above is repaired.** `ResolveVertical`
+re-measures with the grant rather than without it (`measure(child, result.Grants[i])`),
+`MeasureRequest` turns the grant into an inner cap and returns `LongestWrappedRowWidth` — the
+longest row the segments actually wrap to at that cap, not the cap — the result is clamped
+monotonically against the previous pass's request, and the split then reallocates from the
+reduced requests, bounded at three passes. So a shrinking re-measurement is once again something
+the loop can produce, which is exactly what the banner-to-text fallback used to be the only
+source of.
+
+Read directly from those paths; what that reading does **not** establish is the end-to-end
+number. §10.6's fixpoint tests drive the loop through `measureOverride`, so they certify the
+monotone clamp and the pass cap against a stub, not that the *real* measurement frees six
+columns at `COLUMNS=112`. That assertion is still owed, and §10.6's rule applies to it — assert
+that the sibling gains what the anchor gives up, not that `right == 32`.
 
 **These integers are measured, not asserted.** They come from rendering the config above at those
 two widths. Tests must assert **behaviour and invariants** — the cap binds at `COLUMNS=60`, the
