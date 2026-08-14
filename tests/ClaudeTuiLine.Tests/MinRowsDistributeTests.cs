@@ -105,7 +105,7 @@ public class MinRowsDistributeTests
         // w1 + w2 == r. That makes a single sweep over w1, with w2 = r - w1, exhaustive over the
         // allocations actually in competition, without leaning on rows_i's own monotonicity to
         // justify skipping any of them.
-        var lo1 = RowLayout.MinUsableWidth + PaneBorderRenderer.BorderReserve;
+        var lo1 = RowLayout.MinUsableWidth + SizeResolver.OwnBorderReserve(left);
         var hi1 = r;
 
         var bestScore = int.MaxValue;
@@ -136,7 +136,7 @@ public class MinRowsDistributeTests
         var right = pane.Children[1];
         var r = surfaceWidth - pane.Gutter;
 
-        var lo1 = RowLayout.MinUsableWidth + PaneBorderRenderer.BorderReserve;
+        var lo1 = RowLayout.MinUsableWidth + SizeResolver.OwnBorderReserve(left);
         var hi1 = r;
 
         var bestScore = int.MaxValue;

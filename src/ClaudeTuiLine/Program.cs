@@ -195,8 +195,8 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
 
     // Border reserve is a property of the box being drawn (2 verticals + 2 padding cells),
     // not of the terminal — it reduces the surface to the pane's own content budget
-    // (SPEC-V2-FRAMEWORK.md §2.5: leaf inner width = outer - borderReserve).
-    var borderReserve = pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+    // (SPEC-V2-FRAMEWORK.md §2.10: leaf inner width = outer - reserve(p)).
+    var borderReserve = SizeResolver.OwnBorderReserve(pane);
     var contentWidth = surfaceWidth is int sw ? Math.Max(0, sw - borderReserve) : (int?)null;
 
     // §2.6: the single root pane defaults to `overflow` (v1-identical passthrough) so an
@@ -756,7 +756,7 @@ static void StampPaneWidths(SizeResolver.ResolvedPane node, string? cwd, string 
     var pane = node.Source;
     if (!SizeResolver.IsContentSized(pane))
     {
-        var borderReserve = pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+        var borderReserve = SizeResolver.OwnBorderReserve(pane);
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
 
         foreach (var item in pane.Items)
