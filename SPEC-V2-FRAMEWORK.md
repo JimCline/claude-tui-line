@@ -3077,6 +3077,11 @@ one row of plain text naming the fault and the path, truncated to the usable wid
 claude-tui-line: /Users/x/my.json: unexpected ',' at line 12
 ```
 
+**That reason string is illustrative and no real one looks like it** — `System.Text.Json` produces
+something four times as long with the line number at the far end. §9.2.2 rules how the real one is
+composed, and the difference is not cosmetic: it decides what survives truncation. Do not treat this
+fence as a format to reproduce.
+
 The statusline is the only output channel this path has, so a diagnostic that goes anywhere else
 is a diagnostic nobody receives. stderr is discarded, the exit code is not displayed, and a log
 file nobody knows about is not a channel. Plain text with no border, because the border
@@ -3148,6 +3153,33 @@ has no border and no gutter — and it must come from the same function the rend
 the reason §9.3.4 gives: a second measurement is a second answer. And the ellipsis is the
 built-in one, never the configured `ellipsis`, on the same grounds §9.2.1 gives for drawing no
 border — that setting lives in the file that could not be read.
+
+**`<reason>` is composed, not passed through, and §9.2.1's fenced sample is illustrative.** That
+sample reads `unexpected ',' at line 12`. The real string is `System.Text.Json`'s, and it is not
+close:
+
+```
+The JSON array contains a trailing comma at the end which is not supported in this mode. Change the
+reader options. Path: $.surface.pane.items[1] | LineNumber: 9 | BytePositionInLine: 6.
+```
+
+Rung 4 truncates the reason **from the right**, so at any ordinary width that row keeps *"Change the
+reader options"* — advice addressed to whoever wrote the parser call, actionable by nobody holding
+this config — and drops the line number, which is the only part that cannot be recovered by looking
+at the file. The ladder was designed against a reason string shaped like the sample, and against the
+real one it degrades to exactly the failure §9.2.2 opens by rejecting: a row that says a file is bad
+without saying where.
+
+So put the irreplaceable part first: `line <n>, <path within the document>: <message>`. The position
+is not scraped out of the text — `JsonException` carries `LineNumber`, `BytePositionInLine` and
+`Path` as **properties**, so this is a structured read, not string surgery on a message .NET is free
+to reword. The message text is then appended raw and is the part rung 4 is allowed to eat, because
+it is the part a user can reconstruct by opening the file at the line we just named.
+
+The general rule the ladder was missing, and which any future rung must satisfy: **truncation has to
+degrade toward what the user cannot otherwise obtain.** Reason text is recoverable; position is not.
+Nothing here normalizes or rewrites .NET's wording — inventing our own parser vocabulary would be a
+second registry of a table we do not own (§9.6.3 makes the same argument for colour names).
 
 ### 9.3 Where `--preview` gets its payload
 
