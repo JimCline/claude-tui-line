@@ -16,7 +16,7 @@ public class CommandProviderTests
         var item = new PaneItem(null, null, null, null, Id: "defect14-shell-multi", Command: new[] { "echo", "hi" }, Shell: true);
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Null(value.Value);
@@ -28,7 +28,7 @@ public class CommandProviderTests
         var item = new PaneItem(null, null, null, null, Id: "defect14-shell-single", Command: new[] { "echo hi" }, Shell: true);
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Equal("hi", value.Value);
@@ -40,7 +40,7 @@ public class CommandProviderTests
         var item = new PaneItem(null, null, null, null, Id: "defect14-noshell-multi", Command: new[] { "echo", "hi" }, Shell: false);
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Equal("hi", value.Value);
@@ -55,7 +55,7 @@ public class CommandProviderTests
         var values = new Dictionary<string, string?> { ["val"] = "hello" };
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             values, unavailableIds: Array.Empty<string>());
 
         Assert.Equal("hello", value.Value);
@@ -71,7 +71,7 @@ public class CommandProviderTests
         var values = new Dictionary<string, string?> { ["val"] = "hello" };
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             values, unavailableIds: Array.Empty<string>());
 
         Assert.Equal("hello", value.Value);
@@ -88,7 +88,7 @@ public class CommandProviderTests
         try
         {
             var value = await CommandProvider.ResolveAsync(
-                item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+                item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
                 values, unavailableIds: new[] { "other-id" });
 
             Assert.True(value.Unavailable);
@@ -112,10 +112,10 @@ public class CommandProviderTests
 
         var expansion = ArgvPlaceholders.Expand(command, shell: true, values);
         var valueKey = ItemCache.KeyFor(id, expansion.Argv, cwd: null, paneWidth: null, expansion.ExportedEnv);
-        ItemCache.Write(cacheDir, valueKey, new CacheEntry("stale-value", DateTimeOffset.UtcNow - TimeSpan.FromMinutes(5), ExitCode: 0, PaneWidth: null));
+        ItemCache.Write(cacheDir, valueKey, new CacheEntry("stale-value", DateTimeOffset.UtcNow - TimeSpan.FromMinutes(5), ExitCode: 0));
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             values, unavailableIds: new[] { "other-id" });
 
         Assert.Equal("stale-value", value.Value);
@@ -130,10 +130,10 @@ public class CommandProviderTests
         var cacheDir = Path.GetTempPath();
 
         var first = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             new Dictionary<string, string?> { ["val"] = "one" }, unavailableIds: Array.Empty<string>());
         var second = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
             new Dictionary<string, string?> { ["val"] = "two" }, unavailableIds: Array.Empty<string>());
 
         Assert.Equal("one", first.Value);
@@ -147,19 +147,45 @@ public class CommandProviderTests
         var command = new[] { "sh", "-c", "echo $CLAUDE_TUI_LINE_PANE_WIDTH" };
         var item = new PaneItem(null, null, null, null, Id: id, Command: command, Shell: false);
         var cacheDir = Path.GetTempPath();
-        var widthTrackingKey = ItemCache.KeyFor(id, command, cwd: null);
+        var widthsDir = Path.GetTempPath();
+        var widthKey = ItemCache.WidthKeyFor(id, command, cwd: null, surfaceWidth: 120);
 
-        ItemCache.Write(cacheDir, widthTrackingKey, new CacheEntry(null, DateTimeOffset.UtcNow, ExitCode: 0, PaneWidth: 42));
+        ItemCache.WriteWidth(widthsDir, widthKey, paneWidth: 42);
         var first = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: true,
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: true,
             new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
-        ItemCache.Write(cacheDir, widthTrackingKey, new CacheEntry(null, DateTimeOffset.UtcNow, ExitCode: 0, PaneWidth: 99));
+        ItemCache.WriteWidth(widthsDir, widthKey, paneWidth: 99);
         var second = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: true,
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: true,
             new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Equal("42", first.Value);
         Assert.Equal("99", second.Value);
+    }
+
+    // SPEC-V2-FRAMEWORK.md §5.0.1/§9.3.4: the widths store is keyed by resolved surface width, so
+    // a --preview at one width and a live render at another never read or write the same entry.
+    [Fact]
+    public async Task WidthStore_IsPartitionedBySurfaceWidth_SoAPreviewAndALiveRenderDoNotCrossContaminate()
+    {
+        const string id = "argv-cache-key-width-partitioned";
+        var command = new[] { "sh", "-c", "echo $CLAUDE_TUI_LINE_PANE_WIDTH" };
+        var item = new PaneItem(null, null, null, null, Id: id, Command: command, Shell: false);
+        var cacheDir = Path.GetTempPath();
+        var widthsDir = Path.GetTempPath();
+
+        ItemCache.WriteWidth(widthsDir, ItemCache.WidthKeyFor(id, command, cwd: null, surfaceWidth: 60), paneWidth: 55);
+        ItemCache.WriteWidth(widthsDir, ItemCache.WidthKeyFor(id, command, cwd: null, surfaceWidth: 120), paneWidth: 115);
+
+        var atPreviewWidth = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 60, paneWidthEligible: true,
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+        var atLiveWidth = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: true,
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+
+        Assert.Equal("55", atPreviewWidth.Value);
+        Assert.Equal("115", atLiveWidth.Value);
     }
 }
