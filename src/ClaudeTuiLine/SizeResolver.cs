@@ -14,7 +14,16 @@ public static class SizeResolver
 {
     private const int MaxPasses = 3;
 
-    public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children);
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.5.1: leaf rendering is a pure function of (items, innerWidth) — no
+    /// surface-derived value may reach it through the <see cref="Pane"/> record itself, since a
+    /// <c>Pane</c> is shared across terminal widths and heights. <see cref="ClipRows"/> and
+    /// <see cref="ItemsEmptied"/> are §2.8.1 degrade-ladder output for one render attempt against
+    /// one surface budget, so they live here instead, alongside the rest of that attempt's layout —
+    /// <see cref="HeightLadder"/> annotates a freshly resolved tree with them, never a shared
+    /// <c>Pane</c>.
+    /// </summary>
+    public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children, int? ClipRows = null, bool ItemsEmptied = false);
 
     public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes) =>
         ResolveNode(root, outerWidth, ctx, values, measureOverride: null, notes);

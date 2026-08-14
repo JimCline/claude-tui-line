@@ -17,10 +17,14 @@ public static class PaneAssembler
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
         RenderNoteCollector notes,
-        int? maxContentRows = null)
+        int? maxContentRows = null,
+        bool itemsEmptied = false)
     {
+        // §2.8.1/§2.8.2 addendum: a pane the ladder emptied (rung 3 took its last item) renders
+        // zero content rows, not the "author declared nothing" default-segments fallback — the two
+        // look identical on Items.Count alone, so the caller passes itemsEmptied to tell them apart.
         var rawRows = pane.Items.Count == 0
-            ? RenderDefaultRows(pane, innerWidth, ctx, notes)
+            ? (itemsEmptied ? Array.Empty<PaneRow>() : RenderDefaultRows(pane, innerWidth, ctx, notes))
             : RenderItemRows(pane, innerWidth, ctx, values, tokens, notes);
 
         if (maxContentRows is int cap && rawRows.Count > cap)

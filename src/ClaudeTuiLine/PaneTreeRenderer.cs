@@ -26,17 +26,18 @@ public static class PaneTreeRenderer
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
         var suppressed = SizeResolver.ShouldSuppressBorder(pane, node.OuterWidth);
 
-        // §2.8.1/§2.8.2: pane.ClipRows, when set, is the degrade ladder's authoritative row
-        // budget for this (always leaf) pane. Height suppression is decided directly from that
-        // budget here, rather than from the row count the cap produces, to avoid a circular
-        // dependency between "how much content to keep" and "will the border be suppressed". A
-        // pane whose own declared maxRows is under 3 is an author choice (keeps its border, loses
-        // content) and is never suppressed by this mechanism.
+        // §2.8.1/§2.8.2: node.ClipRows, when set, is the degrade ladder's authoritative row
+        // budget for this (always leaf) pane — annotated onto this render attempt's ResolvedPane
+        // tree, never onto the shared Pane (§2.5.1 purity). Height suppression is decided directly
+        // from that budget here, rather than from the row count the cap produces, to avoid a
+        // circular dependency between "how much content to keep" and "will the border be
+        // suppressed". A pane whose own declared maxRows is under 3 is an author choice (keeps its
+        // border, loses content) and is never suppressed by this mechanism.
         var bordered = pane.Border.Style is not null;
         var ownDeclaredTiny = pane.MaxRows is int declaredMax && declaredMax < 3;
         bool heightSuppressed;
         int? maxContentRows;
-        if (pane.ClipRows is int budget)
+        if (node.ClipRows is int budget)
         {
             heightSuppressed = bordered && budget < 3 && !ownDeclaredTiny;
             maxContentRows = (heightSuppressed || !bordered) ? Math.Max(0, budget) : Math.Max(0, budget - 2);
@@ -50,7 +51,7 @@ public static class PaneTreeRenderer
         IReadOnlyList<PaneRow> contentRows;
         if (node.Children.Count == 0)
         {
-            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes, maxContentRows);
+            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes, maxContentRows, node.ItemsEmptied);
         }
         else if (pane.Split == PaneSplit.Vertical)
         {
@@ -100,7 +101,7 @@ public static class PaneTreeRenderer
             contentRows = PadHeight(contentRows, targetInnerHeight, innerWidth, pane.Valign);
         }
 
-        if (pane.ClipRows is null)
+        if (node.ClipRows is null)
         {
             var naturalTotal = contentRows.Count + (bordered ? 2 : 0);
             heightSuppressed = bordered && naturalTotal < 3 && !ownDeclaredTiny;
