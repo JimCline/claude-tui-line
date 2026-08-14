@@ -3154,7 +3154,8 @@ border — that setting lives in the file that could not be read.
 `--preview` renders the same pipeline the statusline renders, so it needs the same stdin JSON.
 
 - **stdin has data** → use it. This is what `/migrate` uses to compare against the original
-  script on identical input.
+  script on identical input — identical, and also *complete*, which is §12.3.1's ruling and not
+  something this branch can supply on its own.
 - **stdin is empty or a TTY** → use a built-in synthetic payload, **and say so on stderr**. A
   preview built from invented values that does not admit it is invented is how a user concludes
   an item is broken when it was never given anything to show.
@@ -5114,7 +5115,9 @@ failed to carry across will quietly lose an element, and the user will not notic
 they needed it.
 
 **Fidelity is checked, not asserted.** After generating the config, run the original script and
-`--preview` against the same stdin payload and compare the escape-stripped text. This is not
+`--preview` against the same stdin payload and compare the escape-stripped text. *Same* is not
+sufficient — §12.3.1 rules which payloads, because a payload that omits a field makes the check
+pass on the elements that read it. This is not
 byte-parity — the layout differs by design, that is the point — it is a *content* check: every
 visible token the original produced must appear in the new render or be on the tier-3 list.
 Anything else is a silent drop wearing a success message.
@@ -5154,6 +5157,64 @@ two writes is free, and it is the whole fix.
 
 Migrate does **not** run the ledger procedure a second time at write. Its backup was taken before
 it read anything, and one entry per invocation is §12.2 rule 4.
+
+#### 12.3.1 The fidelity check passes on the empty set
+
+"Run the original script and `--preview` against the same stdin payload" says *same*, and says
+nothing about *what*. `commands/migrate.md` step 6 fills that in with a payload it wrote itself:
+
+```
+payload='{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}'
+```
+
+Two of `StatusInput`'s thirteen fields. Every element of the user's script that reads `session_id`,
+`context_window`, `rate_limits`, `pr`, `vim`, `agent`, `effort`, `thinking`, `output_style`,
+`worktree` or `workspace` produces nothing under it — and produces nothing without erroring, so
+step 6's guard for *"if the original script errors on this synthetic payload, say so rather than
+treating its empty output as a match"* never fires. The check is "every visible token the original
+produced must appear in the new render." On an element that produced no token, it holds vacuously.
+Both sides are silent, the comparison passes, the tier-3 list stays empty, and the command reports
+a faithful migration of an element it never exercised. **The elements hardest to carry across are
+exactly the ones this payload makes invisible**, because the ones that render from a bare `cwd` are
+the easy ones.
+
+§9.3.1 already ruled this, for a different consumer, in the section's own first rule: *"Every field
+is populated, including the ones real payloads usually omit. This is the one place where
+completeness beats realism. Real Claude Code payloads routinely carry no `pr` and no `vim`, so a
+fixture built to look like a real payload omits them"* — and then `--items` shows those items with
+an empty `example`, from which a user correctly concludes they produce nothing. The payload above is
+precisely that fixture, written by asking what a real payload holds. Migrate is the worse case of
+the same mistake: for `--items` the consequence is a visibly empty example, and here it is a pass.
+
+The reason it was hand-rolled is a missing seam rather than carelessness. §9.3's two branches are
+*stdin has data → use it*, annotated **"This is what `/migrate` uses to compare against the original
+script on identical input"**, and *stdin empty → the built-in fixture*. So §9.3 names migrate as the
+consumer of the branch that has no fixture, while the fixture — the thing §9.3.1 exists to make
+complete — is reachable only from inside the process. No flag emits it. `commands/migrate.md` had
+nothing to pass to the user's script, so it invented something.
+
+Ruled:
+
+1. **The fidelity check runs against a payload in which every field is populated**, on the same
+   grounds and for the same failure as §9.3.1's first rule. A payload that omits a field cannot
+   distinguish a correctly migrated element from a dropped one.
+2. **That payload is §9.3.1's fixture, and the binary emits it** — a flag that writes the fixture
+   JSON to stdout, so both sides of the comparison can be fed identical, complete, pinned bytes.
+   §9.3's claim that there is exactly one synthetic payload is false as soon as a second consumer
+   lives outside the process and cannot reach the first one. This flag is what makes it true.
+3. **The check runs at two payloads, and the second is not optional.** The fixture's `cwd` is
+   `/home/you/code/acme-web` — deliberately not a real path, per §9.3.1's visibly-synthetic rule —
+   so every element that shells out against the working tree resolves empty under it, which is this
+   same vacuous pass one layer down. The second run carries the real `$PWD`. The fixture run covers
+   elements fed from stdin; the real-`cwd` run covers elements fed from the filesystem. Neither
+   covers the other, which is why one payload was never going to be enough.
+4. **Under the fixture, a disagreement in a machine-probed value is not a finding.** §9.3.1 cans
+   `gitBranch` and the remote URL because they come from probing rather than from stdin, and the
+   user's script probes for real. Differences there are expected and reported as such; it is the
+   stdin-derived elements the fixture run is asserting about.
+
+The failure this rules out is the one §12.3 says the whole step exists to prevent — a silent drop
+wearing a success message — arriving through the verification rather than around it.
 
 ### 12.4 `/claude-tui-line:edit`
 

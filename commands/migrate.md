@@ -182,6 +182,30 @@ catch.
 If the original script errors on this synthetic payload, say so rather than treating its empty
 output as a match. Two blank lines are not parity.
 
+**Neither is silence.** The payload above carries `cwd` and `model` and nothing else. A real Claude
+Code payload carries eleven more — `session_id`, `context_window`, `rate_limits`, `pr`, `vim`,
+`agent`, `effort`, `thinking`, `output_style`, `worktree`, `workspace`.
+An element of the original that reads one of those produces **no output at all** under this payload,
+without erroring, so the check above holds for it vacuously: nothing on the left, nothing on the
+right, and the comparison passes on the empty set. That is the same success-message-over-a-silent-
+drop this step exists to catch, arriving through the check instead of around it.
+
+So, for any element you mapped whose value comes from a field this payload does not carry:
+
+- **Do not record it as verified.** It was not compared; it was skipped.
+- **Put it on the tier-3 list as `unverified` rather than `unmappable`**, with the field it needs
+  named. The user is being asked to approve a migration in step 7, and "I could not check this one,
+  and here is why" is information they can act on. "Everything mapped" when a third of it was never
+  exercised is not.
+- If you can construct a payload carrying that field and re-run both sides against it, do that
+  first and report the real comparison. Extend the literal above for the run; do not commit a second
+  standing fixture to this file — SPEC §9.3 requires exactly one, and §12.3.1 rules that the binary
+  is what will eventually emit it.
+
+This is SPEC §12.3.1, and §9.3.1's first rule is the same finding for a different consumer: a
+payload built to look like a real one omits the fields real payloads usually omit, and then the
+thing that renders from it is silently empty.
+
 ## 7. Show the user, and wait
 
 **Nothing is written until the user says yes.** Show them:

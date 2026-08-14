@@ -3045,6 +3045,51 @@ later would mean rewriting the file whole — the exact operation the section fo
 file whose oldest entry cannot be regenerated. Landed the doc and command changes in the same commit
 rather than leaving `docs/backup-ledger.md` describing an array the spec had already replaced.
 
+## Migrate's fidelity check passed on the empty set (§12.3.1)
+
+§12.3 rules the migration tiers, the colour mapping, the timeout budget, the write order and the
+ledger interaction — at length, each with its failure mode named. Then it hands the verification
+over in a phrase: "run the original script and `--preview` against the same stdin payload." *Same*
+is stated; *what* is not. `commands/migrate.md:138` filled that in with a payload it wrote itself:
+`{"cwd":"$PWD","model":{"display_name":"Claude Opus 5"}}` — two of `StatusInput`'s thirteen fields.
+
+Every element of the user's script reading `session_id`, `context_window`, `rate_limits`, `pr`,
+`vim`, `agent`, `effort`, `thinking`, `output_style`, `worktree` or `workspace` produces nothing
+under that, and produces nothing *without erroring* — so step 6's existing guard ("if the original
+script errors on this synthetic payload, say so rather than treating its empty output as a match")
+never fires. The check is "every visible token the original produced must appear in the new
+render," which on an element that produced no token holds vacuously. Both sides silent, comparison
+passes, tier-3 list empty, success reported. The elements hardest to migrate are exactly the ones
+the payload makes invisible, since the ones that render from a bare `cwd` are the easy ones.
+
+§9.3.1's very first rule is this same finding for a different consumer — "a fixture built to look
+like a real payload omits them," and then `--items` shows an empty `example`. Migrate is the worse
+case: there the consequence is visible, here it is a pass.
+
+Not carelessness — a missing seam. §9.3's branches are *stdin has data → use it*, annotated "this
+is what `/migrate` uses", and *stdin empty → the built-in fixture*. §9.3 named migrate the consumer
+of the branch with no fixture, and the fixture is reachable only from inside the process: the flag
+list is `--check --version --items --colors --preview --json --config --columns`, and none emits
+it. So migrate.md had nothing to hand the user's script and invented something.
+
+Ruled in §12.3.1: the payload must populate every field; §9.3.1's fixture is that payload and the
+binary must emit it (which is what makes §9.3's "the only synthetic payload" true once a consumer
+lives outside the process); the check runs at two payloads because the fixture's `cwd` is
+deliberately not a real path and every filesystem-derived element goes vacuous under it; and a
+machine-probed disagreement under the fixture is expected, not a finding.
+
+Filed as **#36** (the flag and the migrate.md rewrite must land together). Landed an interim fix in
+`commands/migrate.md` now rather than waiting on the flag: an element whose field the payload does
+not carry goes on the tier-3 list as **`unverified`**, not silently counted as matched. Deliberately
+did *not* write a full thirteen-field payload into migrate.md — that would be the second standing
+fixture §9.3 exists to forbid.
+
+**Discarded, checked first:** that the two sides could not be fed the same stdin at all —
+`--preview` reads it (`Program.cs:253`) and `CommandProvider.cs:114` pipes it to command items, so
+the mechanism is sound. And that stripping escapes leaves colour unverified with nobody saying so —
+technically true, but `migrate.md:139-140` puts both renders side by side in front of the user and
+nothing is written before they approve, so the human eye is a real check, not an absent one.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
