@@ -34,7 +34,7 @@ public class HeightLadderTests
         var wrapped = PaneBorderRenderer.Wrap(content, 1, Bordered, "grey", suppressed: false, omitEdges: true);
 
         Assert.Single(wrapped);
-        Assert.Equal(1 + PaneBorderRenderer.BorderReserve, wrapped[0].Width);
+        Assert.Equal(1 + SizeResolver.OwnBorderReserve(Bordered), wrapped[0].Width);
         Assert.Contains("Q", wrapped[0].Markup);
     }
 
