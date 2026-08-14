@@ -761,7 +761,7 @@ public static class ConfigLoader
 
     internal static IReadOnlyList<string> SplitAcceptedTokens { get; } = SplitAccepted.Select(a => a.Token).ToArray();
 
-    private static PaneSplit? ParseSplitCore(string? value)
+    internal static PaneSplit? ParseSplitCore(string? value)
     {
         var normalized = value?.Trim().ToLowerInvariant();
         foreach (var (token, val) in SplitAccepted)

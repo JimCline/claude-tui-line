@@ -71,6 +71,7 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckArgvPlaceholders(root, rootPath));
         diagnostics.AddRange(CheckEnums(config));
         diagnostics.AddRange(CheckLeafOnlyKeysOnSplits(config));
+        diagnostics.AddRange(CheckKeyNotApplicable(config));
         diagnostics.AddRange(CheckBorderInsideOnLeaf(config));
         diagnostics.AddRange(CheckCollapseNotSurfaceLevel(config));
         diagnostics.AddRange(CheckCollapsedEdgeConflicts(root, rootPath, topLevel.Collapse));
@@ -498,6 +499,50 @@ public static class ConfigChecker
             {
                 yield return new Diagnostic(path + "/ellipsis", DiagnosticSeverity.Warning, "leaf-only-key-on-split",
                     "\"ellipsis\" has no effect on a split; only a leaf pane's own overflow marker uses it");
+            }
+        }
+    }
+
+    // ---- §2.3.2: a known key with a legal value on a node that never reads it. "distribute" and
+    // "gutter" divide/consume extent among side-by-side or stacked siblings, so a horizontal split
+    // — whose children each span the full width and stack downward — has nothing for either to act
+    // on; "items" on a pane that also declares "children" is unread because only a leaf pane's
+    // items are ever resolved. Values already flagged unknown-enum-value are excluded here so one
+    // bad value doesn't also read as "legal but misplaced" (§9.4.1: one condition, one code). ----
+
+    private static IEnumerable<Diagnostic> CheckKeyNotApplicable(UserConfig? config)
+    {
+        if (config?.Surface?.Pane is not { } surfacePane)
+        {
+            yield break;
+        }
+
+        foreach (var (pane, path) in WalkRawPanes(surfacePane, "/surface/pane"))
+        {
+            var isHorizontal = ConfigLoader.ParseSplitCore(pane.Split) == PaneSplit.Horizontal;
+
+            if (isHorizontal && !string.IsNullOrWhiteSpace(pane.Distribute) && !PaneDistributeParsing.IsUnrecognized(pane.Distribute))
+            {
+                yield return new Diagnostic(path + "/distribute", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"distribute\" has no effect on a horizontal split; it divides extent among side-by-side children");
+            }
+
+            if (isHorizontal && pane.Gutter is not null)
+            {
+                yield return new Diagnostic(path + "/gutter", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"gutter\" has no effect on a horizontal split; it is blank cells between siblings in a vertical split");
+            }
+
+            if (pane.Children is { Count: > 0 } && pane.Items is { Count: > 0 })
+            {
+                yield return new Diagnostic(path + "/items", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"items\" has no effect on a pane that also declares \"children\"; only a leaf pane's items are read");
+            }
+
+            if (pane.Children is { Count: 0 })
+            {
+                yield return new Diagnostic(path + "/children", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"children\" has no effect on a leaf; a pane is a split only when its children list has at least one entry");
             }
         }
     }
