@@ -1039,10 +1039,9 @@ what is cacheable, and §9.4.1's two-tier severity already separates "reported n
 
 ## 3. Item model
 
-An item resolves to a **block**: zero or more rows. Zero rows means "suppressed" — the existing
-rule that a missing field renders nothing, never `null`. One row is the ordinary case and is
-what every v1 segment is. More than one row is a user-defined item (§4) whose command emitted
-multiple lines.
+An item resolves to a **block**: zero or more rows, **plus a state**. One row is the ordinary case
+and is what every v1 segment is. More than one row is a user-defined item (§4) whose command
+emitted multiple lines.
 
 This generalization is worth taking now rather than later: a one-row-only item model would have
 to be unwound the first time a user's script prints two lines.
@@ -1053,18 +1052,51 @@ StatusItemDefinition
     Provider     provider        how the VALUE is obtained (§4)
     Format       string          "{}" placeholder, e.g. "ctx:{}%" — default "{}"
     Color        string          Spectre color name, or a threshold rule (§6)
-    Align        left|center|right   within the pane — default left
     Overflow     string          optional per-item override of the pane's §2.6 mode
-    Enabled      bool            default true
 ```
+
+**The state is not decoration on the block; it is the half of the model §2.11.2 reads.** An
+earlier version of this section said "zero rows means suppressed" and stopped there, which gives
+an item that answered with nothing and an item that *did not answer* the identical
+representation — and §4 distinguishes those two precisely because §2.11.2's collapse rule must
+not fire on a timeout. Written as "zero rows", the distinction is erased by the item model before
+the compositor is ever in a position to honour it, and no amount of care downstream can recover
+it.
+
+So a resolved item carries `present` | `absent` | `unavailable`, matching §4's vocabulary exactly
+rather than paraphrasing it. **A `present` block with zero rows is a contradiction and must not be
+constructible** — that is the invariant which keeps the third state from silently becoming
+optional.
+
+**Two fields were removed from the struct above rather than specified, because neither exists and
+neither should.**
+
+- `Align left|center|right` was listed as "within the pane". No such key is accepted:
+  `PaneItemJsonConfig` has no `align`, and `PaneAssembler` aligns whole rows using the *pane's*
+  `align`. The document has been advertising an item-level capability that a config cannot
+  express and the renderer does not implement — the `color207` failure again, where what is
+  recommended silently does nothing. It is also incoherent as specified: items are packed
+  several-to-a-row (§3.1), and three items sharing one row cannot each have their own alignment
+  within the pane. Alignment of a **block that occupies its own rows** would be meaningful and
+  is available if it is ever wanted; that is a different feature from the one this line claimed.
+- `Enabled bool` was a second mechanism for "do not render this item", where one already exists
+  and is simpler: do not place it. §1 forbids exactly this. If temporarily disabling an item
+  without deleting its config is ever wanted, it is an authoring affordance belonging to §12's
+  `edit`, not a field in the item model.
+
+Both are worth removing rather than quietly leaving: a struct in a spec is read as the set of
+things that work.
 
 The provider is the only axis that distinguishes one item from another. Everything downstream —
 formatting, colouring, packing, wrapping — is identical for a builtin and for a user's shell
 script, which is what makes a user-defined item a first-class item rather than a bolt-on.
 
 **A provider takes one `ItemContext`, never a growing parameter list.** The context carries the
-session payload plus environment values probed lazily and memoized for the process — git branch,
-remote URL, and whatever the next item needs. This is the §1 rule applied to the registry's own
+session payload plus environment values probed lazily and memoized **for this render** — git
+branch, remote URL, and whatever the next item needs. Memoization within the process is the floor,
+not the design: §5.1 caches these probes across renders in the same store the `command` items use,
+and this sentence says "for this render" rather than "for the process" so that the two sections
+are not describing the same mechanism with different lifetimes. This is the §1 rule applied to the registry's own
 signature: threading each new input as its own parameter means the Nth item that needs a new
 probe re-edits all N rows, which is precisely the cost the registry exists to remove. The
 signature widens once and then never again.
@@ -1084,6 +1116,19 @@ Panes also gain `valign` (`top` | `middle` | `bottom`, default `top`), which dec
 content sits when a pane is shorter than its siblings — the padding from §2.4 goes below, split,
 or above accordingly. Without it, a 1-row model pane beside a 6-row statusline sits awkwardly at
 the top of its box — visibly so in §2.9.
+
+**Packing runs before wrapping, and the order is not interchangeable.** "Row packing operates on
+single-row items" and "a multi-row block occupies its own rows" together leave open which is
+which for an item that is single-row *until the pane wraps it*. The two readings produce visibly
+different statuslines: pack-then-wrap fills a row with three items and flows the overflow onto
+continuation rows; wrap-then-pack makes any item long enough to wrap into a block, so those three
+items stop sharing a row at all, and the pane's whole shape changes because one value grew.
+
+Pack first. An item's block count is a property of **what the provider returned** — one line or
+several — never of the width it was later granted, so wrapping cannot promote an item to a block.
+This is also what §2.6's traps already assume when they require every continuation row of a styled
+segment to carry the style: continuation rows exist inside a packed row, which is only true in
+this order.
 
 ### 3.2 Hyperlinks
 
@@ -2656,6 +2701,46 @@ fallback. Silence was the defect; the fix is a diagnostic, not a runtime change.
 formatting, ordering, or unused-but-valid keys. A checker that warns about things that work gets
 ignored, including on the day it is right.
 
+#### 9.4.2 Unknown *keys*, which nothing reported at all
+
+§9.4.1 covers unknown **values** of known keys. Nothing anywhere covered an unknown **key**, and
+the deserializer's default is to ignore one — so `{"item": "context", "colour": "aqua"}` parses
+cleanly, renders uncoloured, and is reported by nothing. So does `"ttl": 5` for `ttlSeconds`,
+`"maxLines"` for `maxRows`, and the `align` this document itself advertised on items until §3 was
+walked. **Every key name typo in every config object is currently silent.**
+
+This is the same failure class §9.4.1 was written for, in the half that was not looked at, and it
+is worse in one specific way: an unknown value at least has a known key to attach a message to.
+An unknown key produces a config where the *absence* of an effect is the only symptom, and
+absence is what a user attributes to their own misunderstanding of the feature.
+
+It also lands exactly where §12 is most exposed. `/edit` and the §12.6 tools have a model write
+JSON and gate the write on `--check`, and **a plausible-but-wrong key is the single most likely
+thing a model gets wrong** — far likelier than an unknown enum value, because the enum sets are
+short and printed while the key vocabulary is long and adjacent to every other JSON schema the
+model has seen. The gate is currently blind to it.
+
+**Every config object rejects keys it does not define, as `unknown-key`, severity `warning`.**
+Warning rather than error because §9.4.1's test asks whether a state exists in which the config
+means what it says: the rest of the config does mean what it says, and only this key is dead.
+Erroring would also make any future key addition break every older binary hard, which is a cost
+with no matching benefit here.
+
+**The message names the nearest known key for the same object** — `unknown key 'colour' on an
+item — did you mean 'color'?` A code and a path identify the fault; only the suggestion repairs
+it, and this is the diagnostic where the gap between the two is widest, because the user believes
+they already wrote the right key.
+
+Two consequences that must not be left implicit:
+
+- **The known-key set is derived from the config types, not listed.** A hand-maintained list of
+  valid keys is a second registry, and it fails in the direction that makes the diagnostic
+  actively harmful: a newly added key missing from the list is reported as unknown on a config
+  that is correct, and a warning that fires on valid input is a warning users learn to ignore.
+- **§12's gate surfaces warnings, not only errors.** A model-written config that trips
+  `unknown-key` is never intentionally doing so, and a gate that passes it writes a statusline
+  that silently does not do what was asked. This is a requirement on §12, not a third severity.
+
 ### 9.5 `--check` reuses `ReferenceExtractors`
 
 Every diagnostic about an id — an unknown item, a `from` naming nothing, a `link` placeholder
@@ -2758,6 +2843,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `placeholder-command-source` | argv `{id}` placeholder naming another `command` item | error | 4.2 |
 | `placeholder-env-collision` | two ids mangling to one `CLAUDE_TUI_LINE_VAL_<ID>` under `shell: true` | error | 4.2 |
 | `placeholder-self-reference` | bare `{}` in a `command` item's argv — an item asking for its own not-yet-produced output | error | 4.2.1 |
+| `unknown-key` | a key no config object defines, silently dropped by the deserializer; message names the nearest known key | warning | 9.4.2 |
 | `part-source-count` | a compound part with zero, or more than one, source | error | 3.3 |
 | `part-forbidden-key` | a compound part carrying `parts` or `link` | error | 3.3 |
 | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |

@@ -1418,6 +1418,60 @@ Three more:
   150ms" and will act on the first reading. A `command` item whose placeholder names an
   `unavailable` source is itself `unavailable` and is not spawned.
 
+### §3 walked — and the biggest find is a diagnostic that never existed
+
+Five things in §3/§3.1, and one of them generalised into §9.
+
+**§9.4.2 — every key-name typo in every config object is silent.** §9.4.1 covers unknown *values*
+of known keys; nothing anywhere covered an unknown *key*, and the deserializer ignores one by
+default. `{"item": "context", "colour": "aqua"}` parses cleanly, renders uncoloured, and is
+reported by nothing. So do `"ttl"` for `ttlSeconds` and `"maxLines"` for `maxRows`.
+
+Worse than the unknown-value case in one specific way: an unknown value has a known key to attach
+a message to, whereas an unknown key makes the *absence of an effect* the only symptom — and
+absence is what a user attributes to having misunderstood the feature. And it lands where §12 is
+most exposed: `/edit` and the §12.6 tools have a model write JSON and gate the write on `--check`,
+and **a plausible-but-wrong key is the likeliest thing a model gets wrong** — likelier than an
+unknown enum value, because the enum sets are short and printed while the key vocabulary is long
+and adjacent to every other JSON schema the model has seen. The gate was blind to exactly that.
+
+Ruled: `unknown-key`, **warning** (§9.4.1's test — the rest of the config does mean what it says,
+and only this key is dead), message naming the nearest known key, because this is the diagnostic
+where the gap between identifying a fault and repairing it is widest. Two riders: the known-key
+set is **derived from the config types, never listed** — a hand-maintained list fails toward
+reporting valid configs as unknown, and a warning that fires on correct input is one users learn
+to ignore — and **§12's gate must surface warnings, not only errors**, since a model-written
+config never trips this on purpose.
+
+The rest of §3:
+
+- **Zero rows conflated `absent` with `unavailable` at the type level.** "An item resolves to a
+  block: zero or more rows; zero rows means suppressed" gives an item that answered with nothing
+  and an item that *did not answer* the identical representation — while §4 distinguishes them
+  and §2.11.2's collapse rule reads that distinction. The item model erased it before the
+  compositor could honour it, which is the worst place for it, since nothing downstream can
+  recover what the type does not carry. A resolved item now carries `present` | `absent` |
+  `unavailable` in §4's own vocabulary, with `present` + zero rows ruled not constructible.
+- **Two struct fields that do not exist and should not.** `Align` was listed as per-item "within
+  the pane": `PaneItemJsonConfig` has no `align`, `PaneAssembler` aligns whole rows by the
+  *pane's*, so the document advertised a capability a config cannot express — `color207` again,
+  where what is recommended silently does nothing. It is also incoherent, since items pack
+  several to a row and three items sharing a row cannot each align within the pane. `Enabled` was
+  a second mechanism for "don't render this" where "don't place it" already exists, which is what
+  §1 forbids. Both removed rather than left; a struct in a spec reads as the set of things that
+  work.
+- **Packing runs before wrapping, and it was undefined.** "Packing operates on single-row items"
+  plus "a multi-row block occupies its own rows" leaves open which an item is when it is
+  single-row *until the pane wraps it*. The readings differ visibly: pack-then-wrap flows a full
+  row onto continuation rows; wrap-then-pack promotes any long item to a block, so items stop
+  sharing a row and the pane's whole shape changes because one value grew. Ruled pack-first — an
+  item's block count is a property of what the provider returned, never of the width it was later
+  granted — which is also what §2.6's traps already assume in requiring continuation rows to
+  carry their style.
+- **"Memoized for the process" vs §5.1's cross-render cache** were two lifetimes for one
+  mechanism. Now "for this render", with §5.1 named as the design and per-process memoization as
+  the floor.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
