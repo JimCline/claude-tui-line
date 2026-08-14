@@ -3171,6 +3171,37 @@ walk the config types, require every id-naming member to be either covered or ex
 so a new field fails the build rather than going silently unchecked. Same move as §9.4.2's
 `[JsonExtensionData]`: make the type system enumerate instead of a person remembering.
 
+## Two rulings driven by the implementor's findings (§9.2.2, §12.7.2)
+
+**§9.2.2 — the reason string is composed, not passed through.** They fed a real trailing-comma
+config through `--check` and got 190 characters of `System.Text.Json`, opening with "Change the
+reader options" and carrying `LineNumber` at the far end. §9.2.1's fenced sample reads `unexpected
+',' at line 12`. Rung 4 truncates from the right, so the real row keeps advice actionable by nobody
+and drops the only part not recoverable by opening the file. Ruled: lead with position, read from
+`JsonException`'s properties rather than scraped from text, message appended raw as the part rung 4
+may eat. General rule the ladder was missing — **truncation must degrade toward what the user cannot
+otherwise obtain.** §9.2.1's fence marked illustrative in place.
+
+**§12.7.2 — the emitted payload carries the real `cwd`.** Answering my open question, they found
+`--preview` is two paths: empty stdin uses the canned `CreateItemContext()`, non-empty stdin parses
+the payload but still probes the real machine for git/Engram/remote-url. So a fixture arriving
+through a pipe takes the probing branch, and emitting it verbatim would pair an invented `cwd` with
+real machine state — **incoherent**, which is worse than the minimal render §12.7.1 replaces.
+
+Ruled: emit the fixture with `cwd` replaced by the process working directory, nothing else changed.
+Not a second fixture in §9.3's sense — that forbids a second *authored* constant, and one field
+derived from the environment is not that. §9.3.1's constant stays visibly synthetic where
+determinism is actually needed.
+
+This made #36 **smaller**. A real `cwd` resolves the filesystem-derived items coherently, so one
+payload exercises both halves and §12.3.1's mandatory second run is retired. The honest limit, now
+stated in the spec: coherent and complete, **not deterministic** — it varies by machine, which is
+exactly what setup and revert want, and which migrate is immune to since it compares two renders of
+one payload in one session.
+
+Worth recording as process: this is the third time this session that checking the code before
+finalizing a ruling changed the ruling. Here it changed it in the cheaper direction.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

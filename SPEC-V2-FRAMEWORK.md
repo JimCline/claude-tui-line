@@ -5285,8 +5285,9 @@ Ruled:
    JSON to stdout, so both sides of the comparison can be fed identical, complete, pinned bytes.
    §9.3's claim that there is exactly one synthetic payload is false as soon as a second consumer
    lives outside the process and cannot reach the first one. This flag is what makes it true.
-3. **The check runs at two payloads, and the second is not optional.** The fixture's `cwd` is
-   `/home/you/code/acme-web` — deliberately not a real path, per §9.3.1's visibly-synthetic rule —
+3. **The check runs at two payloads, and the second is not optional.** *(Superseded by §12.7.2: the
+   emitted payload carries the real `cwd`, so one payload covers both halves.)* The fixture's `cwd`
+   is `/home/you/code/acme-web` — deliberately not a real path, per §9.3.1's visibly-synthetic rule —
    so every element that shells out against the working tree resolves empty under it, which is this
    same vacuous pass one layer down. The second run carries the real `$PWD`. The fixture run covers
    elements fed from stdin; the real-`cwd` run covers elements fed from the filesystem. Neither
@@ -5802,6 +5803,44 @@ items go blank under it. Migrate needs verification coverage and therefore needs
 setup needs one honest, good-looking render and needs only this one. A git item reading blank
 against an invented path, with stderr saying the payload is invented, is legible. Two-thirds of the
 statusline blank with a paragraph of explanation is not.
+
+#### 12.7.2 The emitted payload carries the real `cwd`, and that collapses the two-payload rule
+
+The paragraph above, and §12.3.1 rule 3, both assumed the flag would emit §9.3.1's fixture byte for
+byte. Checking the render path first — the discipline this document keeps rewarding — shows that
+would not have worked, and that the fix is smaller than either section's workaround.
+
+`--preview` is not one path. On **empty stdin** it uses `SyntheticFixture.Input` together with
+`CreateItemContext()`, whose `gitBranch`, Engram result and remote URL are all canned: fully
+deterministic. On **non-empty stdin** it parses the payload but still probes the real machine for
+those three, exactly as the render path does. So a fixture arriving *through a pipe* takes the
+probing branch. Emitting it verbatim would pair an invented `cwd` with real machine state — not
+merely blank items, but an **incoherent** render, which is worse than the minimal one it replaces
+and defeats the whole argument of §12.7.1.
+
+**Ruled: the flag emits the fixture with `cwd` replaced by the process's working directory, and
+nothing else changed.** One flag, one behaviour, all three commands. This is not a second fixture in
+§9.3's sense — that rule forbids a second *authored* constant, and here exactly one field is
+derived from the environment rather than written down. §9.3.1's pinned constant is unchanged and
+stays visibly synthetic for `--items` examples and the empty-stdin path, which is where determinism
+is actually needed.
+
+Pin the relationship with a test, because this is precisely the assumption a later reader will make
+wrongly: the emitted payload equals `SyntheticFixture.Input` in **every field except `cwd`**, which
+equals the process working directory. Without that test, "emit the fixture" reads as byte-equality
+and someone eventually asserts it.
+
+What this buys, and the reason it is a simplification rather than a concession: with a real `cwd`,
+the filesystem-derived items resolve coherently, so a **single** payload exercises the stdin-derived
+and the filesystem-derived halves at once. §12.3.1's second run existed only to reach the half the
+invented path could not, and it is no longer needed. Migrate compares one payload, setup previews
+one payload, revert executes one payload.
+
+The honest limit, stated because §12.7.1 must not be read as claiming more than it earns: this
+render is **coherent and complete, not deterministic**. It varies with the machine it runs on, since
+the git and remote-url probes are real. Setup and revert want exactly that — they are showing a user
+their own machine. Migrate is unaffected because it compares two renders of the same payload in the
+same session, where the probes agree with each other by construction.
 
 ## 13. Out of scope for v2
 
