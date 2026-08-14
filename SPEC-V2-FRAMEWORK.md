@@ -1717,6 +1717,33 @@ inferred.
 condition gets a new code rather than a widened old one. `/edit` and the §12.6 tools branch on
 these, and a code that quietly changes meaning makes every consumer wrong at once.
 
+### 9.7 `--version`, and the two places a version number wants to live
+
+`--version` prints the version and exits 0. `--items --json` carries the same string as a
+top-level `version` field, which is what §12.6.8 surfaces as `cliVersion` — an MCP server that
+spawns a possibly-stale binary needs to be able to say which binary it got, and a model
+diagnosing "I set that and nothing happened" should be able to see a version without a second
+call.
+
+The hazard is that a version number now has **two** homes: the `.csproj`, which the assembly is
+built from, and `.claude-plugin/plugin.json`, which is a hand-written manifest and cannot be
+generated. That is a second registry in the §1 sense, and it will drift — silently, because
+nothing reads both.
+
+Rulings:
+
+- The **`.csproj` is the source** for what the binary reports. `--version` returns the assembly's
+  informational version. It must not be a string literal in `Program.cs`, and it must not be read
+  from `plugin.json` at runtime: an AOT binary published into `${CLAUDE_PLUGIN_DATA}/bin` has no
+  guarantee the manifest is adjacent, and a version that reads as empty off a missing file is
+  worse than one that is merely stale.
+- A **test asserts the two match**, comparing the assembly version against `plugin.json`'s
+  `version`. This is the whole mitigation, and it is cheap: without it the drift is invisible
+  until a user reports a version that does not correspond to anything.
+
+Consistent with §12.6.8, this is reporting, not gating — nothing refuses to run on a mismatch.
+The test fails the build; the binary does not fail the user.
+
 ## 10. Testing requirements
 
 The v1 lesson was expensive and is now policy:
