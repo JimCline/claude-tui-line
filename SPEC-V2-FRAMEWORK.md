@@ -1905,6 +1905,138 @@ above). §2.8's `height: "content"` shrink-wrap adds `rowReserve(p)` to the pane
 count. §2.8's worked example, which spends `borderReserve 4` inline, stays correct only for the
 all-edges case and is to be read as `reserve(p)` for that pane rather than as a constant.
 
+#### 2.10.2 The grid is resolved per cell, and that is what makes `height: "content"` tractable
+
+Authored in response to §2.8.3's standing requirement that the shrink-wrap interaction "must be
+authored into §2.10, not bolted on afterwards."
+
+§2.10 and §2.10.1 already rule most of this feature: the authority shift to the compositor, the
+two visual languages, per-edge selection with subtree-scoped shorthands, the 16-entry junction
+table, the `reserve(p)`/`rowReserve(p)` decomposition, both sizing formulas, both degrade rules,
+and the per-edge tie-break. What follows does not revisit any of that. It closes the one gap
+that stands between §2.10 as written and §2.8.3 as merged, and it names two things the section
+assumes without stating.
+
+**1. The ruling: the grid is a per-cell structure.** The border grid is resolved per cell. For
+each `(row, column)` position on the finished surface, a 4-bit `NESW` mask records which of the
+four directions carry a line *at that position*. The mask is a property of the cell — not of a
+pane, not of an edge, and, load-bearing: not of a column run. §2.10's junction table is then keyed
+by that per-cell mask exactly as already written, unchanged.
+
+This resolves §2.8.3's concern, and corrects its diagnosis on one point. §2.8.3 says the closing
+junction of a shorter box is "a glyph case the grid does not otherwise produce." That is not true:
+a 16-entry table over a 4-bit mask produces all sixteen cases by construction, and the closing
+junction is mask `0b1101` (`┤`) or `0b0111` (`├`) — both already in the table, both already
+reachable from ordinary nesting. Nothing needs to be added to the table.
+
+What §2.8.3 correctly identified is the representation hazard underneath. A border grid stored as
+*edge runs* — "column 34 carries a vertical line for the height of this split" — cannot express a
+column that is shared for part of its run and solely one pane's for the rest, the "designed on the
+assumption that every column is a full-height rectangle" failure §2.8.3 warns will "not accommodate
+it later without being redone." Per-cell resolution simply does not have the failure mode. The cost
+is one `int` (or one byte) per surface cell, on a surface that is at most a few hundred columns by
+a handful of rows. This sentence is the whole of §2.8.3's requirement on §2.10: once the grid is
+per-cell, shrink-wrapped heights need no further accommodation in the border model.
+
+**2. Construction: from panes to masks.** Under `collapse: true` the compositor builds the grid
+once per render, after sizing and before drawing. Each pane's border box occupies a rectangle of
+surface cells: columns from the pane's resolved outer rectangle (§2.3); rows spanning the full band
+under `height: "fill"`, or under `height: "content"` (§2.8.3), the rows the box occupies *after*
+`valign` has placed the box within the band — §2.8.3 is explicit that under `content`, `valign`
+positions the box rather than the content inside it. Each edge a pane declares (§2.10's per-edge
+selection, after §2.10.1 rule 1's shorthand expansion and nearest-declaration override) contributes
+one run over its box rectangle: `left`/`right` contribute vertical runs down the box's first/last
+column; `top`/`bottom` contribute horizontal runs across the box's first/last row. For a vertical
+run in column `c` spanning rows `r0..r1`, set at each row `r` in that range: bit `S` if `r < r1`,
+bit `N` if `r > r0`. For a horizontal run in row `r` spanning columns `c0..c1`, set at each column
+`c`: bit `E` if `c < c1`, bit `W` if `c > c0`. The mask at a cell is the bitwise OR of every
+contribution landing on it — the direct encoding of §2.10's "a physical line is drawn if **any**
+adjacent pane asks for it," applied per cell rather than per boundary. It also produces corners
+with no corner special-case: a box's top-left cell receives `S` from its left edge's run (it is
+that run's `r0`) and `E` from its top edge's run (it is that run's `c0`), giving mask `0b0110` →
+`┌`. Under `collapse: false` no grid is built at all — panes are separate boxes, each rendering its
+own edges in its own colour and style, which is what `PaneBorderRenderer` already does. The
+per-cell grid is machinery that exists only for the collapsed model; the default path never
+constructs it.
+
+**3. A shared column whose neighbours are different heights.** The vertical run in a shared column
+is the union of the contributing panes' runs — §2.10's "any adjacent pane asks for it," per cell.
+With a two-row pane beside a three-row pane under `collapse: true`: over the rows both boxes
+occupy, the column is a shared edge and §2.10.1 rule 4's tie-break decides its style and colour;
+over the rows only the taller box occupies, the line is still drawn as that pane's own right edge,
+uncontended; at the row where the shorter box closes, its `bottom` run terminates against the
+vertical, and that cell accumulates `N`+`S` from the vertical and `W` (or `E`) from the horizontal,
+giving `┤` (or `├`) straight out of the table. Disjoint runs are legal and must not be healed: two
+`content`-height neighbours with `valign: "top"` and `valign: "bottom"` leave a band of rows that
+neither box occupies, no line is drawn there, and the shared column emerges as two disjoint
+vertical segments with a gap. This is correct — §2.8.3 rules that band rows a shrink-wrapped box
+does not occupy are surface background, outside any border. Filling the gap to make the column
+continuous would draw border around nothing — a box side with no box behind it. An implementation
+must not "repair" a discontinuous column.
+
+**4. Two things §2.10 assumes without stating.**
+
+*Colour resolves per cell, and the diagnostic does not.* §2.10.1 rule 4 resolves the junction
+glyph's style per position; the same must hold for colour, for the same reason — a shared column
+that changes owner partway down (§3 above) may legitimately change colour partway down, since over
+the unshared rows it is unambiguously the taller pane's edge in the taller pane's colour. But
+`collapsed-edge-conflict` (§9.6.1) is reported once per conflicting boundary, not once per cell: a
+three-row disagreement between two panes is one authoring mistake and must produce one warning.
+Reporting per cell turns a single mis-declared colour into a burst of identical diagnostics.
+
+*The word `collapse` is already taken in this codebase.* `src/ClaudeTuiLine/PaneCollapse.cs`
+implements §2.4/§2.11/§2.11.1/§2.11.2 — *pane* collapse, the pre-pass that prunes structurally
+empty panes before sizing. It is unrelated to `border.collapse`, which shares edges between boxes.
+The border-grid implementation must not live in `PaneCollapse.cs`, and must not introduce a type
+or method named `Collapse` unqualified. Name the new machinery for what it is — `BorderGrid`,
+`EdgeMask`, `BorderGrid.Resolve` — and reserve bare `Collapse` for the existing pane-pruning
+pre-pass.
+
+**5. Glyph coverage.** §2.10 specifies one 16-entry table per style, with five styles registered at
+`Config.cs:662-670` (`rounded`, `square`, `heavy`, `double`, `ascii`), all five sourced from
+Spectre.Console's `BoxBorder`. `PaneBorderRenderer.cs` reads exactly eight parts from it: the four
+corners and the four edges. Confirmed (Spectre.Console 0.57.2): `BoxBorderPart` has only these
+eight corner/edge members — no `Cross`/`TeeLeft`/`TeeRight`/`TeeTop`/`TeeBottom`. The five 16-entry
+junction tables therefore cannot be derived from `BoxBorder` and must be hand-authored in this
+repo, per style — a materially larger unit of work than "call `GetPart` with more arguments," and
+it lands inside #8c (see §6).
+
+**6. Scope: three tasks, not one.** §2.10 plus §2.10.1 is a rewrite of the border architecture, not
+a feature addition: it deletes the per-pane border-wrapping path, moves border drawing to the
+compositor, replaces a constant with two functions, adds a config sub-object with subtree-scoped
+shorthands and an override rule, adds five hand-authored glyph tables, adds a second sizing
+formula, adds a second degrade rule, and adds three diagnostic codes. Split, each independently
+shippable:
+
+- **#8a — reserve decomposition, no new config.** Replace the `BorderReserve = 4` constant
+  (`PaneBorderRenderer.cs:16`, read from `SizeResolver.cs:69`, `PaneTreeRenderer.cs:24`,
+  `Program.cs:199`, `Program.cs:759`) with the named `reserve(p)`/`rowReserve(p)` functions §2.10
+  and §2.10.1 rule 5 require. Every pane still has all four edges, so every rendered byte must be
+  identical — the golden parity gate is the acceptance test, and §2.10's back-compat paragraph is
+  explicit that if it moves, that is a defect in the decomposition, not an expected consequence.
+  Prerequisite for both others.
+- **#8b — per-edge `edges` config, still `collapse: false`.** The `edges` object, the four
+  shorthands, §2.10.1 rule 1's subtree semantics and nearest-declaration override, and the
+  `border-inside-on-leaf` warning. Panes still draw their own boxes, so no grid or junction table
+  is needed. `rowReserve(p)` from #8a becomes load-bearing here, since `top`/`bottom` stop being a
+  pair.
+- **#8c — the compositor grid and `collapse: true`.** The per-cell grid of §1–§3 above, the five
+  junction tables (§5), the `collapse: true` sizing formula, boundary-based degrade (§2.10.1 rule
+  3), `collapsed-edge-conflict`, `collapse-not-surface-level`, and deletion of the per-pane
+  wrapping path. This is where §2.8.3's shrink-wrap interaction lands.
+
+The ordering is forced: #8b and #8c both consume #8a's functions, and #8c consumes #8b's edge
+selection. `collapse: false` being the default means nothing user-visible changes until #8c.
+
+**What must not change:** the default stays `collapse: false`; §2.10's junction table stays 16
+entries keyed by `NESW` (per-cell resolution is what makes the existing sixteen sufficient, nothing
+above adds a glyph case); no arithmetic is transcribed — boundary cost lives in the one named
+`SizeResolver` function, and §9.8's structural checks call that function, never a second expression
+of §2.3's allocation; `collapse: false`'s boundary cost stays `gutter × (N − 1)` with each pane's
+edges in its own `reserve(p)`; the golden parity gate does not move across #8a or #8b for the
+all-edges single-pane config; §2.11 pane collapse is untouched — `PaneCollapse.cs` keeps its
+current meaning and name.
+
 ### 2.11 An empty pane collapses — but only the kind of empty that is knowable before sizing
 
 §2.4 already rules this: an empty `content` or `fill` pane collapses and takes its gutter with it;
