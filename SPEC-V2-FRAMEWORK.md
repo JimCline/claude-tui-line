@@ -1486,6 +1486,15 @@ So height is resolved by a **deterministic degrade ladder**: an ordered sequence
 of which *strictly* reduces row count, applied only until the budget is met. It terminates
 because the ladder is finite and every rung is strictly reducing.
 
+**"Strictly reducing" is a requirement on every rung, not an observation about the ones written so
+far.** No rung may increase the surface's row count, on any input, including at its own boundary
+conditions — the step that takes a pane's last item, the step that drops a pane's last row. A rung
+that can grow the surface breaks the termination argument above, and it breaks it silently,
+because rung 4 will clip the excess and the render will look correct. Rung 4 clipping something a
+higher rung produced is not the ladder working; it is the ladder's proof failing with the symptom
+suppressed. Any new rung must be checkable against this property in isolation, before the ladder
+is run end to end.
+
 1. **Measure.** Rows within budget — stop. This is the overwhelmingly common case and must cost
    nothing.
 2. **Demote `wrap` to `truncate`**, one pane at a time, in **reverse declaration order**, re-measuring
@@ -1496,6 +1505,32 @@ because the ladder is finite and every rung is strictly reducing.
    of the two they want.
 3. **Drop trailing items** from the tallest pane, one at a time, re-measuring after each, using the
    existing §3.1 block ordering rather than a second priority scheme.
+
+   **Rung 3 may take a pane's last item, and a pane it emptied renders zero content rows.** It does
+   *not* fall through to the default content a pane with no declared items renders. Those are two
+   different states that happen to share a representation:
+
+   - **Declared empty** — the author wrote a pane with no items. Whatever the renderer does for that
+     case is the author's request, and it is unaffected by this rule.
+   - **Emptied by degradation** — the author declared items and the ladder took them, because the
+     surface could not afford them. The pane asked for content and was refused. Rendering substitute
+     content here answers a refusal with more rows, which is the opposite of what the rung was for.
+
+   An implementation must therefore be able to tell the two apart. It cannot do so from the item list
+   alone — both are empty — so **the ladder records which panes it emptied**, and it records this
+   alongside the ladder's other per-render output rather than on the pane's own configuration record.
+   Which pane the ladder emptied is a property of *this* render at *this* terminal width; the pane
+   record describes what the author declared, and §5.0.1's rule applies unchanged one level down:
+   data with different lifetimes must not share a record. The same reasoning governs any other
+   quantity the ladder computes per pane.
+
+   **Emptied is not collapsed.** The pane keeps its box: it still occupies its allocation and still
+   draws its border, with an empty interior. §2.11's collapse rules decide whether a pane exists at
+   all, and they are not reached by this path — see the emptied-by-degradation case there, which
+   rules the same way and gives the reason. §2.8.2's border suppression is likewise unaffected and
+   still keyed on the pane's row budget, not on whether it has content: an emptied pane whose budget
+   is three rows or more draws its border around an empty interior; one under three rows suppresses
+   its border, because that rule was never about what the pane contains.
 4. **Clip**, as the last resort.
 
 **The ladder is the only thing that enforces a row budget — either row budget.** §2.6 describes
@@ -1507,7 +1542,15 @@ asking for a bounded pane would receive the most destructive available degrade, 
 set it on the surface received the gentlest, from the same key meaning the same thing one level up.
 §2.6's paragraph describes **what rung 4 does when it fires**, not when it fires.
 
-**Ties break by reverse declaration order, at every rung.** Rung 3 says "the tallest pane" and two
+**Ties break by reverse declaration order, at every rung.** **"Declaration order" here means
+surface-wide document order — a pre-order depth-first traversal of the pane tree, taken in
+reverse.** It is a total order over every pane on the surface, not the sibling-scoped ordering
+§2.3 step 4 uses inside a single split. The ladder selects one pane at a time from the whole
+surface, so it routinely compares two panes with no common parent, for which a sibling-scoped
+order is not merely stricter but undefined. Reverse remains reverse for the reason rung 2 gives:
+the first-declared pane is the author's primary content and loses fidelity last.
+
+Rung 3 says "the tallest pane" and two
 panes are routinely equally tall — this is a vertical split, where §2.4 pads siblings to a common
 height, so equal heights are the normal state rather than a coincidence. Leaving that unbroken
 makes the outcome depend on enumeration order in a ladder whose stated justification is that it is
@@ -2143,9 +2186,10 @@ than taste. Collapsing a degradation-emptied pane frees its width; the freed wid
 un-drop the items it just dropped; the un-dropped items un-empty the pane; the pane reclaims its
 width; the surface is over budget again and the ladder drops them once more. That is a cycle with
 no fixpoint, and §2.3's convergence argument — every rung strictly reducing — is exactly what it
-breaks. A pane the ladder emptied keeps its border. If the right answer there is to remove the
-pane entirely, that is a rung the ladder should own, decided with the width in hand, not a
-side-effect of a collapse rule reaching into the loop.
+breaks. A pane the ladder emptied keeps its border, and renders zero content rows rather than the
+content a pane with no declared items renders — §2.8.1's rung 3 states that rule and the reason
+for it. If the right answer there is to remove the pane entirely, that is a rung the ladder should
+own, decided with the width in hand, not a side-effect of a collapse rule reaching into the loop.
 
 **What collapsing does**, for the structural case, on the `content` and `fill` panes §2.4 makes
 eligible:
