@@ -146,8 +146,14 @@ nothing to undo.
 
 ## 8. Write, then report
 
-Write `~/.claude/claude-tui-line.json`, and point `statusLine.command` at the binary following the
-ledger procedure (only the `statusLine` key, atomically, other keys preserved).
+Write the config to the path §5's search order resolves to — `$CLAUDE_TUI_LINE_CONFIG` if it is
+set, otherwise `~/.claude/claude-tui-line.json`. Do not assume the default. If that variable points
+somewhere else and you write the default anyway, the renderer reads the file you did not write:
+nothing errors, the statusline does not change, and every step above still reports success. Say
+which path you wrote.
+
+Then point `statusLine.command` at the binary following the ledger procedure (only the `statusLine`
+key, atomically, other keys preserved).
 
 Report, in this order:
 

@@ -1744,6 +1744,45 @@ Rulings:
 Consistent with §12.6.8, this is reporting, not gating — nothing refuses to run on a mismatch.
 The test fails the build; the binary does not fail the user.
 
+### 9.8 `--check` is width-independent, and what "cannot fit" therefore means
+
+§9.4 lists *a pane whose fixed sizes cannot fit its parent* as an `error`, which invites an
+implementation that runs the real `SizeResolver` at the current `COLUMNS` and reports when the
+drop-and-retry path would fire. **That is the wrong reading**, for two independent reasons, either
+of which is sufficient.
+
+**`--check` never consults a width.** Not "no `--columns` override" — it does not read `COLUMNS`,
+and it does not resolve sizes. §12.6's `validate` tool calls it from a stdio MCP server, a process
+with no terminal at all (§12.6.2, §12.6.3). A width-dependent `--check` would there validate
+against a width that does not exist, and would return a verdict that changes depending on which
+terminal happened to spawn the client. A validator whose answer depends on the caller's window is
+not a validator.
+
+**Degrading at a narrow width is designed behaviour, not a defect.** The whole §2 ladder — wrap,
+then truncate, then drop — exists so that a config too big for the current terminal produces a
+sensible line rather than a broken one. Reporting that as an `error` flags a config that is
+working exactly as specified, and §9.4 already ruled that a validator which warns about things
+that work correctly gets ignored on the occasions it is right.
+
+So the diagnostic is **structural**, and the invariant is narrow but real: a contradiction no
+terminal width can resolve.
+
+- Children's **fixed** sizes, plus gutters, plus border reserve, exceeding the parent's own
+  **bounded** size — where bounded means the parent is itself fixed, or carries a `maxSize`.
+  Code: `fixed-sizes-exceed-parent`.
+- `minSize` greater than `maxSize` on the same pane. Code: `min-exceeds-max`.
+- Children's `minSize` sum, plus gutters and border reserve, exceeding the parent's `maxSize`.
+  Same code as the first: it is the same contradiction with the floor rather than the exact size.
+
+Where the parent is `fill` or `content`, there is no bound to contradict and `--check` says
+nothing. That is not a gap — there is genuinely no width-independent claim to make, and inventing
+one would produce exactly the noise the previous paragraph rules out.
+
+**The width-dependent information is real and belongs to `--preview`.** "At 80 columns this config
+drops your right pane" is worth knowing; it is simply not a config error. `--preview` has a width
+by construction, so it reports what it dropped or truncated at each width it rendered — as a note
+alongside the rows, never as a diagnostic and never affecting the exit code.
+
 ## 10. Testing requirements
 
 The v1 lesson was expensive and is now policy:
