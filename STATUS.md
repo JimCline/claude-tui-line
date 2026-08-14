@@ -3910,6 +3910,48 @@ Full suite: 1238/1238 passed (2 new tests over the #16 baseline), independently 
 task-gopher both pre-merge on the worktree and post-merge on `main`. Landed as merge commit
 `19dc964` (branch tip `2803c81`), pushed.
 
+### #8b: per-edge border config, collapse:false (§2.10/§2.10.1)
+
+Problem: `PaneBorder` only carried a single on/off `Style`, so a split's inner shared edge
+between siblings couldn't be selectively suppressed — every pane in a split either drew its
+own full box or none at all, with no way to express "no divider between these two children."
+
+Fix: `PaneBorder` gains a `PaneBorderEdges(Top, Right, Bottom, Left)` record; `ResolveBorderPropagation`
+computes which edges each split's children keep — for a horizontal split each child keeps its
+outer edges but drops the shared inner vertical (`Left`/`Right` between neighbours), and
+symmetrically for a vertical split's `Top`/`Bottom` — recursing into nested splits via an
+`InheritedBorderDirective` so a grandchild inherits its ancestor's suppression instead of only
+its immediate parent's. `PaneBorderRenderer.Wrap` draws each glyph/corner conditionally on its
+own edge, with a horizontal run that always spans the full padding+content width regardless of
+which corners are present, so `outerWidth` comes out right in every edge-on/off combination
+without a junction table. `PaneBorderEdges.All` is the default for a non-split, non-nested pane.
+
+Judgment calls (implementor-flagged, not spec gaps I'm reporting upward): (1) the `inside`
+border shorthand config key propagates edge suppression only one level of nesting, not
+recursively through arbitrary split depth — narrower than the general `InheritedBorderDirective`
+mechanism, called out as a deliberate scope-limit rather than an oversight; (2) §2.10's
+"Degrade squeeze" paragraph (what happens when a suppressed-edge pane is *also* squeezed below
+`MinUsableWidth`) was left untouched — out of scope for this task, open as a question for #8c
+or a follow-up.
+
+Merge-conflict resolution: this branch predated #16/#20 and diverged further, so `main`'s
+`git merge --no-ff task-8b` reported genuine conflicts (unlike #16/#20's silent auto-merges) in
+two places: `Config.cs`'s `ConfigLoader.ResolveTopLevel` factory call, where `main` (#29) and
+`task-8b` had each added a different new positional argument to the same `ResolvedConfig(...)`
+constructor call (`surfaceMaxRows` trailing vs. `resolvedBorder.Edges` mid-list) — resolved by
+combining both into the record's already-merged declared order; and `PaneBorderRenderer.Wrap`,
+where `main`'s `omitEdges` (#29's height-budget top/bottom suppression under a 3-row budget) and
+`task-8b`'s per-edge `Top`/`Right`/`Bottom`/`Left` conditionals both rewrote the same row-building
+block — resolved by composing them: a top/bottom row draws only when its edge is both configured
+on *and* not forced off by `omitEdges`. A stale `HeightLadderTests.cs` call to `PaneBorder`'s
+old 2-arg constructor (missing the now-required `Edges` param) surfaced as a compile error after
+the conflict markers were resolved; fixed to pass `PaneBorderEdges.All`, matching the convention
+already used in every other test file `task-8b` touched.
+
+Full suite: 1252/1252 passed, independently verified via task-gopher after conflict resolution
+and again after the `HeightLadderTests.cs` fix. Landed as merge commit `5663b04` (branch tip
+`e616781`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
