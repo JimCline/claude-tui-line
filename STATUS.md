@@ -1663,7 +1663,7 @@ headings; **68 of 68 resolve**, and it was proven able to fail by injecting a `�
 before being trusted. Wired into a new `.github/workflows/ci.yml` (the repo had no CI at all),
 running ahead of build and test so a broken reference is still reported when the build is red.
 
-Two things worth keeping from closing the four:
+Three things worth keeping from closing the four:
 
 - **The remedy was not uniform, which "four dangling references" conceals.** §7 and §2.9 had
   content and no heading → promoted in place. §4.3 had content under the *wrong* heading — derived
@@ -1752,6 +1752,55 @@ still stand and that new rules do not go there; the README's Contributing sectio
 documents and their standing; and STATUS.md's own citation of "SPEC.md §10.2" is gone — v1's §10 is
 a bare numbered list with no subsections, so `§10.2` was the same §10.N ambiguity §13.3 ruled on,
 one document over.
+
+### §12.2 promised three rules and had four — and the fourth is the silent one
+
+Found while applying §14.4's question to the rest of the repo. `SPEC-V2-FRAMEWORK.md` §12.2 read
+**"Three rules, none optional:"** above a list of four. The fourth is *"an entry captures every
+artifact, not the one its command intends to change"* — the rule whose violation is explicitly
+silent: the rollback runs, restores something real, reports success, and leaves the damaged file
+untouched. A reader reconciling §12.2 against `docs/backup-ledger.md`, which had a section headed
+"The three rules", would have concluded the fourth was an editing error and dropped precisely the
+one worth keeping.
+
+No behavioural drift had happened yet — the doc carried the same requirement as procedure step 6.
+The two documents were describing the same thing at different ranks, which is how they would have
+drifted. Both now state four rules; step 6 cites rule 4 instead of re-arguing it, so the rationale
+has one home.
+
+The doc/spec split here is deliberate and stated, unlike §14's: `docs/backup-ledger.md` says in its
+own header that it is §12.2 restated as a procedure, and it exists in one file because four command
+prompts read it at runtime and four copies would drift. That is the right shape. The count was the
+defect, not the split.
+
+### `tools/check-counts.sh` — the second mechanical doc check
+
+Two instances of "a stated count disagrees with the list under it" found by hand (§8's segment
+count, then §12.2's) is the threshold at which it stops being a reading problem. The script finds
+lead-in sentences that name a count and compares it to the list beneath.
+
+It found two more, and both were real:
+
+- **`SPEC-V2-FRAMEWORK.md` §2.4** said emptiness "applies at two levels, differently" above three
+  bullets. Defensible — there really are two levels — but the pane level splits on whether the user
+  named a size, and a reader counting bullets against the sentence has no way to see that. Now says
+  two levels, three cases, and names the split.
+- **`STATUS.md`** said "Two things worth keeping from closing the four" above three bullets, in the
+  section documenting `check-citations.sh`. A third bullet was appended and the number was not.
+
+**The tuning was most of the work, and it is the part worth recording.** The first version reported
+twelve sites, ten of them noise: it took the *last* numeral before the colon, so `SHA-256` promised
+256 items, `§9.6` promised six, and `defects 3–6` promised six. A check with that hit rate gets
+ignored, and an ignored check is worse than no check — it occupies the slot a real one would have.
+The rules that fixed it: strip inline code, section references, dotted numbers, hyphenated names and
+ranges; take the **first** count rather than the last, since later numerals in a sentence are
+incidental; require the count to be followed by a word, which drops numerals that end a clause; skip
+any lead-in with no list under it at all, which is what keeps arithmetic prose out. Twelve reports
+became two, and both were defects.
+
+Proven able to fail before being trusted, the same as `check-citations.sh` — run against a
+reconstruction of the §12.2 defect, where it reports `says 3, lists 4` and correctly stays silent
+about a neighbouring "Two severities:" list that is right. Wired into CI beside the citation check.
 
 ## Standing constraints
 

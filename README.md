@@ -326,15 +326,24 @@ rather than a build; development and verification build to the SDK-default outpu
 dotnet build src/ClaudeTuiLine/ClaudeTuiLine.csproj
 dotnet test  tests/ClaudeTuiLine.Tests/ClaudeTuiLine.Tests.csproj
 ./tools/check-citations.sh
+./tools/check-counts.sh
 ```
 
 There is no solution file, so build and test commands name their project explicitly.
 
+Both `tools/` scripts check the docs for things careful reading does not catch, and both exist
+because the defect they look for was found by hand more than once.
+
 `check-citations.sh` verifies that every `§N.M` the spec cites resolves to a heading in the spec.
-That sounds like housekeeping and is not: four references were cited and undefined — one of them
-27 times — and every one had survived many careful readings, because prose citing a missing section
-reads perfectly well. The sentence carries the meaning; the number is decoration until someone
-tries to follow it. Run it after editing the spec. CI runs all three.
+Four references were cited and undefined — one of them 27 times — and every one had survived many
+careful readings, because prose citing a missing section reads perfectly well. The sentence
+carries the meaning; the number is decoration until someone tries to follow it.
+
+`check-counts.sh` verifies that a sentence promising *n* items is followed by *n* items. One rule
+list announced three and had four, and the extra one was the rule whose failure mode is silent —
+so a reader reconciling it against the other copy would have dropped exactly the wrong one.
+
+Run both after editing any document. CI runs everything here.
 
 ## Licence
 

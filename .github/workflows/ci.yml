@@ -19,6 +19,9 @@ jobs:
       - name: Section citations resolve
         run: ./tools/check-citations.sh
 
+      - name: Stated counts match their lists
+        run: ./tools/check-counts.sh
+
   build:
     name: Build and test
     runs-on: ubuntu-latest

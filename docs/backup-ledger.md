@@ -146,7 +146,7 @@ because nothing downstream has any reason to doubt it.
 Reverting is itself a change: it appends a `checkpoint` for the state it replaced, and it does
 **not** consume or remove the `origin`. Reverting a revert has to be possible.
 
-## The three rules
+## The four rules
 
 1. **Nothing in the backup directory is ever overwritten or deleted by any command.** Not stale
    entries, not superseded copies, not the directory itself. Pruning is the user's to do.
@@ -159,6 +159,17 @@ Reverting is itself a change: it appends a `checkpoint` for the state it replace
    the file's existing formatting. Write atomically: temp file in the same directory, then rename,
    so an interrupted write cannot leave a truncated `settings.json` — which would break far more
    than the statusline.
+
+4. **An entry captures every artifact, not the one its command intends to change.** `/edit` writes
+   only `claude-tui-line.json`; `setup` writes only `settings.json`; both take the same complete
+   entry. An entry scoped to its caller is a backup of the wrong file for whichever command later
+   needs it, and it fails silently — the rollback runs, restores something real, reports success,
+   and leaves the damaged file untouched. That is the defect described at the top of this file, and
+   it survived because this was a step in a procedure rather than a rule. Steps 4–6 below are how
+   it is carried out.
+
+   The question at each call site, and the one nothing inside the procedure can answer, is **does
+   what this saves include what this command is about to change?**
 
 ## Checking a hash before restoring
 
@@ -217,9 +228,7 @@ Any command that is about to write `settings.json` or `claude-tui-line.json`:
 4. Copy `settings.json` into the backup directory with a timestamped name; hash it.
 5. If `statusLine.command` names a script on disk, copy that too; hash it.
 6. **Resolve the config path (§5's search order) and, if a file is there, copy and hash it too.**
-   Do this whichever file you came here to write — an entry that captures only the artifact this
-   particular command happens to modify cannot recover the other one, and the command that needs
-   it will not be the one that took the backup. **If no file is there, still record
+   Do this whichever file you came here to write — rule 4. **If no file is there, still record
    `configOriginalPath` with `configCopy: null`** — the resolved path plus an explicit "nothing was
    here", never three omitted fields.
 7. Append **one** entry — `origin` if and only if no `origin` entry exists **and** the current

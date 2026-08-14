@@ -498,7 +498,8 @@ Compositing rules, all load-bearing:
 
 **Emptiness — nothing to say means nothing drawn, but only where the user did not ask for a
 shape.** SPEC.md:353 required "no segments ⇒ zero output even with border enabled". That rule
-survives the pane rewrite and it applies at two levels, differently:
+survives the pane rewrite and it applies at two levels — the surface and the pane — with the pane
+level splitting on whether the user named a size, so there are three cases:
 
 - **An empty surface emits nothing at all** — no border, no blank row, zero bytes. A statusline
   is a permanent fixture at `refreshInterval: 1`; an empty box occupies terminal rows forever
@@ -3879,7 +3880,8 @@ and nothing downstream has cause to doubt it. In that case append a `checkpoint`
 `origin` unwritten. A missing `origin` is honest and already handled — §12.5 lists the
 checkpoints and flags which point at a claude-tui-line binary.
 
-Three rules, none optional:
+Four rules, none optional. `docs/backup-ledger.md` states the same four and is what the command
+prompts actually read at runtime; this is the design, that is the procedure.
 
 1. **Nothing in the backup directory is ever overwritten or deleted by any command.** Reverting
    is itself a change and appends a `checkpoint`; it does not consume the `origin`.
