@@ -3633,6 +3633,32 @@ the "all nine agree" line down to the one kind (`size`) it still describes, and 
 Landed as two commits: `7a30bfb` (the implementor's registry rebuild, five source files) and `30dd9c1`
 (the prose fix, spec-only), both pushed.
 
+### #42: `--accepted --json`, the external door §1.1.3 specified
+
+New `AcceptedCommand.cs` mirrors `ItemsCommand`/`ColorsCommand`'s shape: 9 rows (8 kinds read their
+parser's `AcceptedTokens` directly, no copy; `size` gets `accepted: null` plus `alsoAccepted` from
+`ConfigChecker.FormatAccepted(SizeValues)`). `Program.cs` gets the mode, mutual-exclusion entry, and
+the bare-`--accepted`-is-an-error usage check per §1's `--json`-required ruling. `SizeValues` and
+`FormatAccepted` widened `private`→`internal` to allow the shared call (NEEDS-EVIDENCE (b), chosen
+over the fallback duplicate-sentence test).
+
+Verified independently before approving: `dotnet build` clean, 1166/1166 tests (+8 new, 0
+regressions), live-binary checks for all 9 keys, the mutual-exclusion and bare-flag errors, the
+fail-closed invariant, `size`'s byte-identical `alsoAccepted`, and a `grep` proving zero token
+literals are copied into `AcceptedCommand.cs`. `check-all.sh` unaffected (112 citations, exit 0).
+
+Three spec corrections from the implementor's report, all fixed directly: (1) verification item 8
+assumed the `check-all.sh` subset-check itself was #42's job — it's #43's (§5); item 8 now says so
+and #42 is not blocked on it. (2) NEEDS-EVIDENCE (c)'s premise that `--colors` is JSON-only was
+wrong — it has its own bare-mode markup render, a documented exception to §9.6.2.2 — corrected in
+place; doesn't change #42, since §1's `--json`-required ruling was already stated as deliberate
+regardless of precedent. (3) a spec citation said `ConfigCheck.CheckEnums`; the class is
+`ConfigChecker` (the file is `ConfigCheck.cs`) — fixed.
+
+Approved, implementor instructed to commit + push. #45 (unify `CheckEnums`'s 9-kind list with
+`AcceptedCommand`'s key table) and #46 (`size` decomposition) tracked separately, not folded in.
+#43 stays blocked on the still-open "is `--accepted` public or internal" question, held for Jim.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

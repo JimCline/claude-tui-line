@@ -558,7 +558,7 @@ Verified by direct read at `7a30bfb`, not inferred:
 
 ##### 7. A second-order duplication, named and scoped out
 
-`ConfigCheck.CheckEnums` enumerates the nine kinds as nine hand-written call sites
+`ConfigChecker.CheckEnums` enumerates the nine kinds as nine hand-written call sites
 (`ConfigCheck.cs:299, 304, 333, 344, 349, 354, 359, 364, 369, 388, 393`). `AcceptedCommand` will
 enumerate them again as a key table. **That is two lists of the nine kinds** — the §1.1 failure
 mode, one level up from the one #38 just fixed.
@@ -610,8 +610,9 @@ not ship a silent second list.
    reproduce the defect `check-all.sh:4–10` exists to prevent.
 7. `grep` finds no string literal in `AcceptedCommand.cs` matching any accepted token of the
    eight enumerable kinds — the mechanical form of *what must not change* item 2.
-8. §1.1.2's `tools/check-all.sh:42–43` citation now reads `42–44`, and `check-all.sh:42` and
-   `:43` still name `check-docs.sh` and `check-examples.sh` respectively.
+8. **Out of #42's scope, belongs to #43.** The appended `check-all.sh` check and the
+   `42–43`→`42–44` citation are #43's subset-check logic (§5), not #42's — #42 only builds the
+   surface #43 consumes. Leave `check-all.sh` and the §1.1.2 citation untouched until #43 lands.
 9. `tools/check-all.sh` green.
 10. `tools/check-docs.sh` still completes on a machine with no .NET toolchain.
 
@@ -628,10 +629,11 @@ Empirical, resolved by whoever builds this rather than asserted in advance:
   expected, the fallback is for `AcceptedCommand` to hold the sentence and for a test to assert
   it equals `FormatAccepted(SizeValues)` — a check instead of a shared call. Prefer the shared
   call; take the fallback only if the widening drags other things with it.
-- **(c) Does `--items`' plain-text path establish an expectation that every mode command has
-  one?** `--colors` appears to be JSON-only (`Program.cs:645` with no `RenderPlainText`
-  counterpart), which would settle it as "no." Confirm; if `--colors` does have a plain form,
-  reconsider whether `--accepted` should ship one too.
+- **(c) Resolved, correction.** `--colors` is not JSON-only — it has its own bare-mode render
+  (`RenderMarkupLines`), documented as the deliberate exception to §9.6.2.2's plain-only rule,
+  distinct from both JSON and `--items`' `RenderPlainText`. Doesn't change §1's ruling —
+  `--json`-required for `--accepted` is stated as deliberate regardless of precedent — but the
+  "settled as no" premise above didn't hold as stated.
 
 ##### Open questions for the user
 

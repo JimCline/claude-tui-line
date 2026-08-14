@@ -448,6 +448,7 @@ static async Task<int> RunCli(string[] args)
     var items = false;
     var colors = false;
     var preview = false;
+    var accepted = false;
     string? configPath = null;
     int? columns = null;
 
@@ -469,6 +470,9 @@ static async Task<int> RunCli(string[] args)
                 break;
             case "--preview":
                 preview = true;
+                break;
+            case "--accepted":
+                accepted = true;
                 break;
             case "--json":
                 break;
@@ -498,14 +502,14 @@ static async Task<int> RunCli(string[] args)
         }
     }
 
-    // §9.4.4: --check, --version, --items, --colors, and --preview are modes — exactly zero or
-    // one may appear in argv. This replaces the old pairwise mutual-exclusion table (unmaintainable
-    // past four commands: six pairs become ten on a fifth), so the rule holds for a sixth command
-    // without being edited.
-    var modeCount = new[] { check, version, items, colors, preview }.Count(selected => selected);
+    // §9.4.4: --check, --version, --items, --colors, --preview, and --accepted are modes —
+    // exactly zero or one may appear in argv. This replaces the old pairwise mutual-exclusion
+    // table (unmaintainable past four commands: six pairs become ten on a fifth), so the rule
+    // holds for a sixth command without being edited.
+    var modeCount = new[] { check, version, items, colors, preview, accepted }.Count(selected => selected);
     if (modeCount > 1)
     {
-        return WriteUsageError(json, "--check, --version, --items, --colors, and --preview are mutually exclusive");
+        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, and --accepted are mutually exclusive");
     }
 
     // §9.4.4: --json, --columns, and --config are modifiers, not modes — each mode's accepted set
@@ -517,11 +521,20 @@ static async Task<int> RunCli(string[] args)
         : items ? ("--items", new[] { "json" })
         : colors ? ("--colors", new[] { "json" })
         : preview ? ("--preview", new[] { "json", "columns", "config" })
+        : accepted ? ("--accepted", new[] { "json" })
         : ("rendering", new[] { "config" });
 
     if (json && !acceptedModifiers.Contains("json"))
     {
         return WriteUsageError(json, $"--json is not valid with {modeLabel}");
+    }
+
+    // §1.1.3: unlike --items/--colors, --accepted has no plain-text form yet — bare --accepted
+    // is a usage error naming the correct form, so a plain-text form stays purely additive
+    // whenever one is added, rather than stranding JSON as the bare default forever.
+    if (accepted && !json)
+    {
+        return WriteUsageError(json, "bare --accepted is not supported; use --accepted --json");
     }
 
     if (columns is not null && !acceptedModifiers.Contains("columns"))
@@ -558,6 +571,11 @@ static async Task<int> RunCli(string[] args)
     if (preview)
     {
         return await RunPreview(json, configPath, columns);
+    }
+
+    if (accepted)
+    {
+        return RunAccepted();
     }
 
     return RunCheck(json, configPath);
@@ -652,6 +670,16 @@ static int RunColors(bool json)
         }
     }
 
+    return 0;
+}
+
+// §1.1.3: reads no config and probes nothing — every value comes from the parser-colocated
+// registries #38 built, so there is no failure mode here beyond a crash. Always exits 0. No
+// plain-text form: --accepted requires --json, enforced before this is ever reached.
+static int RunAccepted()
+{
+    var result = AcceptedCommand.Build();
+    Console.Out.WriteLine(JsonSerializer.Serialize(result, AcceptedJsonContext.Default.AcceptedResultJson));
     return 0;
 }
 

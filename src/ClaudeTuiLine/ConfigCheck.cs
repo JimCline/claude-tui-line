@@ -290,7 +290,7 @@ public static class ConfigChecker
     // BorderStyleParsing.AcceptedTokens) so the diagnostic reads the same object the parser looks
     // up, instead of a second hand-copied list. `size` has no closed token set — a mix of literals
     // and form descriptions — so it stays a plain array here, per §1.1.1.
-    private static readonly string[] SizeValues = { "an integer", "a percentage", "content", "fill", "auto" };
+    internal static readonly string[] SizeValues = { "an integer", "a percentage", "content", "fill", "auto" };
 
     private static IEnumerable<Diagnostic> CheckEnums(UserConfig? config)
     {
@@ -397,7 +397,7 @@ public static class ConfigChecker
     private static Diagnostic UnknownEnumValue(string path, string? value, string fieldName, IReadOnlyList<string> accepted) =>
         new(path, DiagnosticSeverity.Error, "unknown-enum-value", $"'{value}' is not a {fieldName} — expected {FormatAccepted(accepted)}");
 
-    private static string FormatAccepted(IReadOnlyList<string> accepted) => accepted.Count switch
+    internal static string FormatAccepted(IReadOnlyList<string> accepted) => accepted.Count switch
     {
         0 => "",
         1 => accepted[0],
