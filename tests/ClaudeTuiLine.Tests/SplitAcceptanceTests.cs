@@ -117,7 +117,7 @@ public class SplitAcceptanceTests
         // MinUsableWidth 20 + borderReserve 4 = 24".
         var (topLevel, pane) = LoadAcceptanceConfig();
         var surfaceWidth = SurfaceLayout.ComputeWidth("60", topLevel.ChromeReserve)!.Value;
-        var fillFloor = RowLayout.MinUsableWidth + PaneBorderRenderer.BorderReserve;
+        var fillFloor = RowLayout.MinUsableWidth + SizeResolver.OwnBorderReserve(pane.Children[0]);
         var expectedCap = surfaceWidth - pane.Gutter - fillFloor;
 
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
@@ -137,7 +137,7 @@ public class SplitAcceptanceTests
         // narrower than it — proof, not assumption, that the loop iterated at least twice.
         var (topLevel, pane) = LoadAcceptanceConfig();
         var surfaceWidth = SurfaceLayout.ComputeWidth("60", topLevel.ChromeReserve)!.Value;
-        var fillFloor = RowLayout.MinUsableWidth + PaneBorderRenderer.BorderReserve;
+        var fillFloor = RowLayout.MinUsableWidth + SizeResolver.OwnBorderReserve(pane.Children[0]);
         var passOneCap = surfaceWidth - pane.Gutter - fillFloor;
 
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
@@ -158,7 +158,7 @@ public class SplitAcceptanceTests
         // pass 1 — pass 1 leaves a `fill` pane at exactly its own floor.
         var (topLevel, pane) = LoadAcceptanceConfig();
         var surfaceWidth = SurfaceLayout.ComputeWidth("60", topLevel.ChromeReserve)!.Value;
-        var fillFloor = RowLayout.MinUsableWidth + PaneBorderRenderer.BorderReserve;
+        var fillFloor = RowLayout.MinUsableWidth + SizeResolver.OwnBorderReserve(pane.Children[0]);
 
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());

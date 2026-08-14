@@ -11,10 +11,6 @@ namespace ClaudeTuiLine;
 /// </summary>
 public static class PaneBorderRenderer
 {
-    // 2 verticals + 2 padding cells (§2.5's borderReserve), the same figure the pre-split
-    // single-pane pipeline has always used.
-    public const int BorderReserve = 4;
-
     /// <param name="suppressed">
     /// SPEC-V2-FRAMEWORK.md §2.3: a pane whose resolved width falls under
     /// <see cref="RowLayout.MinUsableWidth"/> suppresses its own border first rather than being
@@ -31,7 +27,7 @@ public static class PaneBorderRenderer
 
         var width = Math.Max(0, innerWidth);
         var style = border.Style;
-        var outerWidth = width + BorderReserve;
+        var outerWidth = width + SizeResolver.OwnBorderReserve(border);
 
         string Part(BoxBorderPart part) => suppressed ? " " : style.GetPart(part);
 
@@ -44,7 +40,7 @@ public static class PaneBorderRenderer
         var right = Colored(Part(BoxBorderPart.Right));
 
         var rows = new List<PaneRow>(contentRows.Count + 2) { new(top, outerWidth) };
-        rows.AddRange(contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + BorderReserve)));
+        rows.AddRange(contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + SizeResolver.OwnBorderReserve(border))));
         rows.Add(new PaneRow(bottom, outerWidth));
         return rows;
     }

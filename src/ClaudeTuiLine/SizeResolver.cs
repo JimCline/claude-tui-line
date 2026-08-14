@@ -60,13 +60,28 @@ public static class SizeResolver
     /// </summary>
     internal static bool IsFillSized(Pane pane) => ClassifySize(pane.Size).Kind == SizeKind.Fill;
 
+    // §2.10: 2 verticals + 2 padding cells when a pane draws a border — the same figure the
+    // pre-split single-pane pipeline has always used.
+    private const int BorderWidthReserve = 4;
+
+    // §2.10.1 rule 5: top + bottom.
+    private const int BorderRowReserve = 2;
+
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.10: <c>reserve(p)</c> — the width a pane itself consumes for its own
     /// border, charged wherever that pane is measured (its own <see cref="Floor"/>/request, or a
     /// split subtracting its own border before dividing width among children). Named so every call
     /// site shares one definition instead of repeating the same ternary.
     /// </summary>
-    internal static int OwnBorderReserve(Pane pane) => pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+    internal static int OwnBorderReserve(Pane pane) => OwnBorderReserve(pane.Border);
+
+    internal static int OwnBorderReserve(PaneBorder border) => border.Style is not null ? BorderWidthReserve : 0;
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 5: <c>rowReserve(p)</c> — the row-count counterpart to
+    /// <see cref="OwnBorderReserve(Pane)"/>, charged wherever a pane's row budget is computed.
+    /// </summary>
+    internal static int OwnRowReserve(Pane pane) => pane.Border.Style is not null ? BorderRowReserve : 0;
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.10: what a vertical split reserves for itself before dividing width

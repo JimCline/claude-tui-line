@@ -21,7 +21,7 @@ public static class PaneTreeRenderer
         int? targetOuterHeight = null)
     {
         var pane = node.Source;
-        var borderReserve = pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+        var borderReserve = SizeResolver.OwnBorderReserve(pane);
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
         var suppressed = SizeResolver.ShouldSuppressBorder(pane, node.OuterWidth);
 
@@ -74,7 +74,7 @@ public static class PaneTreeRenderer
 
         if (targetOuterHeight is int targetHeight)
         {
-            var targetInnerHeight = Math.Max(0, targetHeight - (pane.Border.Style is not null ? 2 : 0));
+            var targetInnerHeight = Math.Max(0, targetHeight - SizeResolver.OwnRowReserve(pane));
             contentRows = PadHeight(contentRows, targetInnerHeight, innerWidth, pane.Valign);
         }
 
