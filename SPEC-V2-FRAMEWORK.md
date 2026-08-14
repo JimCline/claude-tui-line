@@ -3196,6 +3196,62 @@ notes belongs to which run. It costs nothing on a stream nothing diffs.
 
 `--preview --json` is unaffected: `rows[].width` stays where §9.6 put it, for the reason §9.6 gives.
 
+#### 9.3.4 Three things `--preview`'s first implementation had to decide
+
+All three came back from the implementation as "the spec pins the content but not this", and all
+three are load-bearing. Ruled here rather than in a message, because a ruling that lives in a
+conversation is a ruling nobody can cite.
+
+**A `row` in `--preview --json` is a line of the rendered surface, borders included.** The
+implementation populated `rows[]` from the pipeline's pre-Panel content rows, which is the cheaper
+read and the wrong object. Two reasons, and the second is the one that decides it:
+
+- §9 says preview exists so that "overflow and ragged compositing are visible rather than inferred".
+  Ragged compositing is a property of the *composed* surface — a bordered pane beside an unbordered
+  sibling is exactly where it appears, and pre-Panel rows are measured before the border exists.
+- Bare `--preview` and `--preview --json` would otherwise disagree about how many rows there are.
+  A bordered pane writes three lines and would report one. §12's prompts tell an LLM to read either
+  form — "`--preview --json` carries the same notes in `notes[]`. Use whichever you will actually
+  check" — and *the same* is a promise about one render seen two ways, not two renders. A caller
+  diffing `rows[].text` against the bare output gets a mismatch with nothing to explain it.
+
+`text` is the line with ANSI stripped; `width` is that line's width **computed by the same function
+the layout used**, never a second measurement. A width the renderer did not use is a number that
+can disagree with the layout it claims to describe, and the disagreement would appear exactly where
+the tool is being trusted most.
+
+**Preview reads the `paneWidth` stamp and must never write it,** and the implementation's
+`stampWidths: false` is right for a larger reason than caution. The stamp is not in-process state:
+`ItemCache.StampPaneWidth` writes it to the cache **on disk**, which is the same cache the live
+statusline reads on its next tick. So `--preview --columns 60` would write `60` into the entry the
+user's real statusline then hands to their `command` items — at their actual terminal width. The
+user's statusline would render wrong, once, for a reason nothing on screen connects to a preview
+they ran in another window. A read-only preview that corrupts the render path through a shared
+store is the render path not being untouched (§9.1), one indirection out.
+
+The cost is a divergence worth naming: preview reads a stamp written at the *live* width, so a
+`command` item that formats to its pane width sees the wrong one under `--columns 60`. That is the
+one-render-behind signal being one render behind in a different window, and it is not fixable by
+stamping — preview cannot know the width before it lays out either. **§5.0.1 is where it does get
+fixed**, and this rules what that store must do: key the widths store **by resolved surface width**,
+so a preview at 60 reads and writes the 60 entry, the live render at 120 reads and writes the 120
+entry, and neither can see the other. Then preview stamping becomes correct rather than forbidden,
+and the boolean goes away instead of becoming permanent. Until then, `stampWidths: false`.
+
+**A note's text is pinned the moment anything is told to read it.** §9.3's preamble lines — the
+synthetic-input admission and the columns-resolution line — are content-pinned only, and their
+wording stays the implementation's, because they are addressed to a person reading a terminal.
+Render notes are different: `migrate.md` teaches an LLM to tell a width drop from a `maxLines` cap
+by quoting `pane N dropped: no width remained at C columns` and `item 'X' emitted N lines; M kept
+(maxLines)` verbatim. A quoted string in a prompt is an interface, whether or not anyone declared
+it one.
+
+So **every note the collector can emit has its text pinned in §9.8.1's list**, including the ones
+nothing quotes yet — `segment truncated: no width remained at N columns` among them. The rule is not
+that quoted notes are pinned; it is that an unpinned note *will* be quoted, by whoever writes the
+next prompt, and will then drift with nothing failing. This is §1's one-implementation rule applied
+to a string: the note text has one home, and prompts cite it rather than each carrying a copy.
+
 ### 9.4 Exit codes and severities
 
 | exit | meaning |
