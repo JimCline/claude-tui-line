@@ -2279,6 +2279,42 @@ nullable**. A sink the render path passes `null` to is two paths again — instr
 a second place, six sections apart. A real collector thrown away costs one allocation per render
 and buys one path.
 
+### Is `maxLines` a pattern or a singleton? Audited: singleton
+
+`maxLines` was found by accident — the implementor went to reuse a mechanism and there wasn't one.
+Accident is not a strategy, so the mechanical form of the same question got run: **every identifier
+the spec names should exist in the code.**
+
+Two passes. Keys appearing as `"key":` inside fenced JSON blocks — 94 of them, three absent
+(`notes`, `usableColumns`, `removed`). Then backticked lower-camel identifiers in *prose*, which is
+the form `maxLines` actually took and which the first pass cannot see — 177 of them, 32 absent.
+
+Every one of the 35 triages to a legitimate absence:
+
+- **A vocabulary we correctly do not own** — `italic`, `underline`, `conceal`, `invert`,
+  `strikethrough` are Spectre's decoration keywords, and `gold1`, `grey37`, `hotpink`, `orange3`,
+  `steelblue1`, `color141`, `colorNNN` are its palette. §9.6.3 already rules that the accepted
+  colour set is not ours and is not finite, so finding these missing is that ruling holding.
+- **Prompt-owned artifacts** — `checkpoint`, `revision`, `baseRevision`, `configCopy`,
+  `configOriginalPath`, `scriptOriginalPath`, `restored` are ledger fields written by the command
+  prompts, and `migrate`, `revert`, `setup` are the commands. No C# should know any of them.
+- **Tracked pending features** — `outline` is §2.10's per-edge borders (#8); `cliVersion` and
+  `unavailable` are §12.6's MCP surface (Phase 7, #10); `notes` and `usableColumns` are
+  `--preview`'s own shape (#32).
+- **Not a framework key at all** — `removed` is a key in a *user's* colour map in an example
+  config.
+
+So `maxLines` (#31) is the only untracked one, and this class is a singleton rather than a pattern.
+That is the useful half of the result: without it, the next person to notice a stale-looking
+sentence has to re-run this to find out whether they are pulling one thread or unravelling a sweater.
+
+**Deliberately not made a CI check.** The prose pass needs roughly thirty allowlist entries to read
+clean, and a check carrying an allowlist that size is one nobody maintains and everybody switches
+off — the failure mode `check-examples.sh`'s own header argues against, where drawing a class one
+notch too wide costs the check itself. The fenced-key pass is nearly exact and worth revisiting
+**once Phase 5 and Phase 7 land**, because at that point its expected output is genuinely empty and
+an allowlist stops being needed. Recorded as the condition rather than the intention.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
