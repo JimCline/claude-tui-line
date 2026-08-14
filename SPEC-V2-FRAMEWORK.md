@@ -3598,6 +3598,77 @@ readable when the theme changes, and one built from hex does not. That is a reco
 stated reason, which a model can weigh against a user who explicitly wants `#ff8800` — unlike a
 bare list, which it can only obey or violate.
 
+#### 9.6.3.1 What this section did not say: the bare form, and what the round-trip test proves
+
+§9.6.2.2 exists because §9.6.2 specified a JSON envelope and left the bare form to whoever got
+there first. This section had the identical hole, and one consequence sharper than anything in
+§9.6.2.2's case.
+
+**Bare `--colors` prints ANSI. It is the deliberate exception to §9.6.2.2, and the reason is not
+symmetry but payload.** §9.6.2.2 rules that bare `--items` emits `Plain` only, never styled, even
+on a TTY. Read next to each other those two rulings contradict; read for what each command is
+*for*, they do not. An item's example is a string, and colour is decoration applied to it — a
+reader loses nothing when it is stripped, and a pipe gains a clean value. A colour swatch has no
+payload except the colour: strip the ANSI from `--colors` and every row reads `olive`, `teal`,
+`fuchsia`, which is precisely the guessing §2's bullet says the command exists to end. So `--colors`
+renders each name in its own colour, through the user's terminal, because a swatch in documentation
+shows the author's theme and not the reader's.
+
+This is written down because the collision is live rather than theoretical: the plain-only rule and
+this one land on the same implementer within days of each other, the plain-only rule is stated
+absolutely, and it is the one they will have implemented most recently. **Two authorities
+disagreeing is worse than either being wrong alone** — the recurring defect of this project — and
+the resolution is always the same: find the principle that makes both follow, rather than letting
+one claim an exception. The principle here is *is the styling the value, or a coat of paint on the
+value?*
+
+`--colors --json` stays unstyled, per §2 — a program consuming the list wants names.
+
+**The list already exists in code.** This section says the curated list "exists nowhere today" and
+"must live in exactly one place in code". Both were true when written; the first is now stale.
+`ColorResolution.StandardColorNames` is that constant, already serving §6.2.1's minimum
+colour-system check, and `--colors` is its second consumer rather than its author. Adding a second
+list here would be the §1 defect this section spent four paragraphs arguing against.
+
+**The round-trip test proves less than this section claims, and the gap is exactly on the three
+entries that are not colours.** The stated condition is "each name through `ResolveLiteral`,
+non-null result". `ResolveLiteral` returns `style.Foreground`, and Spectre's `Style.Foreground` is
+a non-nullable `Color` — the `(Color?)null` cast on the failure branch is the tell. So the
+assertion is only ever testing *did `Style.TryParse` succeed*, which is genuinely what is wanted
+for the sixteen: a Spectre rename makes the parse fail and the test catches it. But `bold` and
+`dim` parse as **decorations**, contributing `Color.Default` as a foreground, and `default` names
+that value outright. For those three, non-null passes and proves nothing.
+
+So the assertion splits by what the entry is:
+
+- the **sixteen theme colours** must parse *and* yield a foreground that is not `Color.Default` —
+  the stronger form, and the one that actually catches a rename;
+- **`default`, `dim`, `bold`** must parse, and are asserted to be exactly the three entries that
+  resolve to `Color.Default`. Pinning the count is what stops a real colour quietly joining them
+  through a future rename, which is the failure the weaker assertion would have waved through.
+
+Confirm the nullability against Spectre before relying on the reasoning above — it is read off a
+cast rather than off the library, which is precisely the standard of evidence §9.6.2.1 warns about.
+If `Foreground` turns out nullable, the first bullet still holds and only the explanation changes.
+
+**`themeMapped` is false for `default`, `dim`, and `bold`.** They are not theme-mapped colours;
+they are a reset and two decorations. Marking them `true` to keep the rows uniform would assert
+they follow the terminal theme, which is the one thing the field means.
+
+**The remaining four, ruled here so they do not each become a separate stop:**
+
+- `--colors --json` **carries the same top-level `version` field** as `--items --json`, from the
+  same `AssemblyVersionInfo.InformationalVersion` accessor. §12.6.8 surfaces `cliVersion` from
+  whichever call a tool happens to make, and a field present on one JSON command and absent on
+  its sibling is a distinction no consumer can act on.
+- `--colors` is **mutually exclusive with `--check`, `--items`, and `--version`**, reported through
+  the same pairwise usage error and the same exit 2 as the pairs already wired.
+- It **reads no config and probes nothing**, so it cannot reach exit 3 and always exits 0 — the
+  same standing as `--items` in §9.6.2.2.
+- The plain form is a **convenience view; the JSON is the contract.** Column layout may change
+  without that being a compatibility break. Stated for the same reason as §9.6.2.2's version of
+  this ruling: a human-readable output nobody labels becomes a frozen surface by default.
+
 ### 9.7 `--version`, and the two places a version number wants to live
 
 `--version` prints the version and exits 0. `--items --json` carries the same string as a
