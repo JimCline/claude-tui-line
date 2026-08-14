@@ -3059,10 +3059,22 @@ invisible from the payload side, which is why this needed a rule and not care.
 
 **Redundant fields must agree with each other.** `used_percentage: 34.0` is `68000 / 200000`;
 `worktree.branch` is the same `"main"` the canned `gitBranch` reports; `workspace.repo` names the
-same repo as the canned remote URL and the worktree. Nothing enforces this — the type permits any
-combination — which is exactly why it needs writing down. A fixture with `used_percentage: 80` and
+same repo as the canned remote URL and the worktree. A fixture with `used_percentage: 80` and
 40k of 200k tokens describes a state Claude Code cannot produce, `--preview` renders it faithfully,
 and the first person to notice spends their afternoon looking for the bug in `context`.
+
+The type permits any combination, so **the agreement is asserted by test, not by this paragraph and
+not by the comment in `SyntheticFixture.cs`.** Three assertions, and each one can fail:
+
+- `used_percentage == 100 × total_input_tokens ÷ context_window_size`
+- the canned `gitBranch` equals `worktree.branch`
+- the canned remote URL's owner and name equal `workspace.repo`'s, and `worktree.name`
+
+This is §9.8's rule turned on the fixture. Writing an invariant down where the values live is the
+same move as a checker transcribing the renderer's arithmetic: two expressions of one thing, with
+nothing but prose between them, and the prose does not fail the build when someone tunes a number.
+The fixture satisfies all three today — it was checked when this clause was written — which is
+exactly the moment to add the assertion, while agreement is a fact rather than a repair.
 
 **The values are deliberately unremarkable, and specifically are not near a threshold.** The
 tempting alternative is to sit `context` at 82% so the example visibly exercises §6's colour ladder
