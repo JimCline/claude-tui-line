@@ -1822,6 +1822,38 @@ renders empty; neither takes out the line.
 Config validation failures are silent by design. A `--check` CLI flag (§9) is how a user finds
 out they typo'd something, because a statusline is the wrong surface for error text.
 
+### 7.1 The third outcome: output that is wrong rather than absent
+
+The pairing above — degrade silently at render, explain at check time — assumes two outcomes. A
+config is either fine, or it produces *less* than intended and `--check` says why. **There is a
+third, and it is the only one with no signal at all: output that is present, plausible, and
+wrong.**
+
+The user cannot notice it, because there is nothing missing to notice. `--check` cannot report it,
+because nothing failed. And the render path cannot degrade around it, because from the inside it
+looks like success. Four instances are known, three of them found by walking rules over cases
+rather than by anything failing:
+
+| where | the wrong output |
+|---|---|
+| defect 14 (§4.1) | `shell: true` with a multi-element argv runs `sh -c "kubectl"` and renders bare kubectl's usage text |
+| defect 15 (§6.6) | `border.color: "dim"` renders dim through one border resolver and undim through the other |
+| §3.3 | an absent value between two literals left a bare `(` on the line |
+| §4.2 | a dropped argv entry re-binds the next flag, so `--branch` takes `--format` as its value |
+
+**The rule these produced, for every future ruling on a runtime-missing value:** when a config has
+a defined meaning and only the *value* is absent, prefer the option that cannot silently produce
+different-but-plausible output, even when another option looks tidier. Concretely, that has meant
+preserving arity over dropping an entry, exporting empty over leaving unset, and dropping a
+bound literal over emitting it alone. When the config itself has no defined meaning, the call
+inverts — suppress the item (defect 14), which puts the fault back where `--check` can explain it.
+
+**Where these keep coming from is worth naming.** Both §3.3 and §4.2 argued carefully about the
+case a checker can catch and went quiet on the case only the renderer sees; §6.6 had two code
+paths nobody had reason to compare. So the question to ask of any new rule is not "is this
+right?" but **"what does this do when the value is missing at render time, and who would ever
+find out?"** If the answer to the second half is "nobody", the rule is not finished.
+
 ## 8. Config
 
 Iteration 1 — one pane, which is also what an omitted `surface` block means:

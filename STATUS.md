@@ -601,7 +601,36 @@ Suppressing would delete behaviour the author chose.
 
 The pattern across §3.3 and §4.2 is the same: both sections argue well about the case a checker
 can catch, and go quiet on the case only the renderer sees. That is where the render-wrong class
-keeps coming from — three instances now, and none of them reachable by `--check`.
+keeps coming from — and none of it is reachable by `--check`. Generalised into §7.1 next.
+
+### The class had four members and no home in the spec (§7.1)
+
+Four separate rulings tonight all turned out to be the same failure wearing different clothes:
+defect 14's `sh -c "kubectl"`, defect 15's two border resolvers, §3.3's orphaned `(`, and §4.2's
+re-bound flag. Each got fixed where it was found. None of them was *named* anywhere.
+
+That matters because **§7 only describes two outcomes** — the config is fine, or it renders less
+than intended and `--check` explains why. Every one of those four produces a third: output that is
+present, plausible, and wrong. The user cannot notice it (nothing is missing), `--check` cannot
+report it (nothing failed), and the render path cannot degrade around it (from the inside it looks
+like success). A spec whose failure-semantics section does not admit the category will keep
+producing members of it one ruling at a time, which is precisely what happened.
+
+So §7.1 now names it, tables the four instances, and states the rule they produced: **when a
+config has a defined meaning and only the value is absent, prefer the option that cannot silently
+produce different-but-plausible output** — preserve arity over dropping an entry, export empty
+over leaving unset, drop a bound literal over emitting it alone. When the config itself has no
+defined meaning the call inverts to suppression (defect 14), which puts the fault back where
+`--check` can speak.
+
+The part worth keeping is the question it hands to every future rule, because three of the four
+were found by asking it rather than by anything failing: not "is this right?" but **"what does
+this do when the value is missing at render time, and who would ever find out?"** If the answer
+to the second half is "nobody", the rule is not finished.
+
+This is also the end of the audit pass. Two pending specs remain un-walked — §2.10 per-edge
+borders (task #8) and §2.11 empty-pane collapse (task #4) — and they are the next candidates for
+the same treatment.
 
 ### Open, and honest about it
 
