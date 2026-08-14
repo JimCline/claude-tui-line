@@ -16,7 +16,8 @@ public class CommandProviderTests
         var item = new PaneItem(null, null, null, null, Id: "defect14-shell-multi", Command: new[] { "echo", "hi" }, Shell: true);
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false);
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Null(value.Value);
     }
@@ -27,7 +28,8 @@ public class CommandProviderTests
         var item = new PaneItem(null, null, null, null, Id: "defect14-shell-single", Command: new[] { "echo hi" }, Shell: true);
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false);
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Equal("hi", value.Value);
     }
@@ -38,8 +40,126 @@ public class CommandProviderTests
         var item = new PaneItem(null, null, null, null, Id: "defect14-noshell-multi", Command: new[] { "echo", "hi" }, Shell: false);
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false);
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
 
         Assert.Equal("hi", value.Value);
+    }
+
+    // ---- SPEC-V2-FRAMEWORK.md §4.2/§4.2.2/§4.2.3: argv placeholders end to end ----
+
+    [Fact]
+    public async Task NonShell_SpawnedProcessSeesSubstitutedArgv()
+    {
+        var item = new PaneItem(null, null, null, null, Id: "argv-echo-substituted", Command: new[] { "echo", "{val}" }, Shell: false);
+        var values = new Dictionary<string, string?> { ["val"] = "hello" };
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            values, unavailableIds: Array.Empty<string>());
+
+        Assert.Equal("hello", value.Value);
+    }
+
+    [Fact]
+    public async Task Shell_SpawnedProcessSeesReferencedValueAsEnvVarNotSubstitutedIntoCommandString()
+    {
+        // The trailing "# {val}" is a shell comment — it references "val" so ArgvPlaceholders
+        // detects it and exports the env var, without the shell ever seeing "{val}" as text to run.
+        var item = new PaneItem(null, null, null, null, Id: "argv-shell-env-export",
+            Command: new[] { "echo \"$CLAUDE_TUI_LINE_VAL_VAL\" # {val}" }, Shell: true);
+        var values = new Dictionary<string, string?> { ["val"] = "hello" };
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+            values, unavailableIds: Array.Empty<string>());
+
+        Assert.Equal("hello", value.Value);
+    }
+
+    [Fact]
+    public async Task UnavailableReferencedSource_SuppressesTheSpawnAndReportsUnavailable()
+    {
+        var marker = Path.Combine(Path.GetTempPath(), $"argv-unavailable-marker-{Guid.NewGuid():N}.txt");
+        var item = new PaneItem(null, null, null, null, Id: "argv-unavailable-source",
+            Command: new[] { "sh", "-c", $"touch {marker}", "{other-id}" }, Shell: false);
+        var values = new Dictionary<string, string?> { ["other-id"] = "irrelevant" };
+
+        try
+        {
+            var value = await CommandProvider.ResolveAsync(
+                item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), paneWidthEligible: false,
+                values, unavailableIds: new[] { "other-id" });
+
+            Assert.True(value.Unavailable);
+            Assert.Null(value.Value);
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            File.Delete(marker);
+        }
+    }
+
+    [Fact]
+    public async Task UnavailableReferencedSource_WithStaleCachedValue_FallsBackToStaleValueAndIsAvailable()
+    {
+        const string id = "argv-unavailable-stale-fallback";
+        var command = new[] { "echo hi {other-id}" };
+        var item = new PaneItem(null, null, null, null, Id: id, Command: command, Shell: true);
+        var values = new Dictionary<string, string?> { ["other-id"] = "x" };
+        var cacheDir = Path.GetTempPath();
+
+        var expansion = ArgvPlaceholders.Expand(command, shell: true, values);
+        var valueKey = ItemCache.KeyFor(id, expansion.Argv, cwd: null, paneWidth: null, expansion.ExportedEnv);
+        ItemCache.Write(cacheDir, valueKey, new CacheEntry("stale-value", DateTimeOffset.UtcNow - TimeSpan.FromMinutes(5), ExitCode: 0, PaneWidth: null));
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: false,
+            values, unavailableIds: new[] { "other-id" });
+
+        Assert.Equal("stale-value", value.Value);
+        Assert.False(value.Unavailable);
+    }
+
+    [Fact]
+    public async Task ResolvedValueCacheKey_ChangesWhenAReferencedValueChanges_SoTheSecondCallIsNotAStaleHit()
+    {
+        var item = new PaneItem(null, null, null, null, Id: "argv-cache-key-env",
+            Command: new[] { "echo \"$CLAUDE_TUI_LINE_VAL_VAL\" # {val}" }, Shell: true);
+        var cacheDir = Path.GetTempPath();
+
+        var first = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: false,
+            new Dictionary<string, string?> { ["val"] = "one" }, unavailableIds: Array.Empty<string>());
+        var second = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: false,
+            new Dictionary<string, string?> { ["val"] = "two" }, unavailableIds: Array.Empty<string>());
+
+        Assert.Equal("one", first.Value);
+        Assert.Equal("two", second.Value);
+    }
+
+    [Fact]
+    public async Task ResolvedValueCacheKey_ChangesWhenStampedPaneWidthChanges_SoTheSecondCallIsNotAStaleHit()
+    {
+        const string id = "argv-cache-key-width";
+        var command = new[] { "sh", "-c", "echo $CLAUDE_TUI_LINE_PANE_WIDTH" };
+        var item = new PaneItem(null, null, null, null, Id: id, Command: command, Shell: false);
+        var cacheDir = Path.GetTempPath();
+        var widthTrackingKey = ItemCache.KeyFor(id, command, cwd: null);
+
+        ItemCache.Write(cacheDir, widthTrackingKey, new CacheEntry(null, DateTimeOffset.UtcNow, ExitCode: 0, PaneWidth: 42));
+        var first = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: true,
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+
+        ItemCache.Write(cacheDir, widthTrackingKey, new CacheEntry(null, DateTimeOffset.UtcNow, ExitCode: 0, PaneWidth: 99));
+        var second = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, paneWidthEligible: true,
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+
+        Assert.Equal("42", first.Value);
+        Assert.Equal("99", second.Value);
     }
 }
