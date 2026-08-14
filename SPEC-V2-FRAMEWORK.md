@@ -1668,7 +1668,16 @@ Two severities, and the split resolves defects 3–6 (silent acceptance):
   id that resolves to nothing; `overflow: "overflow"` on a pane inside a split (§2.6); a pane
   whose fixed sizes cannot fit its parent.
 - **`warning`** — it is satisfiable, but probably not what was meant. A pane with no items; a
-  `command` item with no `timeoutMs`.
+  `command` item with no `timeoutMs`; under `collapse: true`, two panes asking for different
+  colours or styles on one shared edge (§2.10). Code: `collapsed-edge-conflict`.
+
+That last one refines the rule rather than bending it. Two colours cannot both hold on one
+physical line, so it looks unsatisfiable — but §2.10 *defines* the resolution (first requester in
+tree declaration order), so the config has a well-defined meaning and renders deterministically.
+**Unsatisfiable means no defined meaning, not "some of what you typed had no effect."** It is a
+warning because a written `color` was silently discarded, and §2.10 is right that this is the kind
+of thing a user otherwise spends an evening on; it is not an error because the spec sanctions the
+outcome. Under `collapse: false` it cannot arise at all — neighbours never contend for one line.
 
 **The line between them is satisfiable versus unsatisfiable — not "does the renderer cope."**
 That distinction cannot be the test, because §7 makes the renderer cope with everything: it
@@ -1779,9 +1788,20 @@ that work correctly gets ignored on the occasions it is right.
 So the diagnostic is **structural**, and the invariant is narrow but real: a contradiction no
 terminal width can resolve.
 
-- Children's **fixed** sizes, plus gutters, plus border reserve, exceeding the parent's own
-  **bounded** size — where bounded means the parent is itself fixed, or carries a `maxSize`.
+- Children's **fixed** sizes, plus the boundary cost, exceeding the parent's own **bounded** size
+  — where bounded means the parent is itself fixed, or carries a `maxSize`.
   Code: `fixed-sizes-exceed-parent`.
+
+  **The boundary cost is §2.10's, not a sum of gutters and border reserve.** Those are not
+  independent addends: under `collapse: true` the divider *occupies* the gutter, so charging both
+  double-counts and the check reports a config that fits as one that cannot. A false `error` is
+  the worst outcome available here, because exit 1 sends the user to fix something that works.
+  Take the figure from §2.10 — `(N − 1)` under `collapse: true`, `(N − 1) × (g + 2)` under
+  `collapse: false` — and per-pane `reserve(p)` wherever §2.3 reads `borderReserve`.
+
+  This is computable without a width because §2.10 makes edges **static config**, never derived
+  from a provider value. That rule was written for the §2.3 fixpoint's convergence argument, and
+  it is what makes this diagnostic possible at all.
 - `minSize` greater than `maxSize` on the same pane. Code: `min-exceeds-max`. This is an
   **error**; §9.4 listed it as a warning in an earlier draft and has been corrected there rather
   than here.
