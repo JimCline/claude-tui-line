@@ -4042,6 +4042,39 @@ Merged cleanly (git auto-merged `PreviewJsonRowsTests.cs`, no conflicts), indepe
 via task-gopher pre-merge on the worktree and post-merge on `main`. Full suite: 1257/1257 passed.
 Landed as merge commit `c115b03` (branch tip `01611d4`), pushed.
 
+### #50: named self-reference now classifies as `placeholder-self-reference`, not the generic fallback
+
+Problem: two independent code paths detect argv-placeholder issues. `CheckArgvPlaceholders`
+(`ConfigCheck.cs`) already caught *bare* self-references (`{}`) correctly via
+`ArgvPlaceholders.HasSelfReference`. But a *named* self-reference — an item's own id used as its
+own placeholder, e.g. item `"cmd"` referencing `{cmd}` — went through `CheckReferences`'s
+id-reference pipeline instead, which had no way to tell "references itself" from "references a
+different command item": it only saw the referenced id was in `CommandItemIds` (trivially true,
+since the item includes itself) and emitted the generic `placeholder-command-source` diagnostic.
+
+Fix: added a nullable `OwnerId` field to `IdCandidate`/`IdReference` (`ItemValueResolver.cs`),
+populated only by the argv-placeholder extractor with the referencing item's own id — every other
+extractor (from/link/color-from/etc.) leaves it null, so no other diagnostic path is affected.
+`CheckReferences` now branches before the `CommandItemIds` check: when the reference is an argv
+placeholder and its id equals its own `OwnerId`, it emits `placeholder-self-reference` instead of
+the generic code. Bare-`{}` handling is untouched and doesn't double-fire, since `ReferencedIds`
+already excludes bare `{}`.
+
+Judgment call: `OwnerId` was added as a generic field on the shared `IdCandidate`/`IdReference`
+types rather than a self-reference-specific side channel, since those types are already shared
+across all reference extractors — the smaller, single-source-of-truth fix over duplicating
+`CommandItemIds` lookup logic inside the argv-placeholder check itself.
+
+New regression test: `ArgvPlaceholderNamedSelfReference_ReportsPlaceholderSelfReferenceNotCommandSource`
+(item `"cmd"` with command `{cmd}`, asserts `placeholder-self-reference` fires and
+`placeholder-command-source` does not); confirmed the existing bare-`{}` and legitimate
+cross-reference tests still pass unchanged.
+
+Merged cleanly (git auto-merged `ConfigCheck.cs`/`ItemValueResolver.cs`/`ConfigCheckTests.cs`, no
+conflicts), independently verified via task-gopher pre-merge on the worktree and post-merge on
+`main`. Full suite: 1258/1258 passed. Landed as merge commit `a2b3f01` (branch tip `7a628ba`),
+pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
