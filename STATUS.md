@@ -37,7 +37,12 @@ not by itself enough; this project has twice had a green suite over a broken ins
   the resolver drops an id is defect 11 re-opened somewhere new and equally silent. `--check`
   is also where the silent-acceptance defects 3–6 become visible without changing runtime
   behaviour. `--preview` needs `--config <path>` so a candidate can be seen **without being
-  installed**, which is what lets migrate show a result before writing.
+  installed**, which is what lets migrate show a result before writing. **`--version` was added
+  to this scope (§9.7)** after a cross-reference check found §12.6 surfacing a `cliVersion` that
+  §9 had never defined — the implementor had no way to know the field was expected. It brings a
+  test with it: the version lives in both the `.csproj` and the hand-written `plugin.json`, which
+  cannot be generated, so an assertion that the two match is the only thing standing between that
+  drift and a user reporting a version corresponding to nothing.
 - **Phase 6 authoring commands** (§12.3–12.5) — `migrate`, `edit`, `revert` **written and
   committed, blocked on §9**. Each opens by asking the binary for `--items`, and **stops** if the
   CLI is absent rather than falling back to a list written from memory: §12.1 forbids that
@@ -91,7 +96,8 @@ Recently landed, pending the last of its per-defect checks:
 
 ## Queued, in order
 
-1. **Phase 5 CLI** (§9) — `--check` (with `--json`), `--preview`, `--items`, `--colors`.
+1. **Phase 5 CLI** (§9) — `--check` (with `--json`), `--preview`, `--items`, `--colors`,
+   `--version`.
 2. **Phase 6 authoring surface** (§12) — backup ledger **first**, then `migrate`, `revert`,
    `edit`.
 3. **Config diagnostics** — see the open defects below. Defect 11's fix is §5's resolution set,
@@ -208,9 +214,13 @@ Still needed **before making it public**:
   Claude Code docs rather than guessed. `/claude-tui-line:setup` checks for .NET 10, publishes
   into `${CLAUDE_PLUGIN_DATA}/bin`, **backs up `settings.json` and any script it points at before
   writing anything and stops if the backup fails**, edits `settings.json` in place preserving
-  other keys, then renders a preview. **Nothing here has actually been installed end-to-end** —
-  the manifests parse by inspection only. `/plugin marketplace add` against this repo cannot be
-  tried until it is public, so this stays unverified until then.
+  other keys, then renders a preview. **Structurally verified, not installed end-to-end.** Both
+  manifests parse as JSON; `marketplace.json` carries the required `name`, `owner.name`, and
+  `plugins[]` with `source: "./"`; `commands/` sits at the plugin root with all four command
+  files, and `.claude-plugin/` holds only the two manifests. Every relative path the README
+  points at exists, `tools/colors.sh` and `docs/backup-ledger.md` included. What remains
+  unverified is the part only a real install exercises — `/plugin marketplace add` against this
+  repo cannot be tried until it is public.
 - ~~Genericize the hardcoded home paths~~ — **done.** The fixture cwd is now
   `/Users/example/git/repos/claude-tui-line` across `bench/fixture.json:2`,
   `tests/.../fixtures/full.json:2`, and three test files; `CAPTURE.md:9` likewise. The
