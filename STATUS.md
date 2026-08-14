@@ -4012,6 +4012,36 @@ Merged cleanly (git auto-merged `Program.cs`, no conflicts), independently verif
 task-gopher post-merge on `main`. Full suite: 1256/1256 passed. Landed as merge commit `3d1f8c3`
 (branch tip `ff93889`), pushed.
 
+### #54: `--preview` split-pane config — test-fixture bug, not a rendering defect
+
+Problem (as logged from #49): `--preview` appeared to ignore the config's `pane`
+(split/children/items) section entirely — split config, a minimal single-item config, and plain
+`"{}"` all seemed to render the identical single-bordered panel.
+
+Root cause: not a `--preview`/`ResolveRootPane` defect at all. `UserConfig` has no top-level
+`Pane` property — the documented schema is always `{"surface": {"pane": {...}}}` (confirmed
+against SPEC-V2-FRAMEWORK.md §2.2 and other spec examples). `PreviewJsonRowsTests.cs`'s
+split-pane fixture used a bare top-level `{"pane": {...}}` instead of nesting it under
+`"surface"` — `System.Text.Json` silently ignores unrecognized properties, so `config.Surface`
+stayed null and `ResolveRootPane` always fell back to its default single-leaf-pane branch. The
+CLI itself was never broken: a correctly-nested config renders a genuine multi-pane split (verified
+directly — a real 2-column side-by-side render with matching corner glyphs on one row).
+
+Fix: corrected the fixture's nesting in
+`Preview_SplitPaneConfig_EveryRowCarriesItsOwnWidthMatchingItsText` so it actually exercises the
+split pipeline, and added `Preview_SplitPaneConfig_WidthAndContentWidthAgreeSinceBothComeFromTheSameLayoutValue`
+against the corrected fixture — real regression coverage for #49 that didn't exist before, since
+the original fixture's assertions were content-agnostic. A repo-wide scan for the same
+bare-top-level-`"pane"` mistake found no other occurrences.
+
+Judgment call (implementor-flagged, not acted on): no JSON schema strictness was added to reject
+unrecognized top-level keys (which would have caught this fixture bug at parse time) — a real
+hardening idea, but out of scope for this fix; left as a suggestion rather than implemented.
+
+Merged cleanly (git auto-merged `PreviewJsonRowsTests.cs`, no conflicts), independently verified
+via task-gopher pre-merge on the worktree and post-merge on `main`. Full suite: 1257/1257 passed.
+Landed as merge commit `c115b03` (branch tip `01611d4`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
