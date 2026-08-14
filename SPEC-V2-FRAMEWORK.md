@@ -3266,6 +3266,17 @@ the layout used**, never a second measurement. A width the renderer did not use 
 can disagree with the layout it claims to describe, and the disagreement would appear exactly where
 the tool is being trusted most.
 
+*That line's* width, and the emphasis is load-bearing now that a row is a rendered line. Once
+`rows[]` holds bordered lines there is a second number available for a content row — the width the
+content itself measured, before the border and padding were wrapped around it — and it is genuinely
+useful, because rows in a split pipeline are ragged and raggedness is a thing this tool exists to
+reveal. It is still not `width`. `text` and `width` sit in the same object, and a consumer reads
+them as describing each other; a `width` of 18 beside a 39-character `text` is a field that lies,
+which is worse than a field that is missing. **Ruled: `width` always describes `text`, on every
+row, border lines included. The pre-border content width is reported as `contentWidth`, present on
+content rows and absent on border lines, which have no such number.** One field per question is the
+whole of it — the alternative is not two answers but one wrong one.
+
 **Preview reads the `paneWidth` stamp and must never write it,** and the implementation's
 `stampWidths: false` is right for a larger reason than caution. The stamp is not in-process state:
 `ItemCache.StampPaneWidth` writes it to the cache **on disk**, which is the same cache the live
@@ -4385,6 +4396,29 @@ Three rulings on the shape, each closing a way this could have become the thing 
   on the occasions it is right.
 - **Notes never affect the exit code**, restating §9.8 above so that the JSON form cannot quietly
   acquire a different rule from the human one.
+
+**The pinned texts.** §9.3.4 rules that a note is an interface the moment a prompt tells anyone to
+read it, and that every note the collector can emit therefore has its text pinned here rather than
+living only at the `Add` call site. `migrate.md` teaches a model to tell a width drop from a
+`maxLines` cap by reading these strings; an unpinned one gets quoted into the next prompt and then
+drifts with nothing failing. Placeholders are written `{like this}` and are substituted at the call
+site:
+
+```
+pane {n} dropped: no width remained at {columns} columns
+segment truncated to fit {columns} columns
+item '{id}' emitted {n} lines; {kept} kept (maxLines)
+```
+
+The first two are the live producers §9.8.2 adds; the third is §4.0.1's and does not fire until
+`maxLines` exists. Adding a producer means adding a line here in the same change — this list is
+the definition, and the call site is a use of it.
+
+Two things about the wording are deliberate rather than incidental. The pane note says *no width
+remained* because for that pane none did; the segment note must **not** borrow the phrase, because
+width plainly remained — there were `{columns}` of it — and it was merely insufficient. And each
+text names the width it happened at, since a note that cannot be tied to a width is unusable in a
+tool whose entire subject is what changes with width.
 
 #### 9.8.2 A note channel with no producer, and the collector that fixes it
 
