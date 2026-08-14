@@ -3746,6 +3746,34 @@ linked to #20 (surrogate-pair slicing) as the likely shared root cause rather th
 Merged (non-fast-forward, main had moved) after a clean build and a targeted test run (3/3 passed).
 Landed as `78467b0`, pushed.
 
+### #7: `height: "content"` pane shrink-wrap (§2.8.3)
+
+A pane may declare `height: "content"` (new `PaneHeight` enum, default stays `"fill"`) so its border box
+closes immediately under its last content row instead of padding to the band height; `valign` gains a
+second meaning under `content` — positioning the box within the band, rather than positioning content
+within the box as it does under `fill`. New `PaneConfig.Height`/`"height"` JSON key wired through
+`ResolvePane`, plus a `ConfigCheck.cs` diagnostic for an unrecognized token, mirroring the existing
+`distribute` pattern.
+
+The fix reused rather than duplicated an existing mechanism: `Compositor.PaneContribution.Valign`/
+`PadRows` already did the right thing, but was unreachable for vertical-split children because
+`PaneTreeRenderer.cs`'s split branch force-padded every child to `childHeight` via `PadHeight` before
+that logic ever ran. One line now skips that pad step when the child's `Height` is `Content`, letting
+the pre-existing padding-outside-the-border logic take over — no new compositing path.
+
+Confirmed out of scope and untouched: §2.10 border-collapse/per-edge glyphs (doesn't exist in `src/`
+yet — grepped, doc-comments only; §2.8.3 is spec-coupled to #8 there but #8 hasn't started) and §2.8.1/
+§2.8.2 (degrade ladder, border-suppression-under-3-rows — task #29, also unstarted). Neither total
+surface row count nor the degrade ladder is touched by this change, per the spec's explicit non-goals.
+
+5 new tests (`PaneHeightContentTests.cs`) computed against the code rather than hardcoded, covering:
+total row count unchanged, right pane's border spans its natural height not the band, band remainder is
+blank background under default `valign: top`, `fill` sibling still spans the full band, `valign: bottom`
+moves the box to the band's bottom. Plus 2 `ConfigCheckTests.cs` cases for the new `height` token.
+
+Fast-forward merge (main hadn't moved), clean build, full suite escalated (justified — touches the shared
+split-rendering path): 1184/1184 passed. Landed as `2f69047`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
