@@ -2596,6 +2596,72 @@ copies inside the renderer, which is worse, because there is no checker/renderer
 suggest looking. It was found by asking what `--colors` is allowed to print — a question about a
 CLI flag that had nothing to do with borders.
 
+### 6.6.1 Where the broken path actually runs, and what the fix must not break
+
+§6.6 says "both are live in production; which one runs is decided by the shape of the user's
+config." That is true and too generous. Reading the dispatch settles it, and the answer is
+narrower in reach and worse in stakes than the sentence implies.
+
+`Program.cs:94` gates the tree pipeline on
+`surfaceWidth is int && (pane.Items.Count > 0 || (pane.Split != PaneSplit.None && pane.Children.Count > 0))`.
+Every pane with content — items, or a split with children — goes to `PaneTreeRenderer`, the path
+that keeps decorations. So the `Panel` branch at `Program.cs:142` is reachable by exactly one kind
+of pane: **one with a border, no items, and no children.** Not "single-pane configs." An *empty*
+bordered pane.
+
+Two consequences follow, and they point opposite ways.
+
+**The stakes go up, not down.** On the only path where the narrow resolver runs, the border is the
+entire visible output — there is no content inside it to carry the styling instead. A defect that
+drops decorations everywhere except where the decoration is the only thing on screen is not an
+edge case that mostly misses. It is a defect that only fires where it is total.
+`SafeLoadAll`'s fallback pane (`Program.cs:496`) is built with `Array.Empty<PaneItem>()`,
+`PaneSplit.None` and no children, so it routes here by construction and draws through the narrow
+resolver whenever the resolved top-level border style is non-null — which means the **config-error
+rendering** is one of the two things this affects.
+
+**And it collides with Defect 12.** Task #4 — "empty pane still draws its border" — is the ruling
+that an empty pane should not draw one at all. Its subject is the `Panel` branch's only live case.
+Whichever of the two lands second inherits a changed world: fix Defect 12 first and the `Panel`
+branch may have no reachable case left, making §6.6's adapter dead code written to a
+specification; fix §6.6 first and Defect 12 deletes the case it was written for. **Rule them
+together, and state in each fix which one it assumes has already landed.** Neither may be
+implemented on the assumption that the other has not moved. If Defect 12's fix does strand the
+branch, the honest outcome is to delete it rather than keep a second border drawer alive for a
+config that can no longer reach it — §6.5's "one resolution point beats two" reached by removal,
+which is the better ending of the two.
+
+**`--check` is an aggravator here, not a co-defect.** `ConfigCheck.cs:194` calls `ResolveLiteral`
+too, and the instinct on finding a third caller of the narrow resolver is to file it as more of
+the same. It is not. Its comment already reasons correctly about decorations — a spec resolving to
+`Color.Default`, "e.g. `default`/`dim`/`bold` — decoration, not a palette index", has no palette
+dependency — and `--check` therefore **accepts `border.color: "dim"` and is right to.** Acceptance
+there is `Style.TryParse` and nothing more, which is the same question the markup path asks.
+
+That makes it worse rather than better. The user is not merely unlucky; they are *told* the spec
+is valid by the tool whose job is to say so, and then one renderer honours it and the other does
+not. A silent wrong render is §7.1's third outcome. A silent wrong render that a checker
+affirmatively blessed first is that outcome with its own contradiction built in.
+
+**So `ResolveLiteral` survives the fix, and its scope must be written down.** §6.6 says
+`ResolveBorderColor` becomes an adapter returning a `Style`; it does not say what becomes of
+`ResolveLiteral`, and the reflex — delete the lossy thing — is wrong. §6.2.1's
+minimum-colour-system check genuinely needs a `Color` to rank a palette, and that is a question
+about the colour component alone, where discarding decorations is correct rather than lossy.
+
+`ResolveLiteral` is a **palette query, not a resolver.** Its permitted callers are the ones asking
+what colour system a spec requires — §6.2.1's check and §9.6.3's `--colors`. **No render path may
+call it.** Say so at its definition, because the failure mode is not that someone disagrees; it is
+that a `Color`-returning function is the convenient thing to reach for when a Spectre API wants a
+colour, and the call site type-checks. That is how this defect got written the first time.
+
+The general shape, worth naming because this repo keeps meeting it: **a function that parses a
+rich value and returns one field of it is a lossy narrowing wearing a parser's name.** It compiles
+everywhere, it succeeds on every input the full parser accepts, and the discarded capability has
+no error to attach itself to. `ResolveLiteral` parses a whole `Style` and returns `.Foreground` on
+the next line — the loss is one property access wide, and nothing in the type system, the tests,
+or `--check` was ever going to point at it.
+
 ## 7. Failure behaviour
 
 This section is cited **27 times** in this document and had no heading. Every "§7 makes the

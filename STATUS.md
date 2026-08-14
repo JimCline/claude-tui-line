@@ -515,6 +515,42 @@ colour is the one input where the two resolvers agree. It has to be driven with 
 it has to assert the decoration survives — `Color.Default` is what the broken path returns
 *successfully*, so "it resolved" passes against the bug (§10.1, arriving through a second door).
 
+**Ruled, and the dispatch narrows it to one pane shape (§6.6.1).** "Which runs depends on the
+shape of the user's config" is true and too generous. `Program.cs:94` sends every pane with items
+or children to the tree path, so the `Panel` branch is reachable only by a pane with a border, no
+items and no children — an *empty bordered pane*, including `SafeLoadAll`'s config-error fallback
+pane (`Program.cs:496`), which is built with no items and no children by construction. Narrower in
+reach, worse in stakes: on the only path where the narrow resolver runs, the border is the entire
+visible output, with no content inside it to carry styling instead.
+
+That collides with **Defect 12** (task #4, "empty pane still draws its border"), whose subject is
+this branch's only live case. The two must be ruled together and each fix must name which one it
+assumes has landed — otherwise §6.6's adapter is written for a case Defect 12 deleted, or Defect 12
+deletes the case the adapter was written for. If Defect 12 strands the branch, delete it rather
+than keep a second border drawer alive.
+
+**`--check` is an aggravator, not a third instance of the defect.** `ConfigCheck.cs:194` also calls
+`ResolveLiteral`, and the reflex is to file it as more of the same. Its comment already reasons
+correctly — a spec resolving to `Color.Default` has no palette dependency — so `--check` accepts
+`border.color: "dim"` and is *right to*. Acceptance there is `Style.TryParse`, the same question
+the markup path asks. Which makes it worse: the user is told the spec is valid by the tool whose
+job is to say so, and then one renderer honours it and the other does not.
+
+So `ResolveLiteral` survives the fix rather than being deleted — §6.2.1's palette ranking genuinely
+needs a `Color`, and discarding decorations is correct for that question. It is a **palette query,
+not a resolver**, callable from §6.2.1's check and `--colors` and from no render path, and that has
+to be written at its definition: a `Color`-returning function is the convenient reach when a
+Spectre API wants a colour, and the call site type-checks. That is how this got written the first
+time.
+
+**The reusable shape:** a function that parses a rich value and returns one field of it is a lossy
+narrowing wearing a parser's name. `ResolveLiteral` parses a whole `Style` and returns
+`.Foreground` on the next line — one property access wide — and nothing in the type system, the
+tests, or `--check` was ever going to point at it. My own working hypothesis going in was that
+Spectre's API *forced* the `Color`; it does not. `Panel.BorderStyle` takes a `Style`, and
+`Program.cs:149` already builds one — from the narrowed colour. The constraint was self-inflicted,
+which is the answer worth having, because a forced narrowing would have needed a different fix.
+
 The original entry below is kept as written, because how the gap was recorded is the reusable part.
 
 **Recorded as unverified where it was unverified.** That `Style.TryParse("dim")` yields
