@@ -12,7 +12,11 @@ public static class ConfigUnreadableMessage
     private const string Prefix = "claude-tui-line: ";
     private const string BareName = "claude-tui-line";
 
-    public static string Format(string path, string reason, int? width)
+    // reasonProtectedLength marks a prefix of reason (e.g. a composed "line <n>, <path>: ") that
+    // rung 4 must never truncate into — only reason[reasonProtectedLength..] is eaten. §9.2.2:
+    // truncation degrades toward what the user cannot otherwise obtain, and a position the parser
+    // reported is not otherwise obtainable, while the message text after it is (open the file).
+    public static string Format(string path, string reason, int? width, int reasonProtectedLength = 0)
     {
         var full = Prefix + path + ": " + reason;
         if (Fits(full.Length, width))
@@ -34,9 +38,9 @@ public static class ConfigUnreadableMessage
         }
 
         var reasonBudget = width.Value - Prefix.Length;
-        if (reasonBudget >= 1)
+        if (reasonBudget >= Math.Max(1, reasonProtectedLength))
         {
-            return Prefix + TruncateWithEllipsis(reason, reasonBudget);
+            return Prefix + TruncateProtected(reason, reasonProtectedLength, reasonBudget);
         }
 
         var bareBudget = Math.Clamp(width.Value, 0, BareName.Length);
@@ -59,6 +63,20 @@ public static class ConfigUnreadableMessage
 
         var headLength = budget - ConfigLoader.DefaultEllipsis.Length - fileName.Length;
         return path[..headLength] + ConfigLoader.DefaultEllipsis + fileName;
+    }
+
+    // Splits reason at reasonProtectedLength and only ever truncates the part after it, leaving
+    // the protected prefix (when there is one) intact regardless of how tight budget is.
+    private static string TruncateProtected(string reason, int reasonProtectedLength, int budget)
+    {
+        if (reasonProtectedLength == 0)
+        {
+            return TruncateWithEllipsis(reason, budget);
+        }
+
+        var protectedPart = reason[..reasonProtectedLength];
+        var truncatablePart = reason[reasonProtectedLength..];
+        return protectedPart + TruncateWithEllipsis(truncatablePart, budget - reasonProtectedLength);
     }
 
     // Mirrors PaneRenderer.TruncateSegment's policy: too narrow for the marker at all clips the

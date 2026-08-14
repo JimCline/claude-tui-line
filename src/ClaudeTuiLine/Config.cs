@@ -594,6 +594,16 @@ public static class ConfigLoader
         }
         catch (Exception ex)
         {
+            // SPEC-V2-FRAMEWORK.md §9.2.2: the render path's diagnostic row composes its reason
+            // from JsonException's typed LineNumber/Path rather than parsing Message, since .NET's
+            // wording is not a stable contract. Both are only present when the parser itself
+            // pinpointed a position; a non-JsonException failure (e.g. a permission error from
+            // File.ReadAllText) carries neither.
+            if (ex is JsonException { LineNumber: { } lineNumber, Path: { } jsonPath })
+            {
+                return new ConfigReadResult(ConfigReadStatus.ParseError, null, ex.Message, lineNumber, jsonPath);
+            }
+
             return new ConfigReadResult(ConfigReadStatus.ParseError, null, ex.Message);
         }
     }
@@ -606,7 +616,7 @@ public enum ConfigReadStatus
     ParseError,
 }
 
-public sealed record ConfigReadResult(ConfigReadStatus Status, UserConfig? Config, string? ErrorMessage);
+public sealed record ConfigReadResult(ConfigReadStatus Status, UserConfig? Config, string? ErrorMessage, long? ErrorLineNumber = null, string? ErrorJsonPath = null);
 
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §2.9's five named border styles plus <c>"none"</c> (no border), the same

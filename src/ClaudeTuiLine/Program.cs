@@ -31,7 +31,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // it overlaps the config load, the Engram telemetry read, and segment building below.
         var gitProbeTask = GitBranch.ProbeAsync(input.Cwd);
 
-        var (topLevel, pane, configPath, unreadableReason) = LoadRenderConfig(explicitConfigPath);
+        var (topLevel, pane, configPath, unreadableReason, unreadableReasonProtectedLength) = LoadRenderConfig(explicitConfigPath);
 
         // SPEC-V2-FRAMEWORK.md §9.2.1: an asserted config that can't be read draws the reason,
         // not the config and not the defaults — the render path's only output channel is this
@@ -39,7 +39,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         if (unreadableReason is not null)
         {
             var diagnosticWidth = SurfaceLayout.ComputeWidth(Environment.GetEnvironmentVariable("COLUMNS"), chromeReserve: 0);
-            Console.Out.WriteLine(ConfigUnreadableMessage.Format(configPath!, unreadableReason, diagnosticWidth));
+            Console.Out.WriteLine(ConfigUnreadableMessage.Format(configPath!, unreadableReason, diagnosticWidth, unreadableReasonProtectedLength));
             return 0;
         }
 
@@ -508,27 +508,35 @@ static async Task<int> RunCli(string[] args)
         return WriteUsageError(json, "--check, --version, --items, --colors, and --preview are mutually exclusive");
     }
 
-    // SPEC-V2-FRAMEWORK.md §9.2.1: render is the mode selected when none of the others is — the
-    // only way a bare `--config <path>` (asserted, but no --check/--preview) reaches the render
-    // path, which is where §9.2.1's own worked example lives. RunAsync is the same function the
-    // no-argv shortcut above calls, parameterized by the config path instead of a second
-    // implementation of "load config, render."
+    // §9.4.4: --json, --columns, and --config are modifiers, not modes — each mode's accepted set
+    // is looked up here rather than tested pairwise, so a sixth mode is one more table entry
+    // instead of a new rule for every existing one. Render (modeCount == 0) is the mode selected
+    // when none of the others is, per §9.2.1, and reads --config the same way --check/--preview do.
+    var (modeLabel, acceptedModifiers) = check ? ("--check", new[] { "json", "config" })
+        : version ? ("--version", Array.Empty<string>())
+        : items ? ("--items", new[] { "json" })
+        : colors ? ("--colors", new[] { "json" })
+        : preview ? ("--preview", new[] { "json", "columns", "config" })
+        : ("rendering", new[] { "config" });
+
+    if (json && !acceptedModifiers.Contains("json"))
+    {
+        return WriteUsageError(json, $"--json is not valid with {modeLabel}");
+    }
+
+    if (columns is not null && !acceptedModifiers.Contains("columns"))
+    {
+        return WriteUsageError(json, $"--columns is not valid with {modeLabel}");
+    }
+
+    if (configPath is not null && !acceptedModifiers.Contains("config"))
+    {
+        return WriteUsageError(json, $"--config is not valid with {modeLabel}");
+    }
+
     if (modeCount == 0)
     {
         return await RunAsync(configPath);
-    }
-
-    // §9.4.4: --json and --columns are modifiers, not modes. A modifier the selected mode does
-    // not read is a usage error rather than being silently accepted — accepting `--version
-    // --json` would tell the caller their flag did something it did not.
-    if (version && json)
-    {
-        return WriteUsageError(json, "--version has no --json form");
-    }
-
-    if (columns is not null && !preview)
-    {
-        return WriteUsageError(json, "--columns is only valid with --preview");
     }
 
     if (version)
@@ -729,7 +737,7 @@ static StatusInput ParseInput(string? raw)
 // config found by the §5 search order, that turns out unreadable (missing when asserted, or
 // present but unparseable) is reported via UnreadableReason rather than silently replaced by
 // defaults; only "no --config, nothing at any searched path" (row 1) is a legitimate default.
-static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? UnreadableReason) LoadRenderConfig(string? explicitConfigPath)
+static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? UnreadableReason, int UnreadableReasonProtectedLength) LoadRenderConfig(string? explicitConfigPath)
 {
     var configPath = explicitConfigPath ?? ConfigLoader.ResolveConfigPath();
     UserConfig? config = null;
@@ -741,7 +749,8 @@ static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? Unre
         if (result.Status == ConfigReadStatus.ParseError)
         {
             var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
-            return (fallbackTopLevel, fallbackPane, configPath, result.ErrorMessage ?? "could not be parsed");
+            var (reason, protectedLength) = ComposeUnreadableReason(result);
+            return (fallbackTopLevel, fallbackPane, configPath, reason, protectedLength);
         }
 
         if (result.Status == ConfigReadStatus.NoFile)
@@ -749,7 +758,7 @@ static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? Unre
             if (explicitConfigPath is not null)
             {
                 var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
-                return (fallbackTopLevel, fallbackPane, configPath, "no such file");
+                return (fallbackTopLevel, fallbackPane, configPath, "no such file", 0);
             }
 
             configPath = null; // §9.2.1 row 1: nothing at the searched path, and none asserted.
@@ -764,13 +773,31 @@ static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? Unre
     {
         var topLevel = ConfigLoader.ResolveTopLevel(config);
         var rootPane = ConfigLoader.ResolveRootPane(config, topLevel);
-        return (topLevel, rootPane, configPath, null);
+        return (topLevel, rootPane, configPath, null, 0);
     }
     catch
     {
         var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
-        return (fallbackTopLevel, fallbackPane, configPath, null);
+        return (fallbackTopLevel, fallbackPane, configPath, null, 0);
     }
+}
+
+// SPEC-V2-FRAMEWORK.md §9.2.2: "line <n>, <path within the document>: <message>", read from
+// JsonException's typed LineNumber/Path rather than scraped from Message text .NET is free to
+// reword. LineNumber is 0-indexed in the CLR API; +1 matches the line a text editor shows, since
+// that's the file position this exists to let a reader jump to. The returned protected length is
+// the composed position's own length, so the caller's rung-4 truncation never eats into it — only
+// the raw message appended after it, which is recoverable by opening the file.
+static (string Reason, int ProtectedLength) ComposeUnreadableReason(ConfigReadResult result)
+{
+    var message = result.ErrorMessage ?? "could not be parsed";
+    if (result.ErrorLineNumber is not { } lineNumber || result.ErrorJsonPath is not { } jsonPath)
+    {
+        return (message, 0);
+    }
+
+    var position = $"line {lineNumber + 1}, {jsonPath}: ";
+    return (position + message, position.Length);
 }
 
 static (ResolvedConfig TopLevel, Pane RootPane) BuildFallbackConfig()
