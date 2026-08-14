@@ -3624,6 +3624,22 @@ value?*
 
 `--colors --json` stays unstyled, per §2 — a program consuming the list wants names.
 
+**"Through the user's terminal" means that terminal's real capability, and not the forced-ANSI
+console the renderer uses.** Bare `--colors` writes through the ordinary auto-detecting
+`AnsiConsole`, which degrades to bare names under a pipe or a redirect. The render path deliberately
+builds its own console with `Ansi = AnsiSupport.Yes` because the statusline's one consumer is Claude
+Code, which captures stdout through a pipe and still expects styling — that is a workaround for a
+specific caller, and exporting it to a human-facing flag would generalise a special case into a
+default. A colour-listing command that ignores what the terminal reports is also the one command
+that has no business overriding it.
+
+The degraded case is not a payload loss, because the payload has a correct destination one flag
+away: `--json` is the form for a consumer that is not a terminal, and it is the contract. Forcing
+ANSI would have no escape hatch at all, which is the asymmetry that settles it — a user who wants
+colour through a pipe can ask for it by not piping, and a user who wants the names in a file has
+`--json`. Whatever the library does with `NO_COLOR` and friends is what this command does; a
+convention that spans every tool on the machine is not one to reimplement here.
+
 **The list already exists in code.** This section says the curated list "exists nowhere today" and
 "must live in exactly one place in code". Both were true when written; the first is now stale.
 `ColorResolution.StandardColorNames` is that constant, already serving §6.2.1's minimum
