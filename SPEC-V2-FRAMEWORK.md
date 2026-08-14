@@ -1212,7 +1212,9 @@ the framework does not use, and is no longer evidence about the framework at all
   makes a framework unused. The rule: `command` is an **array** normally; when `shell: true` is
   set, `command` is a **string** run as `sh -c "<string>"`. Both forms accepted, decided by the
   `shell` flag rather than by sniffing the JSON type — a string `command` without `shell: true`
-  is a config error (silently suppressed per §7, reported by `--check`). Everything downstream
+  is a config error (silently suppressed per §7, reported by `--check` as an **`error`**, code
+  `command-shape` — the item is suppressed, so §9.4.1's test puts it in the deleted bucket).
+  Everything downstream
   — stdin, env, cwd, timeout, cache key, stale-on-failure — is identical for both forms.
 - **stdin**: the command receives the *same session JSON* Claude Code sent us, verbatim. This
   is what makes user scripts first-class — they see everything the builtins see.
@@ -1537,8 +1539,12 @@ it "needs its own decision"; this is that decision, and it is the config knob ra
 profile raise.
 
 Under `standard`, a 256-name or hex colour is **down-converted to the nearest of the 16** — it
-is not an error and does not suppress the item. `--check` reports it as a notice so an author
-who wrote `#ff5fd7` and got approximately-magenta knows why.
+is not an error and does not suppress the item. `--check` reports it as a **`warning`** so an
+author who wrote `#ff5fd7` and got approximately-magenta knows why. (An earlier draft called this
+a "notice"; there are exactly two severities and that was a third one by accident. It is a warning
+under §9.4.1's test — the item is delivered, reduced. It is reported at all, rather than dismissed
+as untidy, because §6.1 promises hex and 256-palette colours are *absolute*, and under `standard`
+that promise does not hold.)
 
 A baseline regenerated because it was inconvenient has stopped meaning anything. If widening
 ever *does* become the default, that is a separate decision requiring a visually confirmed
@@ -1808,8 +1814,25 @@ drops the link, a dangling derived `from` suppresses the item, a colour rule fal
 `default`. If "the spec wrote down a fallback" made a thing satisfiable, nothing would ever be an
 error and we would be back at "does the renderer cope" under a new name.
 
-So the question is not whether a fallback exists. It is **what the fallback does to the thing the
-config asked for**:
+**First, two tiers, because the consequence test only governs the second one.**
+
+- **Tier 1 — not in the language.** An unknown value for `size`, `style`, `align`, `valign`,
+  `overflow`, or `case`; an unknown colour name; `overflow: "overflow"` in a position §2.6
+  forbids. These are **always errors**, and consequence never enters into it. The document is not
+  a valid instance of the schema, and how gracefully the renderer absorbs a token that is not in
+  the language is beside the point — the paragraph below on unknown enum values is the argument,
+  and it stands unchanged.
+- **Tier 2 — in the language, referent missing.** A `from`, a `link` `{other-id}`, an `@name`, an
+  `{ "item": ... }` selector. The grammar accepts any string in these positions, so validity is
+  not the question; existence is. **The consequence test decides these, and only these.**
+
+Getting this backwards is easy and would be quietly destructive: applied to tier 1, the
+consequence test demotes every typo to a warning, because an unknown `size` falls back to `fill`
+and an unknown colour falls back to no colour and in both cases the pane renders fine. That is
+precisely the silent acceptance (defects 3–6) this whole section exists to end.
+
+For tier 2, the question is not whether a fallback exists. It is **what the fallback does to the
+thing the config asked for**:
 
 - **Delivered in reduced form → `warning`.** The author asked for something and got it, minus a
   decoration. `{ "item": "git-branch", "link": "{nope}/tree/{}" }` renders `main`, unlinked. A
@@ -1827,6 +1850,7 @@ Applied to the five reference forms, which is where the boundary is easiest to g
 | derived `from` naming another derived item | the item never renders (§3.2.1) | **error**, `from-derived-source` |
 | `link` `{other-id}` naming nothing | text renders, link dropped | **warning** |
 | colour rule `from` naming nothing (inline or `colors` table) | text renders, colour falls back | **warning** |
+| `@name` naming no token (§6.3) | text renders, colour lost | **warning** |
 | `command` argv `{id}` placeholder (§4.2) | undefined — the child gets a command line nobody wrote | **error** |
 
 The two `from` forms landing in *different* buckets is the point, and the tempting mistake is to
