@@ -25,7 +25,16 @@ registry, it goes stale on the next item added, and a remembered id that no long
 to nothing and is *silently suppressed*. You would produce a config that looks right and renders
 short, with no error anywhere.
 
-Keep the `--items` output. It is the only authority on what exists and what keys each item takes.
+Keep the `--items` output. It is the only authority on what exists. Read **both** of its sections:
+`items` tells you what each builtin reports, what it looks like rendered, and whether it is in the
+default set or opt-in; `kinds` gives the keys for each way an item can be written, including the
+one for authoring an item that has no row yet. Tier 2 below depends on that second section — you
+cannot write a `command` item from the `items` list alone.
+
+`default: false` on an item deserves attention. Those render **only** where you place them, so
+mapping an element onto one and then leaving it out of a pane produces a config that is valid,
+passes `--check`, and renders short.
+
 Also run `--colors --json` and keep that; it is the same rule for the palette.
 
 ## 1. Find what they have now

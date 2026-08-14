@@ -396,6 +396,45 @@ The pass stopped being bookkeeping and started finding things.
   landed, the other when §2.11 was ruled. Neither was reachable by grep — nothing dangled, and both
   read as sensible prose right up until they were checked against the thing they asserted.
 
+### Fourth batch — `--items`, and the §1 failure inside the paragraph warning about it
+
+Ran the registry technique on the *item* ids next, to see whether the list was duplicated the way
+the diagnostic codes were. It is not: `ItemRegistry.cs` is a genuine single enumeration point, the
+only `.cs` file that names all sixteen, and its `DefaultIds` derives the opt-in set rather than
+restating it. That check came back clean.
+
+What it did surface was §9's `--items` bullet, which specified five fields against a record that
+carries two. Checking each against `ItemRegistry.ItemDefinition` — now §9.6.2:
+
+- **"which config keys it accepts" — wrong shape.** Keys do not vary by item id; every builtin
+  takes `format`/`color`/`overflow`/`link` and nothing else. What varies is the *kind* — §4.1's
+  `command`, §4.3's `from`/`extract`/`case`, §3.3's `parts`. A per-row key column would store one
+  per-kind fact sixteen times. That is the §1 duplication failure, specified by the sentence
+  immediately above the paragraph that warns about it — the shortest distance an inconsistency has
+  travelled in this document yet. `--items --json` now emits two sections, `items` and `kinds`.
+  §12.6's `list_items` row had it right all along ("**and the schema for defining a new one**"),
+  which is what confirmed the ruling: a per-row column cannot describe a row that does not exist.
+- **"its default format" — unimplementable as written.** There is no format string. Rendering is a
+  builder function per row, so there is no `"⎇ {}"` anywhere to print, and satisfying the field
+  would mean adding a template layer beneath every builder so a CLI flag has something to name.
+  Replaced with `example`, rendered through the same `BuildDefaultSegment` the renderer calls,
+  against one canned synthetic context. It answers the authoring question better anyway: *does
+  this item already carry its own decoration, or do I need a `format`?*
+- **Two fields were missing.** `reports` (the description) and `default` (in the default pipeline
+  vs opt-in). `reports` goes on `ItemDefinition` as a **required** positional field, so adding a
+  row without describing it fails to compile. `default` matters to §12.2: mapping an element onto
+  `remote-url` or `model-short` and not placing it yields a config that passes `--check` and
+  renders short.
+
+`commands/migrate.md` step 0 claimed `--items` was "the only authority on what exists and what keys
+each item takes" — the authority claim survives, the per-item half does not, and it now tells the
+migrator to read both sections and to treat `default: false` as a placement obligation.
+
+**The technique generalised.** Gathering identifiers found missing codes; comparing a spec's field
+list against the record that has to supply it found a field that cannot exist and two that were
+never asked for. Same move both times: put the scattered thing next to the single thing that owns
+it, and the holes stop being invisible.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

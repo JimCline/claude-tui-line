@@ -1804,8 +1804,9 @@ with the statusline path (no args ⇒ render, exactly as now):
 - `--preview [--columns N]` — render to stdout at a fixed width, for iterating on a config
   without waiting for the real statusline. Prints each row's measured width alongside, so
   overflow and ragged compositing are visible rather than inferred.
-- `--items` — emit the registry as JSON: every item's id, what it reports, its default format,
-  whether its colour is decorative or semantic (§6), and which config keys it accepts.
+- `--items` — emit the registry as JSON, in **two sections**: `items`, one row per builtin id, and
+  `kinds`, the key vocabulary of each way an item can be written. See §9.6.2 for the shape and for
+  why the keys are not per-row.
 - `--colors` — print every accepted colour name **rendered in its own colour**, so the choice is
   made by looking rather than by guessing what `olive` is. `--colors --json` emits the same list
   unstyled for a program. The palette is theme-mapped (§6.2), so printing it through the user's
@@ -2112,6 +2113,64 @@ there is no config position to point at:
 |---|---|---|
 | `stale-revision` | the config changed under a §12.6 tool between read and write | 12.6 |
 | `cli-not-found` | the binary could not be located; the error names every path tried | 12.6 |
+
+### 9.6.2 `--items`: two sections, and why the keys are not per-row
+
+This section replaces the field list this bullet used to carry. That list named five things —
+"every item's id, what it reports, its default format, whether its colour is decorative or
+semantic (§6), and which config keys it accepts" — and checking it against `ItemRegistry.cs`
+found that two of the five were wrong to ask for. Both are worth recording, because one of them
+is the §1 failure appearing *inside* the paragraph that warns about it.
+
+**The shape.**
+
+```json
+{
+  "version": "…",
+  "items": [
+    { "id": "git-branch", "reports": "the current branch, or nothing outside a repo",
+      "color": "decorative", "default": true, "example": "⎇ main" }
+  ],
+  "kinds": {
+    "builtin":  { "required": ["item"],    "optional": ["format", "color", "overflow", "link"] },
+    "derived":  { "required": ["id", "from"], "optional": ["extract", "case", "format", "color", "overflow", "link"] },
+    "command":  { "required": ["id", "command"], "optional": ["shell", "ttlSeconds", "timeoutMs", "format", "color", "overflow", "link"] },
+    "compound": { "required": ["id", "parts"], "optional": ["color", "overflow", "link"] }
+  }
+}
+```
+
+**Why `kinds` is a section and not a column.** The accepted keys do not vary by item id. Every
+builtin takes `format`, `color`, `overflow`, and `link`, and nothing else; what varies is *how the
+item is written* — §4.1's `command`, §4.3's `from`/`extract`/`case`, §3.3's `parts`. Putting a key
+list on each row would store one per-kind fact sixteen times and grow a seventeenth copy with the
+next item added. That is precisely the drift the very next paragraph of §9 warns about, and it
+would have been committed by the sentence above it. The corroboration that two sections is right
+was already in the document: §12.6's `list_items` row says the tool must return "what each emits,
+what options it takes — **and the schema for defining a new one** (§4.1)". A per-row key column
+cannot express "the schema for defining a new one", because a new one has no row yet.
+
+**Why "default format" is gone.** There is no default format string to report. A row's rendering
+is a builder function (`ItemDefinition.BuildDefaultSegment`), not a template — `git-branch` emits
+its own glyph in C#, and no `"⎇ {}"` exists anywhere to print. Satisfying the field as written
+would mean introducing a format-string layer under every builder so that a CLI flag has something
+to name, which is the CLI dictating the render architecture to serve its own output. `example`
+replaces it and answers the question an authoring tool actually has — *do I need to add a `format`
+of my own, or does this item already carry its own decoration?* — which a template would answer
+only indirectly. `--items` has no stdin payload, so the example is rendered against one canned
+synthetic `ItemContext` fixture, and that fixture is the reason the field is honest: it is the
+same `BuildDefaultSegment` the renderer calls, not a string re-typed into a table.
+
+**Two fields the old list omitted.** `reports` and `default` were both missing and are both
+load-bearing. `reports` is the description, and it belongs on `ItemDefinition` as a **required**
+positional field rather than a lookup table beside it — required is the whole point, because it
+makes "add a row without describing it" fail to compile instead of silently shipping an item that
+`--items` announces as a bare id. `default` distinguishes the fourteen items in the default
+pipeline from `model-short` and `remote-url`, which are opt-in (`ItemRegistry.DefaultIds` already
+knows). §12.2's migration depends on that bit: an item that will not render unless explicitly
+placed is a different mapping decision from one that appears on its own, and a tool that cannot
+tell them apart will map a branch readout onto `remote-url` and produce a config that renders
+short with nothing wrong in it.
 
 ### 9.7 `--version`, and the two places a version number wants to live
 
