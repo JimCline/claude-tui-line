@@ -1542,20 +1542,18 @@ asking for a bounded pane would receive the most destructive available degrade, 
 set it on the surface received the gentlest, from the same key meaning the same thing one level up.
 §2.6's paragraph describes **what rung 4 does when it fires**, not when it fires.
 
-**Ties break by reverse declaration order, at every rung.** **"Declaration order" here means
-surface-wide document order — a pre-order depth-first traversal of the pane tree, taken in
-reverse.** It is a total order over every pane on the surface, not the sibling-scoped ordering
-§2.3 step 4 uses inside a single split. The ladder selects one pane at a time from the whole
-surface, so it routinely compares two panes with no common parent, for which a sibling-scoped
-order is not merely stricter but undefined. Reverse remains reverse for the reason rung 2 gives:
-the first-declared pane is the author's primary content and loses fidelity last.
-
-Rung 3 says "the tallest pane" and two
+**Ties break by reverse declaration order, at every rung.** Rung 3 says "the tallest pane" and two
 panes are routinely equally tall — this is a vertical split, where §2.4 pads siblings to a common
 height, so equal heights are the normal state rather than a coincidence. Leaving that unbroken
 makes the outcome depend on enumeration order in a ladder whose stated justification is that it is
 deterministic. Reverse declaration order is already rung 2's rule and already carries the argument:
 the first-declared pane is the author's primary content and loses fidelity last.
+
+**"Declaration order" here means surface-wide document order — a pre-order depth-first traversal
+of the pane tree, taken in reverse.** It is a total order over every pane on the surface, not the
+sibling-scoped ordering §2.3 step 4 uses inside a single split. The ladder selects one pane at a
+time from the whole surface, so it routinely compares two panes with no common parent, for which a
+sibling-scoped order is not merely stricter but undefined.
 
 #### 2.8.2 Clipping must close the border
 
