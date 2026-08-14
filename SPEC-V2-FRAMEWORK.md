@@ -1042,9 +1042,16 @@ Rules, each closing a silent failure:
   more edges; it is deferred deliberately rather than overlooked.
 - **Semantic colour precedence is unchanged.** A part naming a semantic item keeps its
   value-derived threshold colour unless that part sets `color` — §6's rule, applied one level in.
-- **`--check` rejects** a part with zero or more than one source, a part naming an unknown id, a
-  part containing `parts` or `link`, and an unknown colour. A part that names nothing is not an
-  empty part; it is a config the author got wrong.
+- **`--check` rejects** a part with zero or more than one source (`part-source-count`), a part
+  containing `parts` or `link` (`part-forbidden-key`), a part naming an unknown id, and an unknown
+  colour. A part that names nothing is not an empty part; it is a config the author got wrong.
+
+  The last two reuse the existing `unknown-item-id` and unknown-colour codes rather than taking
+  part-specific ones — it is the same condition in a new position, and the JSON Pointer already
+  says where. The codes are named here rather than left to the implementation because §9.6 fixes
+  a code's meaning permanently once it ships, so an ad-hoc name chosen mid-build is a name the
+  project keeps. All four are `error` severity: zero-or-many sources and a forbidden key have no
+  defined meaning, which is §9.4's line.
 
 **This is the sixth construct that names an item by id**, after pane `items`, colour-token
 `from`, derived `from`, link `{other-id}`, and §4.2's argv placeholders. §5's resolution set must
