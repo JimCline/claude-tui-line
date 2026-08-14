@@ -1310,8 +1310,29 @@ placed in a pane and therefore lands in the dictionary for a different reason. A
 placeholders to that set without fixing the enumeration would reproduce the same bug in a second
 place, with the same silence.
 
-`--check` rejects a placeholder naming an unknown id, a derived item, or a `command` item, for
-the §3.2 reason: a dangling reference and a working one must not render identically.
+**`--check` errors on an argv placeholder naming an unknown id (`unknown-item-id`), a derived
+item (`placeholder-derived-source`), or — from a `command` item — another `command` item
+(`placeholder-command-source`).** All three are errors under §9.4's discriminator, and that
+deserves saying plainly, because §3.2.1 rules that a dangling `{other-id}` in a **link** drops
+the link and renders the text anyway. Same syntax, different severity, and the difference is not
+inconsistency:
+
+- A link is decoration over text that stands on its own, and §3.2.1 defines what an unmet
+  dependency does. Satisfiable — a **warning**.
+- An argv placeholder is *data handed to another process*, and nothing defines what an unresolved
+  one expands to. The literal `{gitbranch}`? An empty string? A dropped argv entry? Each is a
+  different command line, the script sees a different `$1`, and the spec picks none of them.
+  Unsatisfiable — an **error**.
+
+§9.5 lists both as id diagnostics because both come out of `ReferenceExtractors`; they share a
+walk, not a severity.
+
+**Two referenced ids that mangle to the same environment variable are also an error
+(`placeholder-env-collision`).** The `CLAUDE_TUI_LINE_VAL_<ID>` rule upper-cases and replaces
+non-alphanumerics, so `agent-short` and `agent.short` both become `AGENT_SHORT`. Whichever the
+framework exports second wins and the script reads a value belonging to the other item, with
+nothing anywhere reporting it — the same silence this section's substitution ban exists to avoid,
+arriving by the route the ban opened.
 
 ## 5. Execution model — the hard part
 
@@ -1710,8 +1731,13 @@ ignored, including on the day it is right.
 ### 9.5 `--check` reuses `ReferenceExtractors`
 
 Every diagnostic about an id — an unknown item, a `from` naming nothing, a `link` placeholder
-that resolves to nothing — is derived from the **same** `ReferenceExtractors` table §5 uses to
-build the resolution set. `--check` does not get its own config walk.
+that resolves to nothing, an argv placeholder that does — is derived from the **same**
+`ReferenceExtractors` table §5 uses to build the resolution set. `--check` does not get its own
+config walk.
+
+Sharing the walk is not sharing the verdict. Severity is assigned per construct by §9.4's rule,
+so the same dangling id is a warning in a `link` and an error in a `command` item's argv — §4.2
+works that difference through. The extractor answers *which ids this config names*; nothing more.
 
 This is not tidiness. Defect 11 was a resolution set that had fallen behind the config surface,
 and it was invisible because nothing cross-checked it. A second walk in the checker recreates
@@ -1812,8 +1838,10 @@ terminal width can resolve.
 - `minSize` greater than `maxSize` on the same pane. Code: `min-exceeds-max`. This is an
   **error**; §9.4 listed it as a warning in an earlier draft and has been corrected there rather
   than here.
-- Children's `minSize` sum, plus gutters and border reserve, exceeding the parent's `maxSize`.
-  Same code as the first: it is the same contradiction with the floor rather than the exact size.
+- Children's `minSize` sum, plus **the same boundary cost**, exceeding the parent's `maxSize`.
+  Same code as the first: it is the same contradiction with the floor rather than the exact size —
+  and therefore the same arithmetic, taken from §2.10. Two bullets computing one boundary two ways
+  is how the double-count gets back in through the door the bullet above just closed.
 
 Where the parent is `fill` or `content`, there is no bound to contradict and `--check` says
 nothing. That is not a gap — there is genuinely no width-independent claim to make, and inventing
