@@ -3675,6 +3675,23 @@ parallel-dispatch pattern. Full suite run (implementor's call, not just smoke �
 touched three call sites): 1171/1171, 0 failures (1166 pre-existing + 5 new). Fast-forward merge to
 main, no conflicts. Landed as `18d6322`, pushed.
 
+### #14: `shell:true` multi-element argv — was already fixed, coverage gap closed
+
+Second worktree-parallel task landed, different finding than expected: the render suppression
+(`CommandProvider.cs:57-64`) and the `command-shell-argv` check diagnostic (`ConfigCheck.cs:271-277`)
+were already correctly implemented, from the original Phase 5 CLI commit — STATUS.md's "Ruled, not yet
+built" framing had gone stale. Confirmed against §4.1 directly rather than trusting the dispatch's
+premise.
+
+What was actually missing: no test called `CommandProvider.ResolveAsync` at all — the three existing
+`ConfigCheckTests.cs` cases covered only the check path, not render suppression itself. New
+`CommandProviderTests.cs` (3 tests) closes that, including two that spawn a real `sh`/`echo` process —
+the first tests in this suite to do so, mirroring `EndToEndItemValuesTests.cs`'s existing use of
+`Path.GetTempPath()` as `cacheDir`.
+
+Merged (non-fast-forward, main had moved) after a clean build. No conflicts — only the new test file.
+Landed as `041770b`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
