@@ -247,8 +247,9 @@ grey    red     lime    yellow  blue    fuchsia aqua    white
 These are theme-mapped — your terminal decides what `blue` actually looks like. `tools/colors.sh`
 prints them all rendered in your own terminal.
 
-Anywhere a colour is named you can also use a **256-palette name** (`deepskyblue1`, `orange3`) or
-a **hex literal** (`"#ff8800"`). How faithfully they render depends on the colour profile, which
+Anywhere a colour is named you can also use a **256-palette name** (`deepskyblue1`, `orange3`), a
+**bare palette index** (`"207"`, `"141"` — the number as a string, with no `color` prefix), or a
+**hex literal** (`"#ff8800"`). How faithfully they render depends on the colour profile, which
 defaults to the conservative one:
 
 ```json

@@ -1905,9 +1905,19 @@ literal form has a **minimum colour system** — the narrowest one that renders 
 | literal form | example | minimum system |
 |---|---|---|
 | one of the sixteen named tokens | `blue`, `fuchsia` | `standard` |
-| a 256-palette name, or `colorNNN` with `NNN` ≥ 16 | `deepskyblue1`, `orange3`, `color141` | `256` |
-| `colorNNN` with `NNN` ≤ 15 | `color4` | `standard` |
+| a 256-palette name | `deepskyblue1`, `orange3` | `256` |
+| a bare palette index ≥ 16 | `141`, `207` | `256` |
+| a bare palette index ≤ 15 | `4` | `standard` |
 | a hex literal | `#ff5fd7` | `truecolor` |
+
+**The numeric form is a bare digit string, not `colorNNN`.** An earlier draft of this table wrote
+`color141`, on the assumption that Spectre accepts the prefixed spelling. It does not, in 0.57.2:
+`Style.TryParse("color207")` **fails**, while `Style.TryParse("207")` resolves to palette entry
+207. Verified by reflecting over the installed assembly rather than from documentation, because
+the two disagreed. The prefixed form is not a second accepted spelling to also support — it is not
+accepted at all, and every place this document recommended it was recommending a value that
+resolves to no colour. A colour that fails to parse renders as no colour, silently, which is the
+one failure mode §6.2.1 exists to warn about.
 
 **`color-down-converted` fires when a literal's minimum exceeds the resolved `colorSystem`.**
 That is three cases, not one: 256-forms under `standard`, hex under `standard`, and **hex under
@@ -1924,10 +1934,30 @@ learn to disbelieve the ones that do.
 This is deliberate, and it is not the false positive it looks like. Suppressing it would mean
 shipping a table of 256 RGB triples whose correctness nothing in this project would ever check —
 an unverifiable exactness claim, which is worse than a warning that is merely uninteresting. And
-the warning is *right* even then: an author who means palette entry 207 should write `color207`,
-which says so and survives a colour-system change, rather than a hex literal that renders
-correctly today by coincidence. The diagnostic points at a real improvement in that case, not at
-a phantom defect.
+the warning is *right* even then: an author who means palette entry 207 should write `207`, which
+says so and survives a colour-system change, rather than a hex literal that renders correctly
+today by coincidence. The diagnostic points at a real improvement in that case, not at a phantom
+defect.
+
+**How the tier of a *named* token is determined — and the one hand-written list this project
+accepts.** Spectre's `Color` exposes `R`/`G`/`B` and nothing else: no palette index, no name
+readback, no API of any kind that distinguishes `red` from `grey37` once parsed. Confirmed by
+reflection over 0.57.2's public surface, not inferred. So there is no computed discriminator, and
+the choice is between a name list and abandoning the named-token row of the table above.
+
+Ruled: **a constant holding the sixteen basic names, and nothing larger.** A name that parses and
+is not in it is a 256-palette name, minimum system `256`. This is not a retreat from "do not
+pattern-match against a name list" — that ruling was about enumerating the *extended* palette,
+which is Spectre's list, roughly 240 entries long, changes with the library, and would be a second
+registry in the §1 sense. The sixteen are a different object: closed by the ANSI standard, fixed
+for forty years, already written out in §6.3 and in STATUS.md's empirically verified table.
+
+The deciding argument is that **the constant has to exist anyway**. §9.6.3 requires `--colors` to
+print the recommended palette, which is exactly these sixteen, and observes that no file in `src/`
+currently enumerates them — they are named only in prose. So `--colors` needs the list, and the
+tier discriminator needs the same list. **One constant, two consumers, never two lists**; §1
+applies here in its ordinary form, and the failure it names is the one to avoid — `--colors`
+printing a palette the tier check disagrees about.
 
 ### 6.3 Named tokens
 
@@ -2259,6 +2289,53 @@ A `--config` path that does not exist, or does not parse, is an error (§9.4) an
 fallback to the searched config. Reporting on a different file than the one named is worse than
 failing.
 
+#### 9.2.1 The same flag on the render path, where failing is not available
+
+That rule and §5's "never block the render" point in opposite directions, and they meet on one
+real command line: a `statusLine.command` of `claude-tui-line --config ~/my.json` whose file is
+later deleted, or saved with a trailing comma. §9.2 says do not silently fall back; §5 and §9.1
+say the render path exits 0 and never blocks, because Claude Code runs it once a second and has
+nowhere to show a failure. Both cannot be followed literally, and neither may simply lose.
+
+**The false resolution is to fall back to defaults.** It satisfies §5's letter and produces the
+§7.1 outcome in its purest form: a statusline that renders, looks entirely reasonable, is not
+the one the user configured, and says nothing about it — once a second, indefinitely. The user's
+config file is sitting right there with a syntax error in it and nothing anywhere connects the
+two. That is the outcome this document treats as worse than a crash.
+
+**Ruled: the render path exits 0 and renders the reason.** Not the config, not the defaults —
+one row of plain text naming the fault and the path, truncated to the usable width:
+
+```
+claude-tui-line: /Users/x/my.json: unexpected ',' at line 12
+```
+
+The statusline is the only output channel this path has, so a diagnostic that goes anywhere else
+is a diagnostic nobody receives. stderr is discarded, the exit code is not displayed, and a log
+file nobody knows about is not a channel. Plain text with no border, because the border
+machinery is configured by the file that could not be read.
+
+**The distinguishing question is whether a config was asserted, not whether one was found.**
+
+| situation | render path does |
+|---|---|
+| no `--config`, no file at any searched path | built-in defaults, silently — a legitimate state, and §8's documented one |
+| no `--config`, a searched file exists but does not parse | render the reason |
+| `--config <path>`, file missing | render the reason |
+| `--config <path>`, file does not parse | render the reason |
+
+Row two is the one that is easy to get wrong, and it is not a special case: writing a file to
+`~/.claude/claude-tui-line.json` asserts a config exactly as naming one on the command line does.
+The absence of an assertion is the only thing defaults are the right answer to.
+
+This does not weaken §5. Exit code 0, no blocking, no retry, no waiting on anything — the render
+completes on the tick it was asked for. What changes is only what it draws, and drawing an
+explanation costs the same as drawing a pane.
+
+For every path other than the render path — `--check`, `--preview`, `--items` — §9.4's exit 3
+applies unchanged. Those have a caller who can read an exit code, which is precisely the
+distinction §5's exit-code rule was scoped to.
+
 ### 9.3 Where `--preview` gets its payload
 
 `--preview` renders the same pipeline the statusline renders, so it needs the same stdin JSON.
@@ -2289,17 +2366,23 @@ it will disagree with the statusline exactly at the width where wrapping starts 
 | 0 | success; for `--check`, no `error`-severity diagnostics |
 | 1 | `--check` found at least one `error` diagnostic |
 | 2 | usage error — unknown flag, missing argument, mutually exclusive flags |
-| 3 | the config could not be read or parsed at all, so nothing could be checked |
+| 3 | the config could not be read or parsed at all, so nothing could be done with it |
 
 3 is separate from 1 deliberately. "Your config has four problems" and "I could not read your
 config" call for different next actions, and a program that gets 1 will try to fix a JSON Pointer
 that does not exist.
 
+3 belongs to the *config*, not to `--check`: `--preview` returns it too when the config it was
+pointed at cannot be read. (`--items` reads no config — §9.6.2's rows are the builtin registry —
+so it cannot reach 3.) The **render path returns 0 regardless** and draws the reason instead —
+§9.2.1, which is where that asymmetry is argued rather than merely asserted.
+
 Two severities, and the split resolves defects 3–6 (silent acceptance):
 
 - **`error`** — the config does not do what it says. An unknown item id; an unknown value for
-  `size`, `style`, `align`, `valign`, `overflow`, or `case`; an unknown colour name; `overflow:
-  "overflow"` on a pane inside a split (§2.6); a pane whose fixed sizes cannot fit its parent.
+  **any key whose accepted values are a closed set** (§9.4.1 tier 1); an unknown colour name;
+  `overflow: "overflow"` on a pane inside a split (§2.6); a pane whose fixed sizes cannot fit its
+  parent.
 - **`warning`** — it is satisfiable, but probably not what was meant. A `content` or `fill` pane
   with no items (`pane-no-items`); a `link` naming an id that resolves to nothing
   (`unknown-link-target`); under `collapse: true`, two panes asking for different colours or
@@ -2346,20 +2429,45 @@ error and we would be back at "does the renderer cope" under a new name.
 
 **First, two tiers, because the consequence test only governs the second one.**
 
-- **Tier 1 — not in the language.** An unknown value for `size`, `style`, `align`, `valign`,
-  `overflow`, or `case` (`unknown-enum-value`); an unknown colour name (`unknown-color`);
-  `overflow: "overflow"` in a position §2.6 forbids (`overflow-forbidden-position`). These are
-  **always errors**, and consequence never enters into it. The document is not a valid instance
-  of the schema, and how gracefully the renderer absorbs a token that is not in the language is
-  beside the point — the paragraph below on unknown enum values is the argument, and it stands
-  unchanged.
+- **Tier 1 — not in the language.** An unknown value for **any key whose accepted values are a
+  closed set** (`unknown-enum-value`); an unknown colour name (`unknown-color`); `overflow:
+  "overflow"` in a position §2.6 forbids (`overflow-forbidden-position`). These are **always
+  errors**, and consequence never enters into it. The document is not a valid instance of the
+  schema, and how gracefully the renderer absorbs a token that is not in the language is beside
+  the point — the paragraph below on unknown enum values is the argument, and it stands unchanged.
 
-  **One code across all six enum keys, not one per key.** The JSON Pointer in `path` already
-  names the key exactly, so a per-key code would only repeat it, and the repair is identical in
-  every case: replace the value with one from the recognized set. Compare §4.1, which *does*
-  split `command-shape` from `command-shell-argv` — there the repairs genuinely differ. Same
-  rule, opposite answers, which is how you can tell the rule is doing work rather than
-  decorating a decision already made.
+  **The trigger is the predicate, not a list.** As written this section named six keys — `size`,
+  `style`, `align`, `valign`, `overflow`, `case` — and the list was short by at least three:
+  `split` (`"vertical"` / `"horizontal"`), `distribute` (`"min-rows"`), and top-level
+  `colorSystem` (`"standard"` / `"256"` / `"truecolor"`). Every one of those three fails silently
+  and consequentially:
+
+  - A misspelled `split` turns a container into something that is not a container. The pane's
+    `children` are then a key nothing reads, and half the statusline disappears.
+  - A misspelled `distribute` reverts to greedy sizing, which is exactly the layout the author
+    wrote the key to avoid, and the difference is a row count rather than an absence.
+  - `"colorSystem": "24bit"` falls back to `standard`, and the author then gets §6.2.1's
+    `color-down-converted` warnings on the literals they widened the profile *for* — a diagnostic
+    that is correct, unexplainable from where they are standing, and points away from the typo.
+
+  So the rule is stated as a predicate and the enumeration is illustration, for the same reason
+  §4's is: a list restated in four places is four things to keep true, and the way it fails is
+  that a key is added with a closed value set and nobody thinks to touch §9.4. If a key accepts a
+  fixed set of strings, an unrecognised one is `unknown-enum-value`. There is no key with a closed
+  value set that is deliberately unchecked.
+
+  **One code across all of them, not one per key.** The JSON Pointer in `path` already names the
+  key exactly, so a per-key code would only repeat it, and the repair is identical in every case:
+  replace the value with one from the recognized set. That the set of keys can grow without the
+  code changing is the point — a per-key code would make adding a key a change to the §9.6
+  compatibility surface. Compare §4.1, which *does* split `command-shape` from
+  `command-shell-argv` — there the repairs genuinely differ. Same rule, opposite answers, which
+  is how you can tell the rule is doing work rather than decorating a decision already made.
+
+  **The message must name the accepted set**, since the whole failure mode here is an author who
+  cannot see what they got wrong: `"24bit" is not a colorSystem — expected standard, 256, or
+  truecolor`. A code and a pointer localise the fault; only the accepted set repairs it, and
+  every one of these sets is short enough to print.
 
   **`unknown-color`, spelled the American way, on purpose.** Every code string matches the
   config key it is about, and the key is `"color"`. This document says colour throughout, so the
@@ -2487,6 +2595,32 @@ inferred.
 condition gets a new code rather than a widened old one. `/edit` and the §12.6 tools branch on
 these, and a code that quietly changes meaning makes every consumer wrong at once.
 
+**`--json` emits JSON at every exit code, including 2 and 3.** The tempting reading of §9.4 is
+that exit 3 means nothing could be checked, so there is nothing to serialize, so the failure goes
+to stderr as prose. That hands a caller who explicitly asked for JSON a non-JSON stdout in exactly
+the case it most needs to branch — and `/edit` and §12.6 reach `--check --json` on configs a model
+just wrote, which is where unparseable is a *likely* outcome rather than a remote one. A flag that
+guarantees a format except when something goes wrong does not guarantee a format.
+
+So exits 2 and 3 emit the failure envelope, which is the shape §9.6.1's second table already
+defines for invocations that failed rather than for places in a config:
+
+```json
+{ "ok": false, "code": "config-unreadable",
+  "path": "/Users/x/my.json",
+  "message": "unexpected ',' at line 12" }
+```
+
+**`diagnostics` is absent, not empty.** `[]` is the answer to "I checked and found nothing", which
+is the opposite of what happened, and a consumer that tests `diagnostics.length === 0` would
+report a broken config as clean. `path` here is a **filesystem path**, not the JSON Pointer that
+entries in `diagnostics` carry — the two never appear in the same object, which is what keeps that
+from being ambiguous.
+
+Exit 2 uses the same envelope with `code: "usage"`. Note that both are already true of the human
+form, which prints prose to stderr in these cases; `--json` is the surface that needed the ruling
+because a program cannot fall back to reading English.
+
 #### 9.6.1 The code registry
 
 **This table is the registry. A code that is not in it does not exist**, and a new condition adds
@@ -2504,7 +2638,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 
 | code | condition | severity | §  |
 |---|---|---|---|
-| `unknown-enum-value` | `size`/`style`/`align`/`valign`/`overflow`/`case` value not in the language | error | 9.4.1 |
+| `unknown-enum-value` | a value not in the language for **any key with a closed value set** — `split`, `size`, `distribute`, `style`, `align`, `valign`, `overflow`, `case`, `colorSystem`, and any added later. The message names the accepted set | error | 9.4.1 |
 | `unknown-color` | colour name matching no palette entry | error | 9.4.1 |
 | `overflow-forbidden-position` | `overflow: "overflow"` where §2.6 forbids it | error | 9.4.1 |
 | `unknown-item-id` | `{ "item": … }` selector, derived `from`, or argv `{id}` naming nothing | error | 9.4.1 |
@@ -2536,6 +2670,8 @@ there is no config position to point at:
 
 | code | condition | § |
 |---|---|---|
+| `config-unreadable` | the config could not be read or parsed, so nothing could be done with it — exit 3. `path` is a filesystem path, and `diagnostics` is **absent** rather than empty | 9.6 |
+| `usage` | unknown flag, missing argument, or mutually exclusive flags — exit 2 | 9.6 |
 | `stale-revision` | the config changed under a §12.6 tool between read and write | 12.6 |
 | `cli-not-found` | the binary could not be located; the error names every path tried | 12.6 |
 

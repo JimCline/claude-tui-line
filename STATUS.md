@@ -1095,6 +1095,91 @@ stating it.
   to write it. §12.6.4's look-before-you-leap default only works if the model knows which call is
   which.
 
+### §9.4 walked, and four rulings the implementor was blocked on
+
+**§9.4's own findings — two, both about lists that had gone quietly short.**
+
+- **Tier 1's enum list named six keys and missed three.** `size`, `style`, `align`, `valign`,
+  `overflow`, `case` were listed; `split`, `distribute`, and `colorSystem` were not, and all three
+  have closed value sets whose failures are silent and consequential. A misspelled `split` turns a
+  container into a non-container, so its `children` become a key nothing reads and half the
+  statusline disappears. A misspelled `distribute` reverts to greedy sizing — the exact layout the
+  author wrote the key to avoid, differing by a row count rather than by an absence.
+  `"colorSystem": "24bit"` is the cruellest: it falls back to `standard` and then produces
+  `color-down-converted` warnings on the literals the author widened the profile *for*, so the
+  diagnostic they receive is correct, unexplainable from where they are standing, and points away
+  from the typo.
+
+  The list was also restated in four places — §9.4's severity bullet, §9.4.1's tier 1, the
+  "one code across all six" paragraph, and the §9.6.1 registry row. Now stated as a **predicate**:
+  any key whose accepted values are a closed set. Same treatment as §4 got an hour earlier, and
+  the same failure it prevents — a key added with a closed value set and nobody thinking to touch
+  §9.4. The "one code, not one per key" ruling survives and is now argued rather than assumed: a
+  per-key code would make adding a key a change to the §9.6 compatibility surface. Added: the
+  message must name the accepted set, because a code and a pointer localise the fault and only
+  the accepted set repairs it.
+
+- **`--config` and the render path were two rules pointing in opposite directions**, meeting on one
+  real command line: a `statusLine.command` of `claude-tui-line --config ~/my.json` whose file is
+  later deleted or saved with a trailing comma. §9.2 says never silently fall back; §5 and §9.1 say
+  the render path exits 0 and never blocks, because Claude Code runs it once a second and has
+  nowhere to show a failure. Both cannot be followed literally and neither may simply lose.
+
+  Falling back to defaults is the false resolution — it satisfies §5's letter and produces §7.1's
+  outcome in its purest form. New **§9.2.1**: exit 0, and **render the reason** as one plain row,
+  because the statusline is the only output channel that path has. stderr is discarded, the exit
+  code is not displayed, and a log file nobody knows about is not a channel.
+
+  The rule that took the most thought is that the test is **whether a config was asserted, not
+  whether one was found**. A file at the searched path that exists but does not parse gets the same
+  treatment as a named one: writing it asserts a config exactly as naming it does. Defaults are the
+  right answer only to the *absence* of an assertion. That row is probably a defect in the render
+  path today. Tracked as task #17, deliberately including the `--config` wiring, because half of
+  this ships a defect: `--config` parsed on the render path without §9.2.1 means a deleted config
+  renders defaults once a second forever.
+
+**Four rulings the implementor held on rather than guessed — every one of them right to hold.**
+
+- **`colorNNN` does not parse, and §6.2.1 was recommending it.** They reflected over Spectre
+  0.57.2 rather than trusting a docs search that came back inconclusive: `Style.TryParse("color207")`
+  **fails**; `Style.TryParse("207")` resolves to palette entry 207. My table was not using shorthand
+  — I believed the prefixed spelling was accepted. The failure mode is the bad one: `color207` does
+  not error, it fails to parse into a colour and the item renders uncoloured. So the diagnostic
+  whose entire job is to warn about colour going wrong was, in its repair advice, telling authors
+  to write a value that silently produces no colour. Table corrected to bare palette indices, the
+  finding recorded in place, and README gained the form — it documented names and hex only, so the
+  escape hatch the diagnostic points at was undocumented.
+
+- **Named-token tiering: build the sixteen-name constant.** Spectre exposes `R`/`G`/`B` and nothing
+  else — no palette index, no name readback — confirmed by reflection over the public surface. So
+  there is no computed discriminator between `red` and `grey37`, and the choice was a name list or
+  abandoning the row. Signed off, and my earlier ruling was narrower than it read: I forbade
+  enumerating the *extended* palette, which is Spectre's, ~240 entries, changes with the library.
+  The sixteen are closed by the ANSI standard. What decides it is that **the constant has to exist
+  anyway** — §9.6.3 requires `--colors` to print exactly these sixteen and notes that no file in
+  `src/` enumerates them today. One constant, two consumers; two lists would let `--colors` print a
+  palette the tier check disagrees about.
+
+- **`--check --json` emits JSON at exit 3.** Their working assumption — nothing could be checked,
+  so nothing to serialize, so prose on stderr — is right about the diagnostics and wrong about the
+  contract. `/edit` and §12.6 call this on configs a model just wrote, which makes unparseable a
+  *likely* outcome rather than a remote one, and that is where prose on stdout costs the most. A
+  flag that guarantees a format except when something goes wrong does not guarantee a format. Ruled
+  into §9.6 with the `{ ok: false, code, path, message }` envelope §9.6.1's second table already
+  defines, `config-unreadable` and `usage` added as rows. **`diagnostics` is absent, not `[]`** —
+  `[]` means "checked, found nothing", so a consumer testing `length === 0` would call a broken
+  config clean. Third instance tonight of absence needing a distinguished value.
+
+- **`--config` on the render path: defer both halves together** — see §9.2.1 above.
+
+Their correction to my characterization is accepted: the code already used `!= TrueColor` rather
+than `== Standard`, so hex-under-256 was firing before this round. That was me being wrong about
+the code, not the spec being wrong. Suite at 1110/1110.
+
+*Historical note:* two references to `color207` survive earlier in this log, in the §6.2.1 entry.
+They are left as written — the log records what was believed at the time — but the advice in them
+is wrong and §6.2.1 is the authority.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
