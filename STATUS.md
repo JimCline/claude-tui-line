@@ -1802,6 +1802,44 @@ Proven able to fail before being trusted, the same as `check-citations.sh` — r
 reconstruction of the §12.2 defect, where it reports `says 3, lists 4` and correctly stays silent
 about a neighbouring "Two severities:" list that is right. Wired into CI beside the citation check.
 
+### §12.5 carried the one instruction the procedure doc says is wrong — and Phase 6 is live
+
+The same audit, applied to the command prompts. `commands/revert.md` is 121 lines of rulings;
+§12.5 was two paragraphs. That gap is not itself a defect — the spec should hold decisions and the
+prompt the procedure — but four decisions were missing from it, and one of them was actively
+harmful.
+
+**§12.5 said "it verifies the SHA-256 of what it restores against the ledger."** That is the
+collapsed instruction `docs/backup-ledger.md` calls out by name as wrong, in a section written
+specifically to correct it: it does not say *which* file, and the obvious reading takes the live
+`settings.json` — which is **supposed** to differ at revert time, because claude-tui-line is
+installed now and was not when the backup was taken. An implementor building revert from §12.5
+alone produces a command that reports "you hand-edited this" and stops **on every single run**.
+The escape hatch refusing exactly when it is reached for, and the report would read like the check
+working.
+
+The doc had been fixed. The spec section had not, and the spec is what §12.6's MCP `revert` tool
+and the CLI would be built from. Task #9 (Phase 6) is in progress right now, which is the only
+reason this was worth interrupting the audit for.
+
+Three more decisions promoted into §12.5, all of which existed only inside the command prompt:
+
+- **The restored script has three cases, not one.** §12.5 had "missing → restore the copy". The
+  third case — *present, but the hash differs* — is the one with no symptom: the revert succeeds,
+  the statusline renders, and it is not the statusline that was backed up. Report and let the user
+  choose; never overwrite their edit.
+- **An unreadable ledger stops the command.** No reconstructing a statusline from the repo or the
+  conversation — a fabricated statusline the user believes is theirs is worse than none. Offer to
+  remove the `statusLine` key, which is an honest state.
+- **Revert deliberately does not restore `claude-tui-line.json`.** This one was a contradiction
+  waiting to happen: §12.2 rule 4 makes every entry capture the config, so restoring it is
+  *available*, and a spec-only reader would plausibly do it — destroying layout work the user never
+  asked to touch. `/edit` owns config rollback; revert answers "put my old statusline back".
+
+Also tightened: `commands/revert.md` cited "Rule 1" of a file that now has two numbered lists both
+starting at 1. It meant the one in "Writing `settings.json`" and now says so. Same ambiguity class
+as §10.N, one document over — and unlike section numbers, no script catches "Rule N".
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

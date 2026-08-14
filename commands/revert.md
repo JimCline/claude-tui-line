@@ -66,7 +66,8 @@ for them.
 ## 5. Restore
 
 Restore the entry's `statusLine` value verbatim into `~/.claude/settings.json`, per **"Writing
-`settings.json`"** in `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`. Rule 1 is the one that bites
+`settings.json`"** in `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`. Rule 1 *of that section* — the
+file has a second numbered list, "The four rules", and this is not it — is the one that bites
 here: the temptation is to copy the backed-up settings file wholesale, since a whole file is
 right there and the user asked to go back. It reverts every unrelated setting they have changed
 since, silently, while the report says one key was restored.

@@ -3953,10 +3953,47 @@ Restores from the ledger — `origin` by default, a named `checkpoint` on reques
 location, the copied script, because restoring a command that points at nothing leaves the user
 with no statusline at all and no obvious cause.
 
-It verifies the SHA-256 of what it restores against the ledger and reports a mismatch rather
-than proceeding. It appends a `checkpoint` for the state it replaced, so reverting a revert is
-possible. And it prints the restored command, because a user reaching for revert is already
-having a bad time and deserves to see exactly what they got back.
+It appends a `checkpoint` for the state it replaced, so reverting a revert is possible. And it
+prints the restored command, because a user reaching for revert is already having a bad time and
+deserves to see exactly what they got back.
+
+**Hashes: which file, and the version of this instruction that disables the command.** This
+section used to read "it verifies the SHA-256 of what it restores against the ledger", which is
+the collapsed form `docs/backup-ledger.md` identifies as wrong — it does not say *which* file, and
+the obvious reading takes the live one. The live `settings.json` is **supposed** to differ at
+revert time: claude-tui-line is installed now and was not when the backup was taken. A revert
+following that reading reports "you hand-edited this" and stops on every single run, which is the
+escape hatch refusing precisely when it is reached for. The table in `docs/backup-ledger.md` is
+normative and says: hash the **backup copies** before restoring from them, and the user's
+**original script at its original path**; never the live `settings.json`, and never the live
+`claude-tui-line.json`.
+
+**The script has three cases, not one.** A restored `statusLine` points at a path, not at
+contents, so restoring the command is not restoring the statusline:
+
+- **missing** → restore the copy alongside the command, and say so. §12.5's opening paragraph
+  covers this case, and it is the one people think of.
+- **present, hash matches** → nothing to do. The ordinary case.
+- **present, hash differs** → the user has edited that script since. **Do not overwrite it and do
+  not proceed silently** — report it and let them choose between the live version and the copy.
+
+The third is the case worth specifying, because it is the only one with no symptom: the revert
+succeeds, the statusline renders, and it is simply not the statusline that was backed up.
+
+**A ledger that is missing, empty, or unreadable stops the command.** Do not reconstruct a
+statusline from this repo, from the conversation, or from anything else — a fabricated statusline
+the user believes is theirs is worse than none. Say where the ledger would have been, and offer to
+remove the `statusLine` key entirely, which is a clean and honest state.
+
+**Revert deliberately does not restore `claude-tui-line.json`, and does not delete it either.**
+§12.2 rule 4 makes every entry capture that file, so restoring it is *available* — and it is
+wrong here. The two artifacts move independently: this command answers "put my old statusline
+back", not "undo my layout work", and rolling the configuration back as a side effect of
+unpointing `statusLine` destroys work the user never asked to touch. `/claude-tui-line:edit` owns
+config rollback. Report that the copy exists so the option is visible.
+
+This section is decisions; `commands/revert.md` is the procedure that carries them out, and
+`docs/backup-ledger.md` is the shared ledger procedure both of them follow.
 
 ### 12.6 The MCP server — ambient access, added after the CLI
 
