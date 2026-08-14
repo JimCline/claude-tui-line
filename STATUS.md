@@ -3659,6 +3659,22 @@ Approved, implementor instructed to commit + push. #45 (unify `CheckEnums`'s 9-k
 `AcceptedCommand`'s key table) and #46 (`size` decomposition) tracked separately, not folded in.
 #43 stays blocked on the still-open "is `--accepted` public or internal" question, held for Jim.
 
+### #15: one border-colour resolver — `ResolveBorderColor` returns a `Style`
+
+First worktree-parallel task landed. Verified `Style.TryParse("dim"/"bold")` directly (throwaway probe
+against Spectre.Console 0.57.2) before touching production code: `Foreground == Color.Default`,
+decoration set correctly — confirming, not assuming, §6.6's premise. `ColorResolution.Resolve` is now
+the sole border-colour resolution point; `ResolveBorderColor` (`ColorResolution.cs:66-76`) returns
+`Style` instead of `Color` and no longer calls `ResolveLiteral`. `Program.cs`'s `ComputeRows`/`DrawRows`
+threaded the type change through; `ResolveLiteral` itself untouched (`ConfigCheck.cs:196` still needs a
+bare `Color` for `--check`'s colour-system ranking, per §6.6.1). New `BorderColorResolutionTests.cs`
+proves decoration survives and both paths now agree on the same spec.
+
+Built and merged from an isolated worktree (`worktree-agent-a0e9bbcdf33bedc6a`) — first use of the new
+parallel-dispatch pattern. Full suite run (implementor's call, not just smoke — the return-type change
+touched three call sites): 1171/1171, 0 failures (1166 pre-existing + 5 new). Fast-forward merge to
+main, no conflicts. Landed as `18d6322`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
