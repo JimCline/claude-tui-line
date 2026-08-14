@@ -1495,11 +1495,11 @@ the framework does not use, and is no longer evidence about the framework at all
 - **cwd**: the session's `.cwd`, so `git`-flavored commands behave as the user expects.
 - **Output**: stdout with the trailing newline stripped. Each line becomes one row of the item's
   block (§3.1), capped at `maxLines` (default 4) so a runaway script cannot flood the surface;
-  excess lines are dropped. **`--preview` names the item and the cap on stderr when it drops
-  lines** — not `--check`, which never runs the command and therefore cannot know (§9.1.1), and
-  not stdout, which stays byte-comparable so `/migrate` can diff a preview against the original
-  script's output. stderr already carries §9.3's "this payload is synthetic" notice: facts about
-  the preview run that are not part of the rendered surface.
+  excess lines are dropped. **`--preview` reports the drop as a render note** (§9.8.1), naming the
+  item and the cap — not `--check`, which never runs the command and therefore cannot know
+  (§9.1.1). The note goes to stderr in the human form and to `notes[]` in the JSON form; stdout
+  stays byte-comparable either way, so `/migrate` can diff a preview against the original script's
+  output.
 
   ANSI in the output is passed through but its width is measured stripped, so a script may color
   itself.
@@ -2583,13 +2583,15 @@ append that both the resolver and the checker inherit.
 
 ```json
 { "columns": 112, "usableColumns": 109,
-  "rows": [ { "text": "…", "width": 109 } ] }
+  "rows": [ { "text": "…", "width": 109 } ],
+  "notes": [ { "message": "pane 2 dropped: no width remained at 109 columns" } ] }
 ```
 
 `--preview --json` returns each row's text **and** its measured width, rather than printing
 widths in a gutter as the human form does — a model parsing rows should not have to strip
 decoration to get them, and the width is the number that makes overflow visible rather than
-inferred.
+inferred. `notes[]` carries what §9.8 assigns to `--preview` and to nothing else — what was
+dropped or truncated at this width; §9.8.1 rules its shape and why it is not `diagnostics`.
 
 **`code` values are a compatibility surface.** Once a code ships, its meaning is fixed; a new
 condition gets a new code rather than a widened old one. `/edit` and the §12.6 tools branch on
@@ -2817,9 +2819,23 @@ Rulings:
   from `plugin.json` at runtime: an AOT binary published into `${CLAUDE_PLUGIN_DATA}/bin` has no
   guarantee the manifest is adjacent, and a version that reads as empty off a missing file is
   worse than one that is merely stale.
+- **The `.csproj` must therefore declare a `<Version>`, and today it does not.** This is not a
+  detail of implementation. With the element absent, MSBuild supplies `1.0.0` — silently, with no
+  warning, and indistinguishable from a deliberate choice — while `plugin.json` says `0.1.0`. So
+  as things stand, naming the `.csproj` as the source of truth names a file that does not contain
+  the value, and `--version` would ship reporting a number that is not this project's, which is
+  the precise outcome the ruling below exists to prevent. A defaulted version is worse than a
+  stale one: stale means a real number from a real release, and `1.0.0` here means nothing at all.
 - A **test asserts the two match**, comparing the assembly version against `plugin.json`'s
   `version`. This is the whole mitigation, and it is cheap: without it the drift is invisible
-  until a user reports a version that does not correspond to anything.
+  until a user reports a version that does not correspond to anything. It also fails immediately
+  on the bullet above, which is the intended behaviour — the first thing it catches is the
+  undeclared default, before any release exists to be confused by it.
+
+There is no third home. `.claude-plugin/marketplace.json` carries no version, and must not gain
+one: a marketplace entry is a pointer to the plugin, and duplicating the version into it would
+add a copy this test does not cover, which is how the two-registry problem returns wearing a
+third name.
 
 Consistent with §12.6.8, this is reporting, not gating — nothing refuses to run on a mismatch.
 The test fails the build; the binary does not fail the user.
@@ -2885,6 +2901,44 @@ one would produce exactly the noise the previous paragraph rules out.
 drops your right pane" is worth knowing; it is simply not a config error. `--preview` has a width
 by construction, so it reports what it dropped or truncated at each width it rendered — as a note
 alongside the rows, never as a diagnostic and never affecting the exit code.
+
+#### 9.8.1 Render notes are a channel, and `--preview --json` was missing it
+
+The paragraph above says "as a note alongside the rows", and §9.6's `--preview --json` shape has
+`columns`, `usableColumns`, and `rows` — nowhere to put one. §12.6.9 later adds `diagnostics[]`,
+which is a different thing. So the human form of `--preview` reports what it dropped and the JSON
+form does not, and the JSON form is the one a model reads. The information §9.8 has just argued
+belongs to `--preview` and to nothing else would be available only to the caller who does not need
+it programmatically.
+
+**`--preview --json` gains `notes[]`**, and render notes become one named channel with two
+renderings: the human form prints them to stderr, the JSON form carries them in `notes[]`. §4's
+`maxLines` cap notice is a note in exactly this sense and is reported through this mechanism rather
+than through an arrangement of its own.
+
+```json
+{ "columns": 112, "usableColumns": 109,
+  "rows": [ { "text": "…", "width": 109 } ],
+  "notes": [
+    { "message": "pane 2 dropped: no width remained at 109 columns" },
+    { "message": "item 'diffstat' emitted 7 lines; 3 kept (maxLines)", "item": "diffstat" }
+  ] }
+```
+
+Three rulings on the shape, each closing a way this could have become the thing it must not be:
+
+- **A note has no `code`.** §9.6.1's registry exists so a consumer can *branch* on a fault, and
+  there is no branch to take on "this got truncated at 109 columns" other than showing it to a
+  person. Giving notes codes would grow a permanent compatibility surface for no consumer, and
+  §9.6.1's "a code that is not in it does not exist" would then demand registry rows for facts
+  that are not faults.
+- **A note never appears in `diagnostics`, and a diagnostic never appears in `notes`.** They answer
+  different questions — "your config is wrong" versus "here is what happened at this width" — and
+  merging them makes a config that is working exactly as §2's ladder specifies read as broken. That
+  is the failure §9.4 names when it says a validator that warns about things that work gets ignored
+  on the occasions it is right.
+- **Notes never affect the exit code**, restating §9.8 above so that the JSON form cannot quietly
+  acquire a different rule from the human one.
 
 ## 10. Testing requirements
 

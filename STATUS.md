@@ -1180,6 +1180,46 @@ the code, not the spec being wrong. Suite at 1110/1110.
 They are left as written — the log records what was believed at the time — but the advice in them
 is wrong and §6.2.1 is the authority.
 
+### §9.7 and §9.8 walked — a source of truth that does not contain the value
+
+§9.8 itself is sound; the two findings are in what it hands off and in what §9.7 assumes.
+
+- **§9.7 names the `.csproj` as the source of truth for a version the `.csproj` does not declare.**
+  There is no `<Version>` element in it. MSBuild then supplies `1.0.0` — silently, with no warning,
+  indistinguishable from a deliberate choice — while `plugin.json` says `0.1.0`. So `--version`
+  as specified would ship reporting a number that is not this project's, which is verbatim the
+  outcome §9.7's two-homes ruling exists to prevent. A defaulted version is worse than a stale
+  one: stale is a real number from a real release; `1.0.0` here means nothing at all. §9.7 now
+  requires the element, and notes that its own drift test fails on this first — which is the test
+  working, before there is a release to be confused by.
+
+  Also checked and recorded as a clean result: `marketplace.json` carries no version and must not
+  gain one. Duplicating it there would add a copy the drift test does not cover, which is the
+  two-registry problem returning under a third name.
+
+- **§9.8's parting instruction had nowhere to land.** It argues that width-dependent facts belong
+  to `--preview` and to nothing else, and says to report them "as a note alongside the rows" — but
+  §9.6's `--preview --json` shape is `columns`, `usableColumns`, `rows`, with no field for one.
+  So the human form of `--preview` would report what it dropped and the JSON form would not, and
+  the JSON form is the one a model reads. The information §9.8 had just finished arguing for would
+  reach only the caller with no programmatic need for it.
+
+  New **§9.8.1**: render notes become one named channel with two renderings — stderr in the human
+  form, `notes[]` in JSON. §4's `maxLines` notice, which I had assigned to stderr by name two hours
+  earlier, is folded into it rather than keeping a private arrangement. Three rulings on the shape:
+  a note carries **no `code`** (§9.6.1's codes exist so a consumer can branch on a fault, and there
+  is no branch to take on "truncated at 109 columns" other than showing a person; codes would grow
+  a permanent compatibility surface for no consumer); a note **never** appears in `diagnostics` and
+  vice versa (they answer different questions, and merging them makes a config working exactly as
+  §2's ladder specifies read as broken); and notes never affect the exit code, restated so the JSON
+  form cannot quietly acquire a different rule from the human one.
+
+  This is the fourth time tonight that a command's human form and its `--json` form were specified
+  to report different things, and the fourth time the JSON form was the poorer one. Worth naming as
+  a pattern rather than fixing case by case: the prose gets written for the human reader, the JSON
+  shape gets written as an afterthought two sections away, and the consumer who cannot fall back to
+  reading English is the one who loses.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
