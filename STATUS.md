@@ -1325,6 +1325,52 @@ Two smaller things fell out:
   produces a config that `--check` passes and that renders what was asked for. That is the property
   §12.6 needs and the one no unit test states.
 
+### §13 walked — a four-bullet section hiding a live defect
+
+Two bullets were phrased in ways that read as licence rather than as boundaries:
+
+- **"no resize event"** does not mean the terminal is never resized. The process exits and is
+  re-run, and a new width arrives as a different `COLUMNS` on the next tick — a case §5.0.1 and §4
+  handle carefully and at length. A sentence under a heading reading *out of scope* must not be
+  readable as permission to skip work the document does elsewhere.
+- **"no input"** does not mean nothing we emit can be clicked; §3.2 emits OSC 8 links exactly so
+  the terminal can make them clickable. The real boundary is that the interaction is entirely the
+  terminal's — we write a string and never learn that anyone clicked it. Left unsaid, §13 and §3.2
+  contradicted each other.
+
+Also added §9.1.1's boundary here, since this is where boundaries belong: no diagnostic can ever
+be about a `command` item's *output*, because `--check` never executes one.
+
+**§13.1** is the real work. `Plain.Length` staying the width metric is still right — a wcwidth
+table is a real dependency, §2.7's parity baseline is stated in terms of it, and what this thing
+renders is overwhelmingly ASCII. What was missing is the consequence, and the consequence is bad:
+**a pane containing wide characters draws wider than the compositor believes, and the rectangle
+invariant does not notice**, because §10 bullet 3 measures with the same metric the renderer sizes
+with. The assertion this document calls the one that catches ragged padding, height mismatch and
+overflow together reports success on a row that visibly overruns its border. That is §10 bullet
+7's own warning — *both sides can share a wrong constant* — landing in the measuring instrument
+rather than in the bash comparison it was written about, and §10.1's shape a second time: the
+suite is not wrong about what it measures, it is silent about what it does not.
+
+The limitation is now recorded as a **test asserting the known-wrong behaviour**, citing §13.1. A
+stated limitation only survives a refactor if breaking it breaks something: anyone introducing a
+width-aware measurer now fails that test and has to come and decide, rather than finding out later
+that the parity baseline moved.
+
+**§13.2 — defect 16, found while verifying §13.1 against the source.** `Plain.Length`
+approximating width is accepted; `Plain` being *cut* at code-unit boundaries was never decided.
+`PaneRenderer.WrapSegment` cuts with `Plain.Substring(i, innerWidth)` and `TruncateSegment` with
+`Plain[..contentBudget]`, and neither checks whether the cut lands between a high and a low
+surrogate. A non-BMP character straddling the boundary is split into two lone surrogates —
+**invalid UTF-16 on its way to stdout**, not a clipped glyph.
+
+The two are independent, and the emoji case proves it: `🎉` is 2 code units and 2 columns, so the
+width metric is accidentally correct there and the slice is broken anyway. §2.6's trap list
+requires a hard break never land inside an escape sequence; the equivalent sentence was never
+written about a character, so the guard exists for one and not the other and nobody ever asked for
+the test. Filed as task #20, both paths, since both cut and only the wrap path is usually
+remembered.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

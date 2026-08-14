@@ -3566,6 +3566,71 @@ the obvious one. That only holds if the model knows which call is the cautious o
   waiting on is the opt-in `colorSystem` knob, defaulting to `standard`, which keeps the parity
   baseline valid by construction instead of trading it away.
 - Long-running provider daemons, watch-mode providers, push updates.
-- Interactive elements. A statusline is a render target, not a TUI app — there is no input, no
-  focus, no resize event.
-- Per-item wcwidth. `Plain.Length` remains the width metric (SPEC.md §6), deliberately.
+- Interactive elements. A statusline is a render target, not a TUI app: **this process never reads
+  input and never holds focus.** Two things that phrasing used to blur, both of which matter
+  elsewhere in this document:
+  - It does not say the terminal is never resized. It says no resize *event* is delivered — the
+    process exits and is re-run, and a new width simply arrives as a different `COLUMNS` on the
+    next tick. Resize is a case this document handles carefully (§5.0.1, §4), and a bullet under
+    a heading reading "out of scope" must not be readable as licence to skip it.
+  - It does not say nothing we emit can be clicked. §3.2 emits OSC 8 links precisely so the
+    terminal can make them clickable. The boundary is that the interaction is entirely the
+    terminal's: we write a string, we never learn that anyone clicked it.
+- Static analysis of what a `command` item *prints*. Ruled in §9.1.1 and repeated here because
+  this is where boundaries belong: `--check` validates a declaration and never executes it, so no
+  diagnostic can ever be about a command's output, its format, or its width.
+- Per-item wcwidth — `Plain.Length` remains the width metric (SPEC.md §6). Still the ruling, but
+  see **§13.1**: what was missing was the consequence, not the decision.
+
+### 13.1 What `Plain.Length` costs, stated
+
+`Plain.Length` counts UTF-16 code units. Terminal layout needs display columns. The two agree for
+the ASCII this statusline mostly carries and disagree for everything else:
+
+| text | code units | columns |
+|---|---|---|
+| `abc` | 3 | 3 |
+| CJK — `日本語` | 3 | **6** |
+| non-BMP emoji — `🎉` | 2 | 2 |
+| ZWJ sequence — `👩‍💻` | 5 | **2** |
+| combining mark — `e` + U+0301 | 2 | **1** |
+
+Keeping `Plain.Length` remains right: a wcwidth table is a real dependency, §2.7's parity baseline
+is stated in terms of this metric, and what this statusline actually renders — paths, branch names,
+model names, counts — is overwhelmingly ASCII. What changes is that the word "deliberately" stops
+standing in for a consequence nobody had written down.
+
+**The consequence: a pane containing wide characters draws wider than the compositor believes, and
+the rectangle invariant does not notice.** §10 bullet 3 measures ANSI-stripped width with the same
+metric the renderer sizes with, so a row that visibly overruns its border scores as exactly the
+right width, and the assertion this document calls the one that catches ragged padding, height
+mismatch and overflow together reports success. That is §10 bullet 7's own warning — *both sides
+can share a wrong constant* — arriving in the place bullet 7 did not look, which is the measuring
+instrument rather than the bash comparison. And it is §10.1's shape once more: the suite is not
+wrong about what it measures, it is silent about what it does not.
+
+So the limitation is recorded as a **test asserting the current, known-wrong behaviour** — a CJK
+string in a fixed-width pane produces a row that passes the rectangle invariant and is visibly too
+wide — carrying a comment citing this section. That is what makes a stated limitation survive a
+refactor: anyone introducing a width-aware measurer breaks that test and has to come here and
+decide, instead of discovering afterwards that the parity baseline moved.
+
+### 13.2 Slicing at code-unit boundaries was never a decision
+
+`Plain.Length` approximating *width* is accepted above. `Plain` being **cut** at code-unit
+boundaries is a different thing, and nobody chose it.
+
+`PaneRenderer.WrapSegment` cuts with `Plain.Substring(i, innerWidth)`; `TruncateSegment` cuts with
+`Plain[..contentBudget]`. Neither checks whether the cut lands between a high surrogate and its low
+surrogate. A non-BMP character straddling the boundary is split into two lone surrogates — not a
+narrow row or a clipped glyph, but **invalid UTF-16 on its way to stdout.**
+
+The emoji row in the table above is what separates the two problems: `🎉` is 2 code units and 2
+columns, so the width metric is accidentally *correct* for it, and the slice is broken anyway. One
+defect is not a symptom of the other and fixing the metric would not fix this.
+
+§2.6's wrap traps require that a hard break never land inside an escape sequence. The equivalent
+sentence was never written about a character, so the guard exists for one and not the other, and
+the test that would have caught it was never asked for. **Filed as defect 16.** The fix is a
+boundary check at the cut — advance by one unit when the index falls between surrogates — in
+**both** paths, because both cut and only the wrap path is usually remembered.
