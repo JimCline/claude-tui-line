@@ -58,11 +58,11 @@ public static class PaneRenderer
             // Too narrow for the marker at all: what survives is a clipped prefix of the real
             // link text itself (no separate ellipsis appended), so it stays linked like any other
             // truncated-but-real content.
-            return Restyle(segment, segment.Plain[..Math.Min(innerWidth, segment.Plain.Length)]);
+            return Restyle(segment, segment.Plain[..SafeCutIndex(segment.Plain, Math.Min(innerWidth, segment.Plain.Length))]);
         }
 
         var contentBudget = innerWidth - ellipsis.Length;
-        var clipped = segment.Plain[..Math.Min(contentBudget, segment.Plain.Length)];
+        var clipped = segment.Plain[..SafeCutIndex(segment.Plain, Math.Min(contentBudget, segment.Plain.Length))];
         var newPlain = clipped + ellipsis;
 
         if (!OscHyperlink.TryUnwrap(segment.Markup, out var url, out var innerMarkup))
@@ -91,14 +91,26 @@ public static class PaneRenderer
             return chunks;
         }
 
-        for (var i = 0; i < segment.Plain.Length; i += innerWidth)
+        var i = 0;
+        while (i < segment.Plain.Length)
         {
-            var length = Math.Min(innerWidth, segment.Plain.Length - i);
-            chunks.Add(Restyle(segment, segment.Plain.Substring(i, length)));
+            var end = SafeCutIndex(segment.Plain, Math.Min(i + innerWidth, segment.Plain.Length));
+            chunks.Add(Restyle(segment, segment.Plain[i..end]));
+            i = end;
         }
 
         return chunks;
     }
+
+    // §13.2 (defect 16): Plain is UTF-16, so a non-BMP character (most emoji) is stored as a
+    // surrogate pair — two code units. A cut index landing between them would split the pair into
+    // two lone surrogates, which is invalid UTF-16 on the wire, not just a clipped glyph. Advancing
+    // past the pair keeps both units on the retained side; every truncate/wrap cut point in this
+    // class routes through here rather than slicing Plain directly.
+    private static int SafeCutIndex(string plain, int index) =>
+        index > 0 && index < plain.Length && char.IsLowSurrogate(plain[index]) && char.IsHighSurrogate(plain[index - 1])
+            ? index + 1
+            : index;
 
     // §3.2 rule 3: an OSC 8 link (see OscHyperlink) wraps a segment's *style* markup, not its
     // Plain text, so restyling a linked segment must unwrap the link, restyle the inner styled
