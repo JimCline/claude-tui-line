@@ -18,7 +18,7 @@ public class SegmentBuilderTests
     public void Directory_Present_UsesBasenameInTeal()
     {
         var input = Empty();
-        input.Cwd = "/Users/jimcline/git/repos/claude-tui-line";
+        input.Cwd = "/Users/example/git/repos/claude-tui-line";
 
         var segments = SegmentBuilder.Build(Ctx(input));
 

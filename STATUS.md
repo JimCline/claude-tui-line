@@ -202,19 +202,20 @@ Still needed **before making it public**:
   other keys, then renders a preview. **Nothing here has actually been installed end-to-end** —
   the manifests parse by inspection only. `/plugin marketplace add` against this repo cannot be
   tried until it is public, so this stays unverified until then.
-- Genericize `/Users/jimcline/...` — it appears in `CAPTURE.md:9`, `bench/fixture.json:2`,
-  `tests/.../fixtures/full.json:2`, and three test files. Not sensitive, but it is a username
-  in a public tree. **Changing the fixture cwd risks the golden-parity baseline** — the
-  rendered `directory` item derives from that path — so keep the final path segment identical
-  and re-run parity rather than assuming.
+- ~~Genericize the hardcoded home paths~~ — **done.** The fixture cwd is now
+  `/Users/example/git/repos/claude-tui-line` across `bench/fixture.json:2`,
+  `tests/.../fixtures/full.json:2`, and three test files; `CAPTURE.md:9` likewise. The
+  substitution preserved both the path depth and the final segment, because the rendered
+  `directory` item derives from that path and a shorter path would have moved the golden-parity
+  baseline. Verified rather than assumed: full suite 1069/1069, exit 0, parity gate included.
 
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
   `~/.claude/statusline-command.sh` (17,273 bytes) is intact and has never been replaced;
   timestamped backups live in `../claude-tui-line-backups/`.
-- `/Users/jimcline/Downloads/statusline-command.sh` (the work statusline) is **read-only** —
-  reference material, never modified.
+- The user's work statusline under `~/Downloads/` is **read-only** — reference material for the
+  hyperlink work (§3.2), never modified.
 - The implementor never touches anything under `~/.claude`, never writes into `publish/`, and
   never commits without approval. `publish/` is the deploy target the live statusline executes;
   builds for verification go to the SDK-default output under `src/ClaudeTuiLine/bin/Release/`.

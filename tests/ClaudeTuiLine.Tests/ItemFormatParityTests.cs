@@ -18,7 +18,7 @@ public class ItemFormatParityTests
 {
     private static readonly StatusInput Input = new()
     {
-        Cwd = "/Users/jimcline/git/repos/claude-tui-line",
+        Cwd = "/Users/example/git/repos/claude-tui-line",
         Workspace = new WorkspaceInfo { Repo = new RepoInfo { Owner = "jimcline", Name = "claude-tui-line" } },
         Worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" },
         Pr = new PrInfo { Number = 42, ReviewState = "approved" },

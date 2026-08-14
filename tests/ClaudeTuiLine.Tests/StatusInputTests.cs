@@ -16,7 +16,7 @@ public class StatusInputTests
         var input = JsonSerializer.Deserialize(json, StatusInputJsonContext.Default.StatusInput);
 
         Assert.NotNull(input);
-        Assert.Equal("/Users/jimcline/git/repos/claude-tui-line", input!.Cwd);
+        Assert.Equal("/Users/example/git/repos/claude-tui-line", input!.Cwd);
         Assert.Equal("jimcline", input.Workspace?.Repo?.Owner);
         Assert.Equal("claude-tui-line", input.Workspace?.Repo?.Name);
         Assert.Equal("feature-x", input.Worktree?.Name);

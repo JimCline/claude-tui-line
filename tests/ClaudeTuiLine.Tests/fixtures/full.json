@@ -1,5 +1,5 @@
 {
-  "cwd": "/Users/jimcline/git/repos/claude-tui-line",
+  "cwd": "/Users/example/git/repos/claude-tui-line",
   "workspace": { "repo": { "owner": "jimcline", "name": "claude-tui-line" } },
   "worktree": { "name": "feature-x", "branch": "main" },
   "pr": { "number": 42, "review_state": "approved" },

@@ -86,8 +86,9 @@ Show the output. If it is empty, that is a symptom worth chasing rather than rep
 Report, briefly:
 
 - where the binary lives
-- where the backup went, and that `/claude-tui-line:revert` restores it — it finds backups by the
-  `settings.json.backup-<timestamp>` name written in step 3, which is why that naming matters
+- where the backup went, and that `/claude-tui-line:revert` restores it — it reads the ledger at
+  `~/.claude/claude-tui-line/backups/ledger.json`, and targets the `origin` entry by default no
+  matter how many changes come after
 - that config goes in `~/.claude/settings.json`'s sibling, `~/.claude/claude-tui-line.json`, and
   that with no config file the built-in defaults apply
 - that `$CLAUDE_TUI_LINE_CONFIG` overrides that path if they want to keep configs elsewhere

@@ -6,7 +6,7 @@ Captured 2026-08-12 from `~/.claude/statusline-command.sh` (bash, 395 lines), wi
 ```json
 "statusLine": {
   "type": "command",
-  "command": "bash /Users/jimcline/.claude/statusline-command.sh",
+  "command": "bash /Users/example/.claude/statusline-command.sh",
   "refreshInterval": 1
 }
 ```
