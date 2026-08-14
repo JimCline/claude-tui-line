@@ -129,6 +129,31 @@ public class PaneTests
         Assert.Equal(PaneSplit.None, pane.Split);
     }
 
+    [Fact]
+    public void UnrecognizedSplitWithChildren_StaysAContainerOnTheDefaultAxis()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "diagonal",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Items = new List<PaneItemJsonConfig> { new() { Item = "context" } } },
+                        new() { Items = new List<PaneItemJsonConfig> { new() { Item = "model" } } },
+                    },
+                },
+            },
+        };
+
+        var pane = ConfigLoader.ResolveRootPane(config, TopLevel);
+
+        Assert.Equal(PaneSplit.Vertical, pane.Split);
+        Assert.Equal(2, pane.Children.Count);
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData("wrap", OverflowMode.Wrap)]

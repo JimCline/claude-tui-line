@@ -55,8 +55,8 @@ would capture claude-tui-line's own command as the thing to restore. `revert` ta
 by default, so the escape hatch survives any number of changes. See
 [docs/backup-ledger.md](docs/backup-ledger.md).
 
-> These three need the CLI (`--items`, `--check`, `--preview`), which is **not built yet** — they
-> will tell you so and stop rather than guessing. `setup` works today.
+> These three need the CLI (`--items`, `--check`, `--preview`), which is now built and tested —
+> see [CLI](#cli) below. `setup` works today.
 
 ### By hand
 
