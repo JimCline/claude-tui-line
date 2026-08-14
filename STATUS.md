@@ -4206,6 +4206,55 @@ and post-merge on `main` (1265/1265, build 0 warnings/0 errors, `check-all.sh` a
 green including `check-doc-tokens`: 18 tokens checked, 0 disagree). Landed as merge commit
 `9be1e23` (branch tip `947c2d0`), pushed.
 
+### #21: §9.4.2 unknown-key diagnostic, derived from the config types
+
+Problem: a config key that doesn't exist in the schema at all (a typo, a stale key from an older
+version) was silently ignored — System.Text.Json's default binding drops unrecognized JSON
+properties on the floor with no diagnostic, unlike the tier-1 closed-value-set checks (§9.4/§9.4.1,
+#45) which fire when a *known* key gets an invalid value.
+
+Fix: `[JsonExtensionData] Dictionary<string, JsonElement>? Extra` added to all 10 object-bound
+config classes in `Config.cs` (all 10 now explicitly `[JsonSerializable]` on `ConfigJsonContext`,
+up from 3), capturing whatever the schema doesn't bind. New `ConfigChecker.CheckUnknownKeys`
+(`ConfigCheck.cs`) walks the *raw* `UserConfig` graph rather than the resolved tree — extension
+data only survives pre-resolution — and derives each type's known-key set from
+`ConfigJsonContext.Default.<Type>.Properties`, never reflection or a hand-maintained list, matching
+the "derive it mechanically" principle §38/#45 established. Emits `Warning`/`unknown-key`
+diagnostics, wired in last in the existing diagnostic sequence so nothing already emitted shifts.
+`ColorExprJsonConfig` excluded — it's never object-bound directly, so it has no extension-data slot
+to walk. New `KeySuggestion.cs`: Levenshtein distance plus §9.4.2's own suggestion rule (distance
+≤2 AND under half the key's length, OR a prefix relation; smallest distance wins; nothing suggested
+if no candidate qualifies).
+
+Confirmed §9.4.2's "strip extension data before re-emitting config" concern is N/A here — grepped
+`JsonSerializer.Serialize` + `ConfigJsonContext` across `src/`+`tests/` and found no config
+re-emission path exists anywhere in the codebase. §12's requirement that its own gate surface these
+warnings is explicitly a requirement on §12, not on this diagnostic — left untouched, flagged as a
+possible follow-up if §12 needs it tracked separately.
+
+Real finding, not spec-related: `BorderConfig.Shorthand` (populated only by
+`BorderConfigConverter`, never bound from real JSON) does **not** get excluded from
+`JsonTypeInfo.Properties` by `[JsonIgnore]` on the .NET 10 runtime in use here, contrary to
+expectation — confirmed empirically, not assumed. Worked around with an explicit name filter in
+the known-keys derivation, pinned by a new guard test
+(`BorderConfig_KnownKeySet_ExcludesShorthand`) so a future runtime/SDK change fails loudly instead
+of silently reintroducing a false "unknown key" warning on `shorthand`.
+
+Spec-erratum finding, non-blocking (implementor-flagged, routed to architect separately): two of
+§9.4.2's own worked examples don't actually satisfy its own algorithm pseudocode, which the spec
+itself designates authoritative over the examples — an `"aa"` vs `["ab","ac"]` tie-break example
+that doesn't clear the suggestion threshold, and a `maxLines`→`maxRows` suggestion example at edit
+distance 4 (over the ≤2 threshold). Implemented per the algorithm as written; tests use examples
+that actually exercise the intended behavior, with inline comments documenting the discrepancy for
+whoever fixes the spec prose.
+
+No scope ambiguity — §9.4.2 read directly rather than from paraphrase, per standing instruction,
+and was unambiguous as written.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1291/1291)
+and post-merge on `main` (1291/1291, build 0 warnings/0 errors, `check-all.sh` all four checks
+green). Landed as merge commit `dfa6b4e` (branch tip `b0a0c72`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
