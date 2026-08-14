@@ -2900,10 +2900,17 @@ tells a model *which key* it got wrong rather than that something is wrong.
 | `list_items` | — | `items[]`, the §4.1 command-item schema, `cliVersion` |
 | `list_colors` | — | `colors[]` (§6) |
 | `get_config` | `configPath?` | `config`, `configPath`, `source`, `revision` |
-| `set_config` | `config`, `configPath?`, `baseRevision?` | `ok`, `diagnostics[]`, `revision`, `checkpoint` |
-| `validate` | `config` \| `configPath` | `ok`, `diagnostics[]` |
-| `preview` | `columns?`, `config?`, `configPath?` | `renders[]` — each `{ columns, rows[] }` |
+| `set_config` | `config`, `configPath?`, `baseRevision?` | `ok`, `diagnostics[]`, `revision`, `checkpoint`, `configPath`, `source` |
+| `validate` | `config` \| `configPath` | `ok`, `diagnostics[]`, `configPath`, `source` |
+| `preview` | `columns?`, `config?`, `configPath?` | `renders[]` — each `{ columns, rows[] }` — plus `configPath`, `source`, `diagnostics[]` |
 | `revert` | `confirm?`, `target?` | unconfirmed: `entries[]`. confirmed: `restored` |
+
+**Every tool that resolves a config path returns `configPath` and `source`**, not just
+`get_config`. §12.6.2 already requires the model to state which file it acted on, and originally
+only one tool could: a model that called `set_config` without a prior `get_config` had written
+somewhere it could not name, and `preview` could render a file that was not the user's and report
+rows with nothing to compare against. The rule is that resolving a path and reporting which one
+you resolved are the same obligation — whoever does the first does the second.
 
 #### 12.6.2 The server's environment is not the user's shell
 
@@ -2973,12 +2980,25 @@ arise and the tool simply works.
 
 #### 12.6.7 The complete list of files an MCP tool may write
 
-Three, and no others:
+Four, and no others:
 
 1. the config file, at the resolved or explicitly-given path — whole-file, atomically
 2. the ledger and its artifacts under `~/.claude/claude-tui-line/backups/` — append-only, per §12.2
 3. `~/.claude/settings.json` — **only** the `statusLine` key, **only** from `revert`, atomically,
    preserving every other key and the file's formatting
+4. the **`scriptOriginalPath` recorded on the ledger entry being restored** — **only** from
+   `revert`, **only** when no file exists at that path, and **never** overwriting one that does
+
+The fourth was missing while the surrounding text described it, and a list that says "and no
+others" is exactly the wrong place for an omission. §12.5 and §12.6 both require `revert` to put
+the copied script back when it has gone, because a restored command pointing at nothing leaves
+the user with no statusline and no obvious cause. An implementor obeying this list literally would
+have skipped that write and produced precisely the failure the restore exists to prevent.
+
+Note how narrowly it has to be stated. "Restore the script" is otherwise an arbitrary-path write
+driven by the contents of a data file, which is a different and much larger permission than the
+other three. The path must come from the entry being restored, the file must be absent, and only
+`revert` may do it.
 
 No temp files outside the target's own directory, since an atomic rename requires the same
 filesystem. No logs, no caches, no state directory. The server is stateless, and a state file is
@@ -2993,6 +3013,36 @@ The skew is real — a plugin update can leave a rebuilt server pointed at a sta
 is narrow, because `/claude-tui-line:setup` builds both from one tree. A gate that refuses to run
 is a worse outcome than the skew it prevents for a user whose statusline is working fine. Report
 it, and let the model raise it if something looks wrong.
+
+#### 12.6.9 Three more rulings the wire contract needed
+
+**`confirm: true` requires an explicit `target`.** The table marks `target` optional while
+§12.6.4's text says "called with `confirm: true` and an explicit `target`, it restores", which
+leaves `confirm: true` alone reading either as an error or as "restore `origin`" — the default
+`/claude-tui-line:revert` uses. Ruled: it is an error, `code: "target-required"`, returning the
+same listing the unconfirmed call returns.
+
+This **deliberately diverges from §12.5**, and the divergence is the whole point. The slash
+command may default to `origin` because a human typed the command and read its name. An ambient
+tool call is reached without the user having asked for anything of the kind, and a single boolean
+should not be able to roll a config back to the state it had before this tool was installed. The
+cost of being wrong is asymmetric, so the cheap call stays the one that only looks.
+
+**`revision` for a file that does not exist is `"absent"`, not null or missing.** §12.6.5 makes
+`baseRevision` optional so a first write needs no ceremony, which handles the *caller* omitting
+it — but it leaves the fresh-machine case with no compare-and-swap at all: two sessions both
+find no config, both write, and the second silently discards the first. That is the exact failure
+CAS exists to prevent, occurring at the one moment two agents are most likely to act on the same
+file. So `get_config` reports `revision: "absent"` when `source` is `"none"`, and `set_config`
+given `baseRevision: "absent"` refuses with `stale-revision` if a file now exists. Create becomes
+atomic in the mechanism that already exists rather than in a second one.
+
+**`preview` returns `diagnostics[]` when it was given an inline `config`.** §7 makes a bad config
+render *silently degraded* rather than fail, so previewing an invalid candidate returns plausible
+rows — and §12.6 has just told the model that looking at rows is how it checks its work. Without
+diagnostics, "the preview looked right" is evidence for a config `set_config` will reject. The
+check has already run; returning it costs nothing and stops preview from being quietly weaker
+than the loop it anchors.
 
 ## 13. Out of scope for v2
 

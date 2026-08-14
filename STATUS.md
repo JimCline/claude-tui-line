@@ -763,6 +763,56 @@ check that catches it is one question asked of the call site rather than of the 
 what this saves include what this command is about to change?* Nothing inside the ledger could have
 answered that, which is why it survived a careful reading of the ledger.
 
+### §12.6 walked — and one fix from earlier tonight had already propagated (§12.6.7, §12.6.9)
+
+Last specified-but-unwalked surface: the MCP wire contract. Seven tools, two of which write the
+user's files. Five findings.
+
+**1. "Three files, and no others" was missing one the same section requires.** §12.6.7 enumerates
+what an MCP tool may write, and `revert` restoring the copied script to `scriptOriginalPath` is
+not among them — while §12.5 and §12.6 both require exactly that write, because a restored command
+pointing at nothing leaves the user with no statusline and no obvious cause. An implementor
+obeying the list literally would skip it and produce the failure the restore exists to prevent.
+Added as a fourth entry, and scoped hard: only from `revert`, only from the entry being restored,
+only when no file is there, never overwriting. "Restore the script" is otherwise an arbitrary-path
+write driven by the contents of a data file, which is a much larger permission than the other
+three and should not arrive by implication.
+
+**2. Only `get_config` could say which file it touched.** §12.6.2 spends a section on the hazard
+— the server's environment is not the user's shell, so §5's search order can resolve a different
+file with nothing erroring — and then requires "the model is expected to state the path when it
+reports what it changed". But `configPath` appeared on exactly one tool's return. A model calling
+`set_config` without a prior `get_config` had *written somewhere it could not name*; `preview`
+could render a file that was not the user's and hand back rows with nothing to compare them to.
+Now: every tool that resolves a path returns `configPath` and `source`. Resolving a path and
+reporting which one you resolved are one obligation.
+
+**3. `confirm: true` with no `target` had two readings.** The table marks `target` optional; the
+text says restoring takes an explicit one. Ruled an error (`target-required`), returning the
+listing — and **deliberately diverging from `/claude-tui-line:revert`, which defaults to
+`origin`**. A human typed the slash command and read its name; an ambient tool call was not asked
+for, and one boolean should not roll a config back to before this tool existed. The asymmetry is
+the argument, so the cheap call stays the one that only looks.
+
+**4. Compare-and-swap had a hole exactly where two agents collide.** `baseRevision` is optional so
+a first write needs no ceremony — which covers the caller omitting it and leaves the fresh-machine
+case with no CAS at all: two sessions both find no config, both write, second discards first,
+silently. Ruled `revision: "absent"` for a missing file, with `set_config` refusing if one now
+exists. Create becomes atomic inside the mechanism already there.
+
+**5. `preview` could show a plausible render of a config `set_config` would reject.** §7 makes a
+bad config degrade silently rather than fail, and §12.6 tells the model that looking at rows is
+how it checks its work — so "the preview looked right" was evidence for an invalid candidate. It
+now returns `diagnostics[]` for an inline config. The check has already run; withholding it made
+preview quietly weaker than the loop it anchors.
+
+**And one thing that fixed itself.** `set_config` checkpoints before mutating, through §12.2 — so
+before tonight it carried `/edit`'s defect exactly: a checkpoint that did not contain the config
+it was about to overwrite. Amending §12.2 closed it here without a second edit and without anyone
+noticing it was open. That is the one-definition rule paying out rather than merely being
+asserted, and it is worth recording as evidence that the rule is load-bearing: the alternative
+design, where each command describes its own backup, would have needed this found twice.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
