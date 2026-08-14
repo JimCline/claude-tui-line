@@ -578,7 +578,7 @@ public class ConfigCheckTests
         var diagnostics = ConfigChecker.Check(config);
 
         Assert.Contains(diagnostics, d => d.Code == "unknown-enum-value" && d.Path == "/surface/pane/distribute" &&
-            d.Severity == DiagnosticSeverity.Error && d.Message == "'min-row' is not a distribute — expected greedy or min-rows");
+            d.Severity == DiagnosticSeverity.Error && d.Message == "'min-row' is not a distribute — expected greedy, min-rows, or even");
     }
 
     [Fact]

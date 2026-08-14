@@ -128,9 +128,12 @@ public static class SizeResolver
             return new ResolvedPane(pane, outerWidth, horizontalChildren);
         }
 
-        var alloc = pane.Distribute == PaneDistribute.MinRows
-            ? ResolveVerticalMinRows(pane, outerWidth, ctx, values)
-            : ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes);
+        var alloc = pane.Distribute switch
+        {
+            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values),
+            PaneDistribute.Even => ResolveVerticalEven(pane, outerWidth),
+            _ => ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes),
+        };
         var resolvedChildren = new List<ResolvedPane>(alloc.Children.Count);
         for (var i = 0; i < alloc.Children.Count; i++)
         {
@@ -667,6 +670,96 @@ public static class SizeResolver
         }
 
         return widths;
+    }
+
+    // ---- vertical axis: even distribution (§2.3) ----
+
+    // Structurally mirrors ResolveVerticalMinRows's drop-retry loop for the same reason: §2.3's
+    // over-constrained handling ("no child may resolve below 1 cell ... dropped entirely") applies
+    // regardless of which policy divides the remaining extent.
+    private static AllocResult ResolveVerticalEven(Pane split, int splitOuterWidth)
+    {
+        var current = split.Children;
+
+        while (true)
+        {
+            var result = AllocateEvenOnePass(split, current, splitOuterWidth);
+
+            var tooSmall = false;
+            for (var i = 0; i < result.Grants.Count; i++)
+            {
+                if (ClassifySize(current[i].Size).Kind != SizeKind.Fixed && result.Grants[i] < 1)
+                {
+                    tooSmall = true;
+                    break;
+                }
+            }
+
+            if (!tooSmall || current.Count <= 1)
+            {
+                return result;
+            }
+
+            current = current.Take(current.Count - 1).ToList();
+        }
+    }
+
+    // One run of the even allocation (§2.3): fixed and percent panes take their width first,
+    // mirroring AllocateOnePass's/AllocateMinRowsOnePass's own step order, then every content/fill
+    // pane splits what remains equally, leftover to the leftmost (matching AllocateOnePass's step
+    // 6) — ignoring intrinsic measurement and the content/fill distinction entirely, which is the
+    // property that keeps the layout from moving as content changes. A content candidate still
+    // degrades under its own §2.6 rules at whatever width it lands on; this only decides the width,
+    // not what happens to it afterward.
+    private static AllocResult AllocateEvenOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth)
+    {
+        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count));
+
+        var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
+        var grants = new int[children.Count];
+        var rem = avail;
+
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (kinds[i].Kind == SizeKind.Fixed)
+            {
+                grants[i] = kinds[i].FixedValue;
+                rem -= grants[i];
+            }
+        }
+
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (kinds[i].Kind == SizeKind.Percent)
+            {
+                var raw = (int)Math.Round(kinds[i].Pct * avail, MidpointRounding.AwayFromZero);
+                var grant = Math.Clamp(raw, 0, Math.Max(0, rem));
+                grants[i] = grant;
+                rem -= grant;
+            }
+        }
+
+        var candidateIndices = new List<int>();
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (kinds[i].Kind is SizeKind.Content or SizeKind.Fill)
+            {
+                candidateIndices.Add(i);
+            }
+        }
+
+        if (candidateIndices.Count > 0)
+        {
+            var remClamped = Math.Max(0, rem);
+            var each = remClamped / candidateIndices.Count;
+            var leftover = remClamped - each * candidateIndices.Count;
+            for (var ci = 0; ci < candidateIndices.Count; ci++)
+            {
+                grants[candidateIndices[ci]] = each + (ci == 0 ? leftover : 0);
+            }
+        }
+
+        return new AllocResult(children, grants);
     }
 
     // ---- intrinsic measurement: the same fits-or-degrade decision the renderer uses (LeafContent) ----
