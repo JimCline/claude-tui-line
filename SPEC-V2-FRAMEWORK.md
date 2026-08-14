@@ -5452,6 +5452,52 @@ the test that would have caught it was never asked for. **Filed as defect 16.** 
 boundary check at the cut — advance by one unit when the index falls between surrogates — in
 **both** paths, because both cut and only the wrap path is usually remembered.
 
+#### 13.2.1 "A boundary check at the cut, in both paths" is three sites, one direction, and a loop that stops
+
+§13.2 files the defect and prescribes the fix in a sentence. Every load-bearing part of that
+sentence is wrong or missing, in ways that a test asserting "the output contains no lone
+surrogate" passes anyway.
+
+**There are three cut sites, not two.** `PaneRenderer` cuts `Plain` in each of these places:
+
+- `TruncateSegment`, the too-narrow-for-the-ellipsis branch — a bare prefix, and the site nobody
+  lists, because the sentence in §13.2 names the wrap path and the truncate path and this one is
+  inside the truncate path but is not the cut that section was looking at.
+- `TruncateSegment`, the normal branch, cutting to `innerWidth - ellipsis.Length`.
+- `WrapSegment`, cutting each chunk out of the middle of the string.
+
+§9.2.2's degradation ladder adds a fourth. Counting them here would only date this paragraph the
+next time one is added — which is the failure §9.6.2.2's rule D exists to catch, and it is the
+same failure in code. **Ruled: one helper computes every cut, and no site does index arithmetic on
+`Plain` directly.** A boundary check repeated at each site is correct exactly until someone adds a
+site, and the person adding it has no reason to look here.
+
+**The cut rounds down, and "advance by one unit" reads as up.** Taking the extra code unit keeps
+the pair intact and puts the row one column over budget — and because `Plain.Length` *is* the width
+metric (§13.1), one column over budget is a real overflow: the pane draws wider than it was
+allotted, which pushes a border or wraps the terminal row. Rounding down leaves one blank column,
+which nobody can see. So the helper returns the largest index at or below the requested one that
+does not fall between a high surrogate and its low surrogate.
+
+**Rounding down alone does not terminate.** At `innerWidth == 1` against a non-BMP character, the
+rounded-down cut is zero, the chunk is empty, the carried index does not move, and the wrap loop
+spins — in a process Claude Code runs once a second, forever, on a config that merely contains an
+emoji in a narrow pane. **Ruled: when the rounded-down cut would be zero and content remains, the
+helper takes the whole pair and the row goes one column over.** This is the one place the forward
+direction is right, and it is right because the alternative is not a wider row but a hang.
+
+**The wrap path needs a carried index, not a boundary check.** `WrapSegment` advances by a fixed
+stride, so shortening one chunk does not move where the next one starts: the low surrogate that was
+trimmed off the end of row N is still sitting at the start of row N+1, and the defect survives in
+the path §13.2 was actually looking at while the truncate path goes green. The loop must carry the
+index the helper returned. This is why the fix cannot be a check bolted onto the existing shape.
+
+The test that distinguishes a real fix from a passing one is not "no lone surrogates in the
+output" — the naive fix satisfies that at the ends and fails it in the middle. It is: **wrap a
+string of non-BMP characters at a width that guarantees a mid-pair cut, and assert every row is
+independently valid UTF-16 and that concatenating the rows reproduces the input exactly.** Nothing
+lost, nothing duplicated, no row over budget except the documented single-pair case.
+
 ### 13.3 A section number is a reference, and four of them resolved to nothing
 
 Walking §2 turned up `§2.9` cited nine times with no such section, which prompted checking every

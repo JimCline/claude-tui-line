@@ -2820,6 +2820,54 @@ from.
 Proved both directions: mutating the wrapped lead-in fires (`SPEC:3572`), mutating a single-line one
 still fires (`SPEC:3007`), and the unmutated tree is clean across all ten files.
 
+## `13.2`: the fix sentence was wrong in every load-bearing part (`13.2.1`)
+
+Third section through the lens, and the worst of the three. `13.2` files defect 16 correctly — wrap
+and truncate cut `Plain` at code-unit boundaries and can emit lone surrogates — and then prescribes
+the fix in one sentence: "a boundary check at the cut — advance by one unit when the index falls
+between surrogates — in **both** paths." Read against the code, that sentence is wrong four ways,
+and a test asserting "the output contains no lone surrogate" passes the wrong fix.
+
+- **Three cut sites, not two.** `PaneRenderer:61` (the too-narrow-for-the-ellipsis prefix) is inside
+  the truncate path but is not the cut `13.2` was looking at, so it goes unlisted. `9.2.2` has since
+  added a fourth. Ruled: one helper computes every cut and no site indexes `Plain` directly —
+  a per-site check is correct exactly until someone adds a site, and they have no reason to look
+  here.
+- **The cut must round down; "advance" reads as up.** Because `Plain.Length` *is* the width metric,
+  taking the extra code unit puts the row a real column over budget, which pushes a border or wraps
+  the terminal row. Rounding down leaves a blank column nobody can see.
+- **Rounding down alone does not terminate.** At `innerWidth == 1` against a non-BMP character the
+  cut is zero, the chunk is empty, the carried index never moves, and the wrap loop spins — in a
+  process Claude Code runs once a second, forever, because someone put an emoji in a narrow pane.
+  That single case is the one place forward is right, and it is right because the alternative is a
+  hang rather than a wide row.
+- **The wrap path needs a carried index, not a check.** `WrapSegment` advances by a fixed stride, so
+  trimming the end of row N leaves the orphaned low surrogate sitting at the start of row N+1. The
+  bolted-on fix turns the truncate path green and leaves the defect in the path `13.2` was actually
+  about.
+
+The distinguishing test is therefore not "no lone surrogates" but: wrap non-BMP text at a width that
+guarantees a mid-pair cut, then assert every row is independently valid UTF-16 **and** that
+concatenating the rows reproduces the input exactly.
+
+Three sections in, the pattern is consistent enough to state as a rule: **when a section files a
+defect and prescribes the fix in a sentence, the sentence is the least-examined text in the
+document.** It was written after the hard thinking was done, by someone who already knew the answer,
+and it is the part an implementer follows literally.
+
+## Stating a count twice in one lead-in leaves one of them unguarded
+
+Wrote "**There are three cut sites, not two.** `PaneRenderer` cuts `Plain` in three places:", then
+mutated three to four to confirm `check-counts` guarded it. It stayed green. The lead-in names the
+count twice, the checker takes the last one, and the last one was still correct — so the sentence
+could contradict itself and nothing would notice.
+
+Not a checker bug, and deliberately not fixed there: requiring every count in a lead-in to agree
+would re-break `SPEC:502` ("it applies at two levels ... so there are three cases:"), where two
+different counts in one sentence are both right. Fixed in the prose instead — "in each of these
+places:" — and it now fires at `SPEC:5461`. Worth knowing while writing: a lead-in that states its
+count twice has one guarded copy and one that can drift.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
