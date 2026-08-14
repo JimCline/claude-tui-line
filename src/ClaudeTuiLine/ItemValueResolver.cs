@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace ClaudeTuiLine;
@@ -132,58 +133,78 @@ public static class ItemValueResolver
         List<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? Tokens);
 
+    // Each row carries the MemberInfo(s) its Extract delegate reads alongside the delegate itself,
+    // authored together in one literal, so SPEC-V2-FRAMEWORK.md §9.5.1's coverage test can verify
+    // "this member is handled" structurally against Members instead of trusting a separately
+    // hand-authored, drift-prone member-to-extractor map.
+    internal readonly record struct ReferenceExtractor(IReadOnlyList<MemberInfo> Members, Func<ScanContext, IEnumerable<IdCandidate>> Extract);
+
+    internal readonly record struct ColorTokenExtractor(IReadOnlyList<MemberInfo> Members, Func<ScanContext, IEnumerable<ColorTokenReference>> Extract);
+
     // §5's reference forms, one extractor per form. Each yields every id-occurrence that form's
     // config keys produce, self-tagged as a declaration or a reference (§9.5.1's IdCandidate) —
     // CollectIds below reads only the id and discards the rest; ScanReferences reads all of it.
     // Adding a form (§4.2's argv placeholders, §3.3's compound-item parts) means appending here,
     // not editing either consumer.
-    internal static readonly IReadOnlyList<Func<ScanContext, IEnumerable<IdCandidate>>> ReferenceExtractors = new Func<ScanContext, IEnumerable<IdCandidate>>[]
+    internal static readonly IReadOnlyList<ReferenceExtractor> ReferenceExtractors = new[]
     {
         // A placed entry either declares its own id or names another one via an `item` selector —
         // §3 makes the two mutually exclusive, so this yields exactly one candidate or none.
-        ctx => ctx.Items.SelectMany(entry =>
-            entry.Item.Id is { Length: > 0 } ownId
-                ? new[] { new IdCandidate(ownId, entry.Path + "/id", ReferenceKind.Declaration, null) }
-                : entry.Item.Item is { Length: > 0 } selector
-                    ? new[] { new IdCandidate(selector, entry.Path + "/item", ReferenceKind.Reference, ReferenceForm.ItemSelector) }
-                    : Array.Empty<IdCandidate>()),
+        new ReferenceExtractor(
+            new[] { typeof(PaneItem).GetProperty(nameof(PaneItem.Id))!, typeof(PaneItem).GetProperty(nameof(PaneItem.Item))! },
+            ctx => ctx.Items.SelectMany(entry =>
+                entry.Item.Id is { Length: > 0 } ownId
+                    ? new[] { new IdCandidate(ownId, entry.Path + "/id", ReferenceKind.Declaration, null) }
+                    : entry.Item.Item is { Length: > 0 } selector
+                        ? new[] { new IdCandidate(selector, entry.Path + "/item", ReferenceKind.Reference, ReferenceForm.ItemSelector) }
+                        : Array.Empty<IdCandidate>())),
 
         // A derived item's `from` (§8).
-        ctx => ctx.Items
-            .Where(entry => entry.Item.From is { Length: > 0 })
-            .Select(entry => new IdCandidate(entry.Item.From!, entry.Path + "/from", ReferenceKind.Reference, ReferenceForm.DerivedFrom)),
+        new ReferenceExtractor(
+            new[] { typeof(PaneItem).GetProperty(nameof(PaneItem.From))! },
+            ctx => ctx.Items
+                .Where(entry => entry.Item.From is { Length: > 0 })
+                .Select(entry => new IdCandidate(entry.Item.From!, entry.Path + "/from", ReferenceKind.Reference, ReferenceForm.DerivedFrom))),
 
         // A link template's `{other-id}` placeholders (§3.2); `{}` is the item's own value, not a
         // reference, and is already excluded by LeafContent.LinkPlaceholderIds.
-        ctx => ctx.Items
-            .Where(entry => entry.Item.Link is { Length: > 0 })
-            .SelectMany(entry => LeafContent.LinkPlaceholderIds(entry.Item.Link!)
-                .Select(id => new IdCandidate(id, entry.Path + "/link", ReferenceKind.Reference, ReferenceForm.LinkPlaceholder))),
+        new ReferenceExtractor(
+            new[] { typeof(PaneItem).GetProperty(nameof(PaneItem.Link))! },
+            ctx => ctx.Items
+                .Where(entry => entry.Item.Link is { Length: > 0 })
+                .SelectMany(entry => LeafContent.LinkPlaceholderIds(entry.Item.Link!)
+                    .Select(id => new IdCandidate(id, entry.Path + "/link", ReferenceKind.Reference, ReferenceForm.LinkPlaceholder)))),
 
         // An inline colour rule's explicit `from` (§6.4).
-        ctx => ctx.ColorExprs
-            .Select(t => (t.Path, Inline: t.Expr as ColorResolution.ColorExpr.Inline))
-            .Where(t => t.Inline?.Rule.From is { Length: > 0 })
-            .Select(t => new IdCandidate(t.Inline!.Rule.From!, t.Path + "/from", ReferenceKind.Reference, ReferenceForm.ColorFrom)),
+        new ReferenceExtractor(
+            new[] { typeof(ColorResolution.ColorRule).GetProperty(nameof(ColorResolution.ColorRule.From))! },
+            ctx => ctx.ColorExprs
+                .Select(t => (t.Path, Inline: t.Expr as ColorResolution.ColorExpr.Inline))
+                .Where(t => t.Inline?.Rule.From is { Length: > 0 })
+                .Select(t => new IdCandidate(t.Inline!.Rule.From!, t.Path + "/from", ReferenceKind.Reference, ReferenceForm.ColorFrom))),
 
         // A `colors`-table token's `from` (§6.3) — required on every token, so this widens id
         // collection regardless of whether the token is ever referenced via `@name`.
-        ctx => (ctx.Tokens?
-            .Where(kv => kv.Value.From is { Length: > 0 })
-            .Select(kv => new IdCandidate(kv.Value.From!, $"/colors/{kv.Key}/from", ReferenceKind.Reference, ReferenceForm.ColorFrom))
-            ?? Enumerable.Empty<IdCandidate>()),
+        new ReferenceExtractor(
+            new[] { typeof(ColorResolution.ColorRule).GetProperty(nameof(ColorResolution.ColorRule.From))! },
+            ctx => (ctx.Tokens?
+                .Where(kv => kv.Value.From is { Length: > 0 })
+                .Select(kv => new IdCandidate(kv.Value.From!, $"/colors/{kv.Key}/from", ReferenceKind.Reference, ReferenceForm.ColorFrom))
+                ?? Enumerable.Empty<IdCandidate>())),
     };
 
     // An `@name` colour reference (§6.3) validates against the `colors` table's own keys, not
     // against an item id — a separate table from ReferenceExtractors, rather than a Kind on
     // IdCandidate, so that type never has to mean "an id or a colour-token name depending on
     // which Kind this is."
-    internal static readonly IReadOnlyList<Func<ScanContext, IEnumerable<ColorTokenReference>>> ColorTokenExtractors = new Func<ScanContext, IEnumerable<ColorTokenReference>>[]
+    internal static readonly IReadOnlyList<ColorTokenExtractor> ColorTokenExtractors = new[]
     {
-        ctx => ctx.ColorExprs
-            .Select(t => (t.Path, TokenRef: t.Expr as ColorResolution.ColorExpr.TokenRef))
-            .Where(t => t.TokenRef is not null)
-            .Select(t => new ColorTokenReference(t.TokenRef!.Name, t.Path)),
+        new ColorTokenExtractor(
+            new[] { typeof(ColorResolution.ColorExpr.TokenRef).GetProperty(nameof(ColorResolution.ColorExpr.TokenRef.Name))! },
+            ctx => ctx.ColorExprs
+                .Select(t => (t.Path, TokenRef: t.Expr as ColorResolution.ColorExpr.TokenRef))
+                .Where(t => t.TokenRef is not null)
+                .Select(t => new ColorTokenReference(t.TokenRef!.Name, t.Path))),
     };
 
     private static IReadOnlyList<string> CollectIds(
@@ -196,7 +217,7 @@ public static class ItemValueResolver
 
         foreach (var extractor in ReferenceExtractors)
         {
-            foreach (var candidate in extractor(ctx))
+            foreach (var candidate in extractor.Extract(ctx))
             {
                 ids.Add(candidate.Id);
             }
@@ -242,7 +263,7 @@ public static class ItemValueResolver
         var selfDeclared = new HashSet<string>(StringComparer.Ordinal);
         foreach (var extractor in ReferenceExtractors)
         {
-            foreach (var candidate in extractor(ctx))
+            foreach (var candidate in extractor.Extract(ctx))
             {
                 if (candidate.Kind == ReferenceKind.Declaration)
                 {
@@ -267,7 +288,7 @@ public static class ItemValueResolver
         var colorTokenReferences = new List<ColorTokenReference>();
         foreach (var extractor in ColorTokenExtractors)
         {
-            colorTokenReferences.AddRange(extractor(ctx));
+            colorTokenReferences.AddRange(extractor.Extract(ctx));
         }
 
         return new ReferenceScan(references, selfDeclared, derivedItemIds, colorTokenReferences, colorExprs);
