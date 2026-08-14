@@ -628,9 +628,71 @@ were found by asking it rather than by anything failing: not "is this right?" bu
 this do when the value is missing at render time, and who would ever find out?"** If the answer
 to the second half is "nobody", the rule is not finished.
 
-This is also the end of the audit pass. Two pending specs remain un-walked — §2.10 per-edge
-borders (task #8) and §2.11 empty-pane collapse (task #4) — and they are the next candidates for
-the same treatment.
+Two pending specs remained un-walked at that point — §2.10 per-edge borders (task #8) and §2.11
+empty-pane collapse (task #4). Both got the same treatment next.
+
+### §2.10 and §2.11 walked — seven gaps, and one section contradicting another (§2.10.1, §2.11.1, §2.11.2)
+
+These two were the last unimplemented specs nobody had walked over cases. Seven findings, five of
+them §7.1-class.
+
+**§2.10, five gaps (§2.10.1):**
+
+1. **`outline` and `inside` cannot be what the section says they are.** It calls all four
+   shorthands expansions of the declaring pane's four booleans. True of `all` and `none`; false
+   of the other two, because "no interior dividers" describes a split's *descendants* and no
+   booleans on the split itself can say it. Read literally, `"border": "outline"` renders the
+   outer box **plus** every interior line — the exact opposite — silently. Ruled: on a split they
+   are subtree instructions; on a leaf `outline` ≡ `all` and `inside` ≡ `none`; a descendant's own
+   explicit `border` overrides an ancestor's shorthand, or `outline` is a mute nobody can escape.
+2. **`collapse` never had a stated home.** Ruled surface-level only: the compositor resolves
+   **one** grid, and the boundary between a collapsed subtree and an uncollapsed sibling has two
+   different widths with no way to ask which. Accepting it on a pane and ignoring it is the §7.1
+   failure exactly, so it is an error (`collapse-not-surface-level`), not a silent ignore.
+3. **The degrade rule frees nothing under `collapse: true`.** "A pane drops its vertical edges
+   first" assumes the edge is that pane's column; collapsed, the line is drawn if *any* neighbour
+   wants it, so the pane drops its edge, the line stays, and the sizing model credits a column it
+   never got back — a ragged row (§2.4) arriving from the degrade step. Ruled: under collapsing,
+   degrade operates on **boundaries**, dropping a divider entire for its 1 column.
+4. **A junction can have arms in three styles.** "One table per style" presumes one style at the
+   position, but the tie-break resolves style *per edge*. Ruled: the junction takes the first
+   requester in tree order among its arms — the same tie-break, one rule instead of two.
+5. **`reserve(p)` is width-only and horizontal edges cost rows.** The decomposition splits
+   `borderReserve` into edges + padding on the width axis and says nothing about rows, while §2.8
+   reasons throughout about a box closing under its last content row — written when both
+   horizontals always existed. Ruled: `rowReserve(p)`, same one-function-no-transcription regime.
+
+**§2.11, two gaps — and the first is two sections disagreeing (§2.11.1, §2.11.2):**
+
+6. **§2.3's floor table and §2.11 give different answers for the same pane.** The table reads
+   `p.minSize set -> p.minSize (author said so; always wins)`; §2.11 says a collapsed pane
+   "occupies no width". A `content` pane with `minSize: 12` holding nothing is twelve columns by
+   one and zero by the other, and a reader consulting either leaves confident. Same shape as
+   defect 15 and worse than either being wrong alone. Ruled **`minSize` wins**: it is §2.4's own
+   declared-versus-inferred test, it is the only way to say "size to content but hold this much",
+   and it inverts safely — omit `minSize` to get collapse, so nobody is surprised into a pane
+   that vanishes.
+   - **Follow-on false positive:** §9.4's `pane-no-items` justifies itself with "it collapses, so
+     the declaration did nothing" — which stops being true for those panes. Registry row amended.
+     A diagnostic whose reason has lapsed is how authors learn to ignore a checker.
+7. **A timed-out command item collapses the pane, once a second.** §5 hands the pre-pass "value or
+   no value", but a `command` item reaches no-value two ways: it returned nothing, or it never
+   answered inside the 150 ms budget. Collapsing on the second means a pane that vanishes and
+   returns as a script drifts across its timeout — the line jumping once a second, which is the
+   *precise* failure §2.11 names two paragraphs earlier as why `fixed` panes don't collapse. It
+   came back through the door the section had just shut. Ruled: **absent** (resolved, no value) is
+   distinguished from **unavailable** (did not answer), and a pane holding an unavailable item
+   keeps its extent for that render.
+
+Four new registry codes in §9.6.1: `collapse-not-surface-level`, `border-inside-on-leaf`,
+`color-down-converted` (§6.2's approximation warning, which the implementor correctly flagged as
+missing), and the amended `pane-no-items`.
+
+**What the pass is worth, stated plainly.** Seven gaps in two sections that both read as finished
+prose, found by asking §7.1's question of each rule rather than by anything failing. None would
+have surfaced in a test, because in every case the code would have done something defensible. The
+technique is now cheap enough to be routine: walk the rule over concrete cases, and ask who finds
+out when it is wrong.
 
 ### Open, and honest about it
 

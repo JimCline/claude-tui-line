@@ -855,6 +855,73 @@ its four outer edges render exactly as today. The golden parity gate covers only
 no-`surface` single-pane config and is therefore unaffected by this section — if it moves, that
 is a defect in the reserve decomposition, not an expected consequence.
 
+#### 2.10.1 Five things the above does not say, ruled
+
+Walking §2.10 over cases turned up five gaps, four of them in the §7.1 class — the config is
+valid, `--check` is silent, and the surface renders something plausible and wrong.
+
+**1. `outline` and `inside` are subtree instructions, not this node's four booleans.** The
+shorthands are introduced as expanding "to exactly the above", meaning the declaring pane's
+`{top,right,bottom,left}`. That is true of `all` and `none` and false of the other two: "no
+interior dividers" and "interior dividers only" describe a *split's descendants*, which no
+number of booleans on the split itself can express. Read literally, `"border": "outline"` on a
+split sets the split's own four edges and leaves every child bordered as before — the outer box
+plus every interior line, the exact opposite of what was asked, with nothing to report it. So:
+
+- On a **split**, `outline` turns the split's own four edges on and every descendant's off;
+  `inside` turns the split's own four off and interior dividers on.
+- On a **leaf**, `outline` ≡ `all` and `inside` ≡ `none`, because a leaf has no interior.
+  `inside` on a leaf silences the pane's border and is almost never meant: warning
+  `border-inside-on-leaf` (§9.6.1).
+- **A descendant's own explicit `border` overrides what an ancestor's shorthand set for it** —
+  nearest declaration wins. Without this, `outline` is a mute an author cannot locally escape.
+
+**2. `collapse` is a surface-level key and nothing else.**
+
+```json
+"surface": { "border": { "collapse": true } }
+```
+
+§2.10 makes the compositor overlay **one** resolved border grid. One grid cannot be half
+collapsed: the boundary between a `collapse: true` subtree and a `collapse: false` sibling has no
+defined width — one column by the first rule, `g + 2` by the second — and the sizing model has no
+way to ask which. Accepting the key on a pane and quietly ignoring it is the §7.1 failure in its
+purest form, so it is an **error**, code `collapse-not-surface-level`, not a silent ignore.
+
+**3. The degrade rule does not work under `collapse: true`.** "A squeezed pane drops its vertical
+edges first" assumes the edge is the pane's own column. Under collapsing it is not: the line is
+drawn if **any** adjacent pane asks for it, so one pane dropping its right edge frees exactly zero
+columns while the neighbour still wants its left. The sizing model would credit a column it never
+recovered, and a row comes out wide — §2.4's ragged-row violation, arriving from the degrade step.
+
+Under `collapse: true`, therefore, **degrade operates on boundaries, not on panes**: it drops an
+interior divider entire, freeing exactly the 1 column that divider costs, outermost edges last.
+Under `collapse: false` the existing per-pane rule stands untouched, because there a pane's
+vertical edge really is its own column.
+
+**4. A junction can have arms in more than one style.** "One 16-entry table per style" presumes a
+single style at the position, but the tie-break resolves colour and style **per edge**, so four
+arms may arrive from four panes carrying three styles. Ruling: the junction glyph comes from the
+style of the **first requester in tree declaration order among the arms present at that
+position** — the same tie-break as the edge itself, applied to the junction as if it were one more
+participant. One rule rather than two, and `collapsed-edge-conflict` already reports that the
+disagreement happened.
+
+**5. `reserve(p)` is width-only, and horizontal edges cost rows.** Once edges are selectable
+individually, `top` and `bottom` are no longer a pair that exists or does not — and the reserve
+decomposition above says nothing about rows, while §2.8 reasons throughout about a box that
+"closes under its last content row", written when both horizontals were always present. Name the
+counterpart:
+
+```
+rowReserve(p)  =  (top ? 1 : 0) + (bottom ? 1 : 0)
+```
+
+under the same regime as `reserve(p)` — one named function, no transcription (see the paragraph
+above). §2.8's `height: "content"` shrink-wrap adds `rowReserve(p)` to the pane's content row
+count. §2.8's worked example, which spends `borderReserve 4` inline, stays correct only for the
+all-edges case and is to be read as `reserve(p)` for that pane rather than as a constant.
+
 ### 2.11 An empty pane collapses — but only the kind of empty that is knowable before sizing
 
 §2.4 already rules this: an empty `content` or `fill` pane collapses and takes its gutter with it;
@@ -907,6 +974,55 @@ items because an author wrote an empty pane and probably did not mean to. A pane
 all valueless outside a repository is working exactly as designed, gets no diagnostic, and could
 not get one anyway: `--check` does not resolve values (§9.8), so the two cases are not even
 distinguishable from where the validator stands.
+
+#### 2.11.1 An explicit `minSize` suppresses collapse
+
+**Two sections currently answer this differently, which is worse than either being wrong.**
+§2.3's floor table reads `p.minSize set -> p.minSize (author said so; always wins)`. The rule
+above says a collapsed pane "occupies no width". For a `content` pane with `minSize: 12` holding
+nothing, one says twelve columns and the other says zero, and a reader consulting either comes
+away confident.
+
+**`minSize` wins, and collapse does not apply.** The pane keeps its floor and its border. Three
+reasons, in order of weight:
+
+- It is §2.4's own test. A `fixed` pane keeps its extent because "the author named a number and
+  reserving declared space is often the intent." `minSize` is a number the author named. The
+  distinction §2.4 draws is not really `content`-versus-`fixed`, it is *declared extent versus
+  inferred extent*, and `minSize` is declared.
+- It is the only vocabulary for "size to content, but hold this much." Let collapse override it
+  and that sentence becomes inexpressible — the author's remaining option is `fixed`, which gives
+  up content sizing entirely.
+- It inverts safely. To get collapse, omit `minSize`; there is no way to be surprised into a pane
+  that vanishes, only into one that stays.
+
+**A follow-on: §9.4's `pane-no-items` warning must not fire on these.** Its stated rationale is
+"it collapses, so the declaration did nothing" — which is false for a `content`/`fill` pane with
+an explicit `minSize`, since that pane holds its space and is a legitimate spacer for exactly the
+reason `fixed` and `percent` are. The registry row in §9.6.1 is amended accordingly. A diagnostic
+whose reason has stopped applying is a false positive that teaches authors to ignore the checker.
+
+#### 2.11.2 An item that did not answer is not an empty item
+
+§5 resolves values before sizing, so the pre-pass sees one thing: a value or no value. But a
+`command` item (§4) reaches no-value by two different roads — it ran and returned nothing, or it
+**timed out, exited nonzero, or was killed** at the 150 ms budget (§7). The rule above collapses
+the pane either way, and at `refreshInterval: 1` that means a pane that vanishes and returns as a
+script drifts across its timeout: the whole line jumping once a second, which is the precise
+failure §2.11 invokes two paragraphs earlier as the reason `fixed` panes do not collapse. It came
+back in through the door this section had just closed.
+
+So the resolver distinguishes **absent** — resolved, no value — from **unavailable** — did not
+answer. **A pane holding an unavailable item does not collapse for that render.** It keeps its
+extent and its border and renders whatever else it has, possibly nothing.
+
+In §7.1's terms: "the tool did not answer in time" is not the author saying this pane is empty. A
+layout that reshapes on a 150 ms timeout is present, plausible, wrong, and has nobody to report
+it — the user sees a statusline that twitches and no reason anywhere for why.
+
+This distinction is not new machinery. §5's TTL cache already has to know the difference to decide
+what is cacheable, and §9.4.1's two-tier severity already separates "reported nothing" from
+"failed". What is new is that the collapse pre-pass must read it.
 
 ## 3. Item model
 
@@ -2226,7 +2342,10 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
 | `min-exceeds-max` | `minSize` greater than `maxSize` on one pane — unachievable everywhere | error | 9.8 |
 | `collapsed-edge-conflict` | adjacent panes disagree about a shared edge under `border.collapse` | warning | 2.10 |
-| `pane-no-items` | a `content` or `fill` pane declaring no items — it collapses, so the declaration did nothing. **Not** `fixed`/`percent`, which keep their extent and are legitimate spacers | warning | 9.4 |
+| `collapse-not-surface-level` | `border.collapse` declared on a pane — the compositor resolves one grid for the whole surface, so a per-pane value has no defined meaning | error | 2.10.1 |
+| `border-inside-on-leaf` | `"border": "inside"` on a leaf pane — a leaf has no interior, so this silences its border entirely | warning | 2.10.1 |
+| `color-down-converted` | a hex or 256-palette literal under a `colorSystem` that cannot render it — it will be approximated to the nearest of the sixteen | warning | 6.2 |
+| `pane-no-items` | a `content` or `fill` pane declaring no items **and no explicit `minSize`** — it collapses, so the declaration did nothing. **Not** `fixed`/`percent`, nor a `content`/`fill` pane with a `minSize`: all three hold their extent and are legitimate spacers (§2.11.1) | warning | 9.4 |
 
 **Tool-protocol codes** — a different channel, and consumers must not confuse the two. These
 appear as a top-level `{ "ok": false, "code": … }` describing a failed *invocation*, never as an
