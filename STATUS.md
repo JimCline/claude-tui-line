@@ -42,7 +42,13 @@ not by itself enough; this project has twice had a green suite over a broken ins
   §9 had never defined — the implementor had no way to know the field was expected. It brings a
   test with it: the version lives in both the `.csproj` and the hand-written `plugin.json`, which
   cannot be generated, so an assertion that the two match is the only thing standing between that
-  drift and a user reporting a version corresponding to nothing.
+  drift and a user reporting a version corresponding to nothing. **§9.8 settles what "fixed sizes
+  cannot fit the parent" means**, raised by the implementor rather than found by me: `--check`
+  consults no width at all, because §12.6's `validate` calls it from an MCP server with no
+  terminal, and because degrading at a narrow width is what the §2 ladder is *for*. The invariant
+  is a contradiction no width can resolve — fixed children against a bounded parent, `minSize`
+  above `maxSize` — and where the parent is `fill`/`content` it says nothing. The width-dependent
+  finding is real but belongs to `--preview`, as a note that never touches the exit code.
 - **Phase 6 authoring commands** (§12.3–12.5) — `migrate`, `edit`, `revert` **written and
   committed, blocked on §9**. Each opens by asking the binary for `--items`, and **stops** if the
   CLI is absent rather than falling back to a list written from memory: §12.1 forbids that
