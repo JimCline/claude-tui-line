@@ -2289,7 +2289,7 @@ Two passes. Keys appearing as `"key":` inside fenced JSON blocks — 94 of them,
 (`notes`, `usableColumns`, `removed`). Then backticked lower-camel identifiers in *prose*, which is
 the form `maxLines` actually took and which the first pass cannot see — 177 of them, 32 absent.
 
-Every one of the 35 triages to a legitimate absence:
+Every absence triages to one of four legitimate kinds:
 
 - **A vocabulary we correctly do not own** — `italic`, `underline`, `conceal`, `invert`,
   `strikethrough` are Spectre's decoration keywords, and `gold1`, `grey37`, `hotpink`, `orange3`,
