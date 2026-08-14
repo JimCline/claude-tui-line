@@ -13,6 +13,22 @@ public class OverflowModeTests
 
     private static readonly int[] SweptWidths = { 20, 21, 24, 30, 40, 60, 80, 100, 160, 200 };
 
+    // §13.2 (defect 16): a lone surrogate in rendered text means a cut fell inside a pair.
+    private static void AssertNoLoneSurrogates(string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (char.IsHighSurrogate(s[i]))
+            {
+                Assert.True(i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]), $"lone high surrogate at index {i} in \"{s}\"");
+            }
+            else if (char.IsLowSurrogate(s[i]))
+            {
+                Assert.True(i > 0 && char.IsHighSurrogate(s[i - 1]), $"lone low surrogate at index {i} in \"{s}\"");
+            }
+        }
+    }
+
     [Fact]
     public void Truncate_OversizedSegment_ClipsToWidth_EndsWithEllipsis()
     {
@@ -149,6 +165,52 @@ public class OverflowModeTests
 
         var row = Assert.Single(buffer.Rows);
         Assert.Equal(string.Empty, Stripped(row.Markup));
+    }
+
+    // --- surrogate-pair cut safety (§13.2, defect 16): a cut index must never fall between a
+    // UTF-16 high surrogate and its trailing low surrogate, or the pair splits into two lone
+    // surrogates — invalid UTF-16 on the wire, not just a clipped glyph. ---
+
+    [Fact]
+    public void Wrap_SurrogatePairAtChunkBoundary_StaysIntactInOneRow()
+    {
+        const string emoji = "\U0001F600"; // 😀 — one character, two UTF-16 code units.
+
+        // 23 'a's fill indices 0-22, so the emoji's high surrogate lands at index 23: the last
+        // unit of a naive 24-wide chunk, with the low surrogate one past it.
+        var original = new string('a', 23) + emoji + new string('b', 10);
+        var items = new[] { new Segment(original, original) };
+
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…", new RenderNoteCollector());
+
+        var reconstructed = string.Concat(buffer.Rows.Select(r => Stripped(r.Markup)));
+        Assert.Equal(original, reconstructed);
+
+        foreach (var row in buffer.Rows)
+        {
+            AssertNoLoneSurrogates(Stripped(row.Markup));
+        }
+
+        Assert.Contains(buffer.Rows, row => Stripped(row.Markup).Contains(emoji));
+    }
+
+    [Fact]
+    public void Truncate_SurrogatePairAtCutBoundary_StaysIntact()
+    {
+        const string emoji = "\U0001F600"; // 😀 — one character, two UTF-16 code units.
+
+        // ellipsis is 1 char wide, innerWidth=10 -> contentBudget=9, which would ordinarily cut
+        // exactly between the pair: the high surrogate (index 8) is the last unit of a naive
+        // 9-wide clip, with the low surrogate (index 9) one past it.
+        var original = new string('a', 8) + emoji + "cdefgh";
+        var items = new[] { new Segment(original, original) };
+
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 10, OverflowMode.Truncate, ellipsis: "…", new RenderNoteCollector());
+
+        var row = Assert.Single(buffer.Rows);
+        var text = Stripped(row.Markup);
+        AssertNoLoneSurrogates(text);
+        Assert.Equal(new string('a', 8) + emoji + "…", text);
     }
 
     // --- width-invariant sweeps: wrap/truncate never exceed innerWidth, excluding RowLayout's own
