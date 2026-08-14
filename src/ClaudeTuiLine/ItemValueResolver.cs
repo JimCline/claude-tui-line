@@ -228,7 +228,7 @@ public static class ItemValueResolver
             ctx => ctx.Items
                 .Where(entry => entry.Item.Command is { Count: > 0 })
                 .SelectMany(entry => ArgvPlaceholders.ReferencedIds(entry.Item.Command!)
-                    .Select(id => new IdCandidate(id, entry.Path + "/command", ReferenceKind.Reference, ReferenceForm.ArgvPlaceholder)))),
+                    .Select(id => new IdCandidate(id, entry.Path + "/command", ReferenceKind.Reference, ReferenceForm.ArgvPlaceholder, entry.Item.Id)))),
     };
 
     // An `@name` colour reference (§6.3) validates against the `colors` table's own keys, not
@@ -309,7 +309,7 @@ public static class ItemValueResolver
                 }
                 else
                 {
-                    references.Add(new IdReference(candidate.Id, candidate.Path, candidate.Form!.Value));
+                    references.Add(new IdReference(candidate.Id, candidate.Path, candidate.Form!.Value, candidate.OwnerId));
                 }
             }
         }
@@ -491,7 +491,16 @@ internal readonly record struct IdCandidate
     public ReferenceKind Kind { get; }
     public ReferenceForm? Form { get; }
 
-    public IdCandidate(string id, string path, ReferenceKind kind, ReferenceForm? form)
+    /// <summary>
+    /// The id of the item this reference lives inside, when the extractor has one in scope —
+    /// null for extractors with no owning item (e.g. a <c>colors</c>-table token's <c>from</c>).
+    /// Lets a self-naming reference (§4.2's named self-reference: a command item's argv
+    /// placeholder naming its own id) be told apart from one naming a different item of the
+    /// same kind.
+    /// </summary>
+    public string? OwnerId { get; }
+
+    public IdCandidate(string id, string path, ReferenceKind kind, ReferenceForm? form, string? ownerId = null)
     {
         if ((kind == ReferenceKind.Reference) != (form is not null))
         {
@@ -504,6 +513,7 @@ internal readonly record struct IdCandidate
         Path = path;
         Kind = kind;
         Form = form;
+        OwnerId = ownerId;
     }
 }
 
@@ -516,7 +526,7 @@ internal readonly record struct IdCandidate
 /// against <see cref="ReferenceScan.SelfDeclaredIds"/>/the item registry can never be handed the
 /// wrong namespace by mistake.
 /// </summary>
-internal readonly record struct IdReference(string Id, string Path, ReferenceForm Form);
+internal readonly record struct IdReference(string Id, string Path, ReferenceForm Form, string? OwnerId = null);
 
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §6.3: one <c>@name</c> colour reference found by
