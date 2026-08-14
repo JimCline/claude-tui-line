@@ -83,11 +83,12 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // name a builtin's "from" independent of whether any item is placed.
         var tokens = topLevel.Colors;
         var cacheDir = ItemCache.ResolveCacheDir();
+        var widthsDir = ItemCache.ResolveWidthsCacheDir();
         IReadOnlyDictionary<string, string?> values;
         IReadOnlyCollection<string> unavailableIds;
         try
         {
-            var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir).ConfigureAwait(false);
+            var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir, widthsDir, surfaceWidth).ConfigureAwait(false);
             values = resolution.Values;
             unavailableIds = resolution.UnavailableIds;
         }
@@ -109,7 +110,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // ComputeRows, shared with RunPreview below, so the real render and a preview capture
         // can't compute that decision two different ways.
         var (rows, renderingPanel, boxBorder, borderColor) =
-            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, cacheDir, stampWidths: true, unavailableIds, topLevel.SurfaceMaxRows);
+            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, widthsDir, unavailableIds, topLevel.SurfaceMaxRows);
         DrawRows(console, rows, renderingPanel, boxBorder, borderColor, surfaceWidth);
 
         return 0;
@@ -158,8 +159,7 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
     IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
     RenderNoteCollector notes,
     string? cwd,
-    string cacheDir,
-    bool stampWidths,
+    string widthsDir,
     IReadOnlyCollection<string> unavailableIds,
     int surfaceMaxRows)
 {
@@ -182,10 +182,10 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
         // by the degrade ladder, which resolves both the sized tree and its rendered contribution
         // in one pass so a rejected intermediate attempt's width resolution never leaks out.
         var (resolvedRoot, rootContribution) = HeightLadder.Resolve(collapsedPane, surfaceWidth!.Value, surfaceMaxRows, ctx, values, tokens, notes);
-        if (stampWidths)
-        {
-            StampPaneWidths(resolvedRoot, cwd, cacheDir);
-        }
+        // §5.0.1/§9.3.4: unconditional now that the widths store is keyed by resolved surface
+        // width — a --preview at one width and a live render at another write distinct entries,
+        // so stamping here can no longer corrupt a render at a different width.
+        StampPaneWidths(resolvedRoot, cwd, widthsDir, surfaceWidth!.Value);
 
         return (rootContribution.Buffer.Rows, false, null, Style.Plain);
     }
@@ -366,11 +366,12 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
 
     var tokens = topLevel.Colors;
     var cacheDir = ItemCache.ResolveCacheDir();
+    var widthsDir = ItemCache.ResolveWidthsCacheDir();
     IReadOnlyDictionary<string, string?> values;
     IReadOnlyCollection<string> unavailableIds;
     try
     {
-        var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir).ConfigureAwait(false);
+        var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir, widthsDir, usableColumns).ConfigureAwait(false);
         values = resolution.Values;
         unavailableIds = resolution.UnavailableIds;
     }
@@ -384,13 +385,11 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
 
     if (json)
     {
-        // stampWidths: false — unlike the real render, a preview's width comes from --columns or
-        // a synthetic fallback rather than the caller's actual terminal, so stamping it into the
-        // command-item cache would let a preview at one width corrupt the next real render's
-        // cached width at a different one. §9.3.4: this is permanent, not a placeholder — it stays
-        // until §5.0.1's widths store is keyed by resolved surface width.
+        // §5.0.1/§9.3.4: stamping here is safe unconditionally — the widths store is keyed by
+        // resolved surface width, so a preview at one width and a live render at another write
+        // distinct entries and can't corrupt each other's stamped pane width.
         var (jsonRows, jsonRenderingPanel, jsonBoxBorder, jsonBorderColor) =
-            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds, topLevel.SurfaceMaxRows);
+            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows);
 
         // §9.3.4: a row is a line of the rendered surface, borders included — the same draw the
         // bare form produces, captured through the same console configuration rather than a second
@@ -447,7 +446,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     }
 
     var (bareRows, renderingPanel, boxBorder, borderColor) =
-        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds, topLevel.SurfaceMaxRows);
+        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows);
 
     // §9.3.2: bare --preview writes through the render path's own console configuration (forced
     // ANSI, not the auto-detecting instance --colors uses), captured first so the columns/notes
@@ -751,10 +750,10 @@ static int WriteConfigUnreadable(bool json, string path, string message)
     return 3;
 }
 
-// §4/§5: after sizing converges, stamps every non-content-sized leaf's actual inner width onto
-// its own command items' cache entries, so the next render's TTL-expired respawn (CommandProvider)
-// sees the pane it will actually render into rather than whatever width the last stamp recorded.
-static void StampPaneWidths(SizeResolver.ResolvedPane node, string? cwd, string cacheDir)
+// §4/§5.0.1: after sizing converges, stamps every non-content-sized leaf's actual inner width into
+// the widths store, so the next render's TTL-expired respawn (CommandProvider) sees the pane it
+// will actually render into rather than whatever width the last stamp at this surface width recorded.
+static void StampPaneWidths(SizeResolver.ResolvedPane node, string? cwd, string widthsDir, int surfaceWidth)
 {
     var pane = node.Source;
     if (!SizeResolver.IsContentSized(pane))
@@ -766,14 +765,14 @@ static void StampPaneWidths(SizeResolver.ResolvedPane node, string? cwd, string 
         {
             if (item.Id is { Length: > 0 } id && item.Command is { Count: > 0 } command)
             {
-                ItemCache.StampPaneWidth(cacheDir, ItemCache.KeyFor(id, command, cwd), innerWidth);
+                ItemCache.WriteWidth(widthsDir, ItemCache.WidthKeyFor(id, command, cwd, surfaceWidth), innerWidth);
             }
         }
     }
 
     foreach (var child in node.Children)
     {
-        StampPaneWidths(child, cwd, cacheDir);
+        StampPaneWidths(child, cwd, widthsDir, surfaceWidth);
     }
 }
 

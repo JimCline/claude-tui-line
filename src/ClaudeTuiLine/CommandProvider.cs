@@ -31,7 +31,7 @@ public static class CommandProvider
     public readonly record struct CommandResolution(string? Value, bool Unavailable);
 
     public static async Task<CommandResolution> ResolveAsync(
-        PaneItem item, string? rawStdinJson, string? cwd, string cacheDir, bool paneWidthEligible,
+        PaneItem item, string? rawStdinJson, string? cwd, string cacheDir, string widthsDir, int? surfaceWidth, bool paneWidthEligible,
         IReadOnlyDictionary<string, string?> values, IReadOnlyCollection<string> unavailableIds)
     {
         if (item.Id is not { Length: > 0 } id || item.Command is not { Count: > 0 } command)
@@ -42,10 +42,11 @@ public static class CommandProvider
         var ttl = TimeSpan.FromSeconds(item.TtlSeconds is > 0 ? item.TtlSeconds.Value : DefaultTtlSeconds);
         var timeout = TimeSpan.FromMilliseconds(item.TimeoutMs is > 0 ? item.TimeoutMs.Value : DefaultTimeoutMs);
 
-        // §4.2.3: the item's placement identity (unsubstituted argv + cwd), used only to look up
-        // the width the item's pane last resolved to — see ItemCache.KeyFor's doc comment.
-        var widthTrackingKey = ItemCache.KeyFor(id, command, cwd);
-        var previousPaneWidth = paneWidthEligible ? ItemCache.TryRead(cacheDir, widthTrackingKey)?.PaneWidth : null;
+        // §5.0.1: the item's placement identity (unsubstituted argv + cwd) plus this render's
+        // resolved surface width, used to look up the width the item's pane last resolved to on a
+        // render at the same surface width — see ItemCache.WidthKeyFor's doc comment.
+        var widthKey = ItemCache.WidthKeyFor(id, command, cwd, surfaceWidth);
+        var previousPaneWidth = paneWidthEligible ? ItemCache.TryReadWidth(widthsDir, widthKey) : null;
 
         var expansion = ArgvPlaceholders.Expand(command, item.Shell, values);
         var valueKey = ItemCache.KeyFor(id, expansion.Argv, cwd, previousPaneWidth, expansion.ExportedEnv);
@@ -71,7 +72,7 @@ public static class CommandProvider
             return new CommandResolution(cached?.Value, Unavailable: cached?.Value is null);
         }
 
-        ItemCache.Write(cacheDir, valueKey, new CacheEntry(result.Value, DateTimeOffset.UtcNow, result.ExitCode, PaneWidth: null));
+        ItemCache.Write(cacheDir, valueKey, new CacheEntry(result.Value, DateTimeOffset.UtcNow, result.ExitCode));
         return new CommandResolution(result.Value, Unavailable: false);
     }
 
