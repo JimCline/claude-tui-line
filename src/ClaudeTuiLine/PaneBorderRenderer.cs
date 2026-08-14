@@ -22,7 +22,7 @@ public static class PaneBorderRenderer
     /// resolved outer width stays correct) but draws blank chrome instead of glyphs — one code
     /// path for both cases, not a separate borderless layout.
     /// </param>
-    public static IReadOnlyList<string> Wrap(IReadOnlyList<string> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false)
+    public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<PaneRow> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false)
     {
         if (border.Style is null)
         {
@@ -31,6 +31,7 @@ public static class PaneBorderRenderer
 
         var width = Math.Max(0, innerWidth);
         var style = border.Style;
+        var outerWidth = width + BorderReserve;
 
         string Part(BoxBorderPart part) => suppressed ? " " : style.GetPart(part);
 
@@ -42,9 +43,9 @@ public static class PaneBorderRenderer
         var left = Colored(Part(BoxBorderPart.Left));
         var right = Colored(Part(BoxBorderPart.Right));
 
-        var rows = new List<string>(contentRows.Count + 2) { top };
-        rows.AddRange(contentRows.Select(row => left + " " + row + " " + right));
-        rows.Add(bottom);
+        var rows = new List<PaneRow>(contentRows.Count + 2) { new(top, outerWidth) };
+        rows.AddRange(contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + BorderReserve)));
+        rows.Add(new PaneRow(bottom, outerWidth));
         return rows;
     }
 

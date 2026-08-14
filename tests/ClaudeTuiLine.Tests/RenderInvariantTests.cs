@@ -67,7 +67,7 @@ public class RenderInvariantTests
 
         foreach (var row in rows)
         {
-            console.MarkupLine(row);
+            console.MarkupLine(row.Markup);
         }
 
         return Strip(writer.ToString());
@@ -88,7 +88,7 @@ public class RenderInvariantTests
         });
         console.Profile.Width = Math.Max(1, surfaceWidth);
 
-        var panel = new Panel(new Markup(string.Join('\n', rows)))
+        var panel = new Panel(new Markup(string.Join('\n', rows.Select(r => r.Markup))))
             .Padding(1, 0)
             .Border(BoxBorder.Rounded)
             .BorderStyle(new Style(Color.Grey));

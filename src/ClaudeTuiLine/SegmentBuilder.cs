@@ -73,7 +73,7 @@ public static class SegmentBuilder
     public static Segment BuildItemSegment(string plain, string? color)
     {
         var strippedPlain = AnsiStrip.Strip(plain);
-        var rawMarkup = Markup.Escape(plain) + RawSgrReset;
+        var rawMarkup = Markup.Escape(plain) + Markup.Escape(RawSgrReset);
 
         return string.IsNullOrEmpty(color)
             ? new Segment(rawMarkup, strippedPlain)

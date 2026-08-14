@@ -17,7 +17,7 @@ public static class PaneRenderer
             // No COLUMNS: RowLayout.Wrap's own null-width contract (single unwrapped row)
             // applies identically regardless of overflow mode — there is no pane width to
             // measure "wider than the pane" against.
-            return PaneBuffer.FromMarkupRows(RowLayout.Wrap(items, null, allowFallback));
+            return new PaneBuffer(RowLayout.Wrap(items, null, allowFallback));
         }
 
         var prepared = overflow switch
@@ -31,7 +31,7 @@ public static class PaneRenderer
             _ => items, // Overflow: v1-identical, oversized segments pass through untouched.
         };
 
-        return PaneBuffer.FromMarkupRows(RowLayout.Wrap(prepared, width, allowFallback));
+        return new PaneBuffer(RowLayout.Wrap(prepared, width, allowFallback));
     }
 
     // §2.6 truncate: cut to fit, ending with the marker; the marker's own width is budgeted

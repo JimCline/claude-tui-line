@@ -26,7 +26,7 @@ public class CompositorTests
 
         var composed = Compositor.ComposeRoot(new[] { contribution });
 
-        Assert.Equal(new[] { "abc" }, composed);
+        Assert.Equal(new[] { "abc" }, composed.Select(r => r.Markup));
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class CompositorTests
 
         var composed = Compositor.ComposeRoot(new[] { contribution });
 
-        Assert.Equal(new[] { "abc" + new string(' ', 7) }, composed);
+        Assert.Equal(new[] { "abc" + new string(' ', 7) }, composed.Select(r => r.Markup));
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class CompositorTests
                 "ab" + new string(' ', 3) + "xy" + new string(' ', 2),
                 "cde" + new string(' ', 2) + "z" + new string(' ', 3),
             },
-            composed);
+            composed.Select(r => r.Markup));
     }
 
     [Fact]
@@ -65,9 +65,9 @@ public class CompositorTests
         var composed = Compositor.ComposeRoot(new[] { tall, shortPane });
 
         Assert.Equal(3, composed.Count);
-        Assert.Equal("a" + new string(' ', 2) + "x" + new string(' ', 1), composed[0]);
-        Assert.Equal("b" + new string(' ', 2) + new string(' ', 2), composed[1]);
-        Assert.Equal("c" + new string(' ', 2) + new string(' ', 2), composed[2]);
+        Assert.Equal("a" + new string(' ', 2) + "x" + new string(' ', 1), composed[0].Markup);
+        Assert.Equal("b" + new string(' ', 2) + new string(' ', 2), composed[1].Markup);
+        Assert.Equal("c" + new string(' ', 2) + new string(' ', 2), composed[2].Markup);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class CompositorTests
 
         // left's own rule-1 padding survives — only the composed ROW's trailing whitespace is
         // trimmed, and only because the RIGHTMOST pane has no background.
-        Assert.Equal(new[] { "a" + new string(' ', 2) + "b" }, composed);
+        Assert.Equal(new[] { "a" + new string(' ', 2) + "b" }, composed.Select(r => r.Markup));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public class CompositorTests
 
         var composed = Compositor.ComposeRoot(new[] { left, rightWithBg });
 
-        Assert.Equal(new[] { "a" + new string(' ', 2) + "b" + new string(' ', 3) }, composed);
+        Assert.Equal(new[] { "a" + new string(' ', 2) + "b" + new string(' ', 3) }, composed.Select(r => r.Markup));
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class CompositorTests
 
         var composed = Compositor.ComposeRoot(new[] { leftWithBg, rightNoBg });
 
-        Assert.Equal(new[] { "a" + new string(' ', 2) + "b" }, composed);
+        Assert.Equal(new[] { "a" + new string(' ', 2) + "b" }, composed.Select(r => r.Markup));
     }
 
     [Fact]
@@ -113,6 +113,6 @@ public class CompositorTests
 
         var composed = Compositor.ComposeRoot(new[] { contribution });
 
-        Assert.Equal("[red]ab[/]" + new string(' ', 4), composed[0]);
+        Assert.Equal("[red]ab[/]" + new string(' ', 4), composed[0].Markup);
     }
 }

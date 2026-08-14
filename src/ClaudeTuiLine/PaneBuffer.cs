@@ -11,11 +11,4 @@ public sealed record PaneRow(string Markup, int Width);
 /// A leaf pane's render output: an ordered list of rows. §2.4: "A leaf pane renders to a
 /// PaneBuffer... A split composes its children's buffers into one buffer."
 /// </summary>
-public sealed record PaneBuffer(IReadOnlyList<PaneRow> Rows)
-{
-    public static PaneRow MeasureRow(string markup) =>
-        new(markup, Spectre.Console.Markup.Remove(markup).Length);
-
-    public static PaneBuffer FromMarkupRows(IEnumerable<string> markupRows) =>
-        new(markupRows.Select(MeasureRow).ToList());
-}
+public sealed record PaneBuffer(IReadOnlyList<PaneRow> Rows);

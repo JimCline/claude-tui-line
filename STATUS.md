@@ -48,17 +48,30 @@ not by itself enough; this project has twice had a green suite over a broken ins
    `edit`.
 4. **Config diagnostics** — see the open defects below.
 5. **`maxRows` degrade ladder** (§2.8).
+6. **Phase 7 MCP server** (§12.6) — ambient access, so "make the border green" works mid-
+   conversation without the user knowing a slash command exists. Seven tools, **read/write**:
+   `list_items`, `list_colors`, `get_config`, `set_config`, `validate`, `preview`, `revert` —
+   enough for the model to carry a request from words to a rendered statusline unaided.
+   `set_config` validates before it commits and never writes a config that fails `--check`;
+   `preview` returns rendered rows so the model checks its work by looking rather than by
+   asserting. **Deliberately last**: it wraps the CLI, so it cannot be designed before the CLI
+   exists. Stateless, and the renderer stays a one-shot AOT binary regardless.
 
 ## Open defects
 
 | # | Defect | Impact | Status |
 |---|---|---|---|
-| 0 | **Width is derived by parsing markup, not from `Plain`** — `PaneBuffer.cs:17`, `PaneAssembler.cs:82`, `PaneTreeRenderer.cs:111` all call `Markup.Remove(...).Length` | Violates the invariant the layout rests on (SPEC.md §6). `Markup.Remove` strips Spectre tags, not ANSI, so any row carrying raw escapes measures long and the border lands early — silently. Genuinely pre-existing | Being fixed now |
-| 1 | OSC 8 hyperlinks are counted as visible text | Border lands ~50 columns early; row goes ragged. Reproduced: `sgr-stripped=77, sgr+osc-stripped=27, budget=77, RAGGED` at `COLUMNS=80` | Being fixed now |
+| 0 | **Width is derived by parsing markup, not from `Plain`** — `Markup.Remove(...).Length` at three sites | Violates the invariant the layout rests on. `Markup.Remove` strips Spectre tags, not ANSI, so any row carrying raw escapes measures long and the border lands early — silently. Genuinely pre-existing | **Fixed and verified.** `PaneRow(Markup, Width)` threads measured width through the pipeline; the dead `MeasureRow`/`FromMarkupRows` deleted. Confirmed by independent rebuild, SHA `55baa073…59ac9` |
+| 1 | OSC 8 hyperlinks are counted as visible text | Border lands ~50 columns early; row goes ragged. Reproduced: `sgr-stripped=77, sgr+osc-stripped=27, budget=77, RAGGED` at `COLUMNS=80` | Blocked on #8 — no link currently survives to output at all |
 | 2 | `surface.maxRows` is entirely unenforced | 8 rows emitted at `COLUMNS=112` and 14 at `COLUMNS=60` against a configured 6 | Queued (5) |
 | 3 | `ConfigLoader.TryReadConfig` swallows a malformed config | Exit 0, zero bytes on stderr, a completely different statusline renders. A JSON typo gives the user nothing to debug against | Queued (4) |
 | 4 | `"auto"` and any unrecognized `size` silently resolve to `fill` | Same silent-acceptance class as #3 | Queued (4) |
 | 5 | Unrecognized `case` value passes through unchanged | Same class; deliberately deferred to (4) rather than special-cased | Queued (4) |
+| 6 | **An unrecognized colour name silently renders uncoloured** — `"color": "orange"` gives exit 0, empty stderr, and no SGR at all | Same silent-acceptance class as #3–#5, and the one most likely to be hit by a model authoring config (§4.1), which will reach for plausible names like `orange`. Verified through the built binary: `cyan`→96 and `magenta`→95 are accepted as aliases of `aqua`/`fuchsia`, but `orange` emits nothing | Queued (4) |
+| 7 | **The test suite measures width with the wrong stripper** — `Markup.Remove(...).Length` at `RectangleInvariantTests.cs:16` and `SplitAcceptanceTests.cs:89`/`:102`/`:193` | Defect 0 was removed from production and left in the instrument that certifies production. Also: asserting `surfaceWidth == r.Width` is circular — both sides come from the same sum — so each site needs a second assertion measuring the *rendered bytes* independently | Reported fixed, **not yet independently verified**. Shared `DisplayWidth` helper (`AnsiStrip.Strip` → `Markup.Remove`, order load-bearing), two-assertion pattern at each site |
+| 8 | **A configured link crashes the render** — `console.MarkupLine` throws `Encountered unescaped ']' token` on any row containing OSC 8, because Spectre's tokenizer reads the `]` in `ESC]8;;` as markup | Reproduced twice: isolated probe, and the full config→resolve→render→`MarkupLine` pipeline. **Spectre 0.57.2 has no native `[link]` support** — no `]8;;` literal anywhere in the assembly (UTF-16 scan, extraction proven against real literals), so we must emit OSC 8 ourselves and keep it away from the tokenizer. Any statusline with a working link currently goes silent | Ruled (10) — escape the brackets in the OSC wrapper only, checking URL brackets and Spectre's own re-wrapping; fall back to writing rows raw if either fails. Pinned by a deliberately-red E2E test |
+| 9 | **`RemoteUrl.Normalize` cannot signal "not a recognized remote"** — non-nullable return, local paths pass through unchanged | A local-path remote yields `link: "/Users/x/repos/foo/tree/main"` — a link to nowhere. §3.2.1's drop-the-link ruling has no way to fire while the return type is non-nullable | Reported fixed, **not yet independently verified**. Returns `string?`; `ssh://git@host:2222/...` drops the port per ruling 8; `http://` restored per ruling 12 |
+| 10 | **`Program.RunAsync` wraps everything in `catch { return 0; }`** | Any render exception becomes an empty statusline, clean exit, silent stderr — indistinguishable from "nothing configured". This is why #8 survived 1059 passing tests, and why three link-configured fixtures read as "no link" rather than "the renderer is throwing". Catching is right at `refreshInterval: 1`; exiting 0 with zero bytes is not | Ruled (11) — visible marker on stdout, one-line detail on stderr, keep exit 0 |
 
 ## Not started
 
@@ -102,6 +115,12 @@ Still needed **before making it public**:
 
 Verified empirically against the built binary, not from documentation. Every name below is
 accepted anywhere a colour is (`color` on an item, `border.color`, a `colors` token).
+
+**This is the core sixteen, not the whole set.** The underlying library accepts more — `cyan` and
+`magenta` both resolve, as aliases of `aqua` (96) and `fuchsia` (95). But `orange` does *not*, and
+fails by rendering nothing rather than by complaining (defect 6). So the table below is the safe
+palette: names verified to work. Treat anything outside it as unverified until `--colors` reads
+the real set out of the binary.
 
 | Name | SGR | | Name | SGR |
 |---|---|---|---|---|

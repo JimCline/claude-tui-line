@@ -1,5 +1,3 @@
-using Spectre.Console;
-
 namespace ClaudeTuiLine.Tests;
 
 /// <summary>
@@ -86,7 +84,11 @@ public class SplitAcceptanceTests
 
         var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors);
 
-        Assert.All(rendered.Buffer.Rows, r => Assert.Equal(surfaceWidth, Markup.Remove(r.Markup).Length));
+        Assert.All(rendered.Buffer.Rows, r =>
+        {
+            Assert.Equal(surfaceWidth, r.Width);
+            Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
+        });
     }
 
     [Fact]
@@ -99,7 +101,11 @@ public class SplitAcceptanceTests
 
         var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors);
 
-        Assert.All(rendered.Buffer.Rows, r => Assert.Equal(surfaceWidth, Markup.Remove(r.Markup).Length));
+        Assert.All(rendered.Buffer.Rows, r =>
+        {
+            Assert.Equal(surfaceWidth, r.Width);
+            Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
+        });
     }
 
     [Fact]
@@ -190,7 +196,7 @@ public class SplitAcceptanceTests
 
         var rowsWithRightPaneBorder = rendered.Buffer.Rows.Count(r =>
         {
-            var plain = Markup.Remove(r.Markup);
+            var plain = DisplayWidth.Strip(r.Markup);
             return plain[rightStartCol] != ' ' && plain[rightStartCol + rightPane.OuterWidth - 1] != ' ';
         });
 

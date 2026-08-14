@@ -915,9 +915,74 @@ the framework does not use, and is no longer evidence about the framework at all
   - It is advisory. Pane-level `overflow` (§2.6) is the authoritative mechanism for content
     that does not fit, and it works whether or not a script consulted this variable.
 - **cwd**: the session's `.cwd`, so `git`-flavored commands behave as the user expects.
-- **Output**: first line of stdout, trailing newline stripped. Empty output ⇒ item suppressed.
+- **Output**: stdout with the trailing newline stripped. Each line becomes one row of the item's
+  block (§3.1), capped at `maxLines` (default 4) so a runaway script cannot flood the surface;
+  excess lines are dropped and `--check` reports the cap was hit. Empty output ⇒ item suppressed.
   Nonzero exit ⇒ treated as empty (see §7). ANSI in the output is passed through but its width
   is measured stripped, so a script may color itself.
+
+  *This previously read "first line of stdout", which contradicted §3's block model — §3 defines
+  a multi-row block as "a user-defined item whose command emitted multiple lines", and §3.1
+  already specifies how such a block packs. Only one of the two could be true; the block model
+  is the one the rest of the spec is built on, so the single-line reading is the one that goes.*
+
+### 4.1 User-defined items are first-class, and that is the extension point
+
+A `command` item is not a lesser thing that gets placed where a builtin would go. Its `id` is
+registered in the same namespace, so it may be referenced anywhere a builtin id may be: as
+`{ "item": "<id>" }` in a pane, as `from:` in a colour token (§6.3), and as `{other-id}` inside
+a `link` template (§3.2). **This is the answer to "there is no builtin for what I want"** — the
+user, or a model acting for them, defines one and it behaves identically from that point on.
+
+If it did not work this way the builtin list would be a ceiling, and §1's rule would be doing the
+opposite of its job: a registry only the project can add rows to is a hardcoded list with extra
+steps.
+
+#### Colouring parts of one item
+
+`"color"` paints the whole item. Some items need more than one colour inside them — the case that
+forces this is a diff stat, where additions and deletions being the same colour defeats the point
+of showing them. §4 already establishes that builtins colour their own fragments
+(`ctx:62% (125k/200k)` colours only the `62%`); what was missing was any way for a *user-defined*
+item to do the same without hand-writing escape sequences into a shell script.
+
+A command item may declare a `match` — a regex with **named groups** — splitting its output into
+named parts that `format` positions and `colors` paints:
+
+```json
+{
+  "id": "git-diff-stat",
+  "command": ["git", "diff", "--shortstat"],
+  "match": "(?:(?<added>\\d+) insertion)?.*?(?:(?<removed>\\d+) deletion)?",
+  "format": "+{added} -{removed}",
+  "colors": { "added": "green", "removed": "red" },
+  "ttlSeconds": 5
+}
+```
+
+Keeping the colour in config rather than in the script is what makes it checkable: the names are
+validated, the colours resolve through §6 like any other colour, and the user can recolour
+without editing a shell command. A script that prefers to emit its own ANSI still may — that path
+is unchanged — but it is then opaque to `--check` and cannot be recoloured from config.
+
+Rules, each closing a way this could otherwise fail silently:
+
+- **`{}` still means the whole matched output.** `match` adds names; it does not withdraw the
+  default. An item with a `match` and a `format` of `{}` renders exactly as it would without one.
+- **A group that did not participate renders empty, and the literal text bound to it goes too.**
+  `+{added}` contributes nothing when `added` is unset, rather than rendering a bare `+`. This is
+  §7's rule — a missing field renders nothing, never `null` — applied one level down.
+- **A regex that does not match suppresses the item**, exactly as empty output does. Not "fall
+  back to the raw text": a failed `match` means the output was not the shape the config claimed,
+  and rendering past that is how a statusline displays something wrong with full confidence.
+- **`--check` validates the cross-references, not just the syntax** — that the regex compiles,
+  and that every `{name}` in `format` and every key in `colors` names a group that exists in it.
+  A `colors` key with no matching group is §3.2.1's dangling-`{other-id}` defect wearing a
+  different hat, and gets the same treatment: reported, not ignored.
+- **Per-part colour is static; thresholds stay value-derived.** `colors` assigns a fixed colour
+  per part. A part whose colour must depend on its value uses a §6.3 token with `from:`, and §6's
+  precedence is unchanged — a configured colour replaces a decorative one, never a value-derived
+  threshold.
 
 ## 5. Execution model — the hard part
 
@@ -1414,6 +1479,89 @@ It verifies the SHA-256 of what it restores against the ledger and reports a mis
 than proceeding. It appends a `checkpoint` for the state it replaced, so reverting a revert is
 possible. And it prints the restored command, because a user reaching for revert is already
 having a bad time and deserves to see exactly what they got back.
+
+### 12.6 The MCP server — ambient access, added after the CLI
+
+Slash commands require the user to know a command exists. The MCP server exists so that
+"make the statusline border green" works in the middle of an unrelated conversation, which is
+the access pattern people actually have. It ships **after** §12.3–12.5, and the ordering is
+deliberate: the CLI is what it wraps, so building it first would mean designing a transport
+around an interface that does not exist yet.
+
+**It is stateless, and that is the whole design.** stdio MCP keeps one process alive — the
+client spawns it and talks JSON-RPC over the pipe, so it must survive between calls — but it
+holds nothing between them. Every call re-reads the config from disk and re-derives its answer
+from the same code the CLI runs. Two consequences, both the point:
+
+- **It cannot drift from the CLI**, because it has no independent knowledge to drift with. An
+  MCP server that cached the item list would become a second registry, which is §1's failure
+  wearing a different hat.
+- **It cannot serve a stale config.** A user who hand-edits the file between two calls gets the
+  file they wrote, not a remembered parse of the file they replaced.
+
+Nothing about it touches the renderer's shape. The statusline stays a one-shot AOT binary
+spawned once per second; the MCP server is a separate process with separate lifetime needs, and
+conflating the two is a mistake worth naming because it argues against a design for no reason.
+
+Whether it re-spawns the CLI per call or calls the same internal functions directly is an
+implementation detail and either is acceptable. **What is not acceptable is a third
+implementation of any behaviour.** CLI and MCP are two adapters over one core.
+
+**Mutating tools carry the §12.2 obligations unchanged.** Ambient access means a config can now
+change without the user having watched a diff go by, so an MCP edit writes a `checkpoint` before
+it mutates and returns the resulting diff for the model to show. The safety property that makes
+`/edit` acceptable is the ledger, not the fact that a human typed a slash.
+
+#### The tool surface
+
+The goal is that a model can carry a request from "make the model name pink when I'm on Fable"
+all the way to a rendered statusline without the user touching anything. That needs the full
+loop — discover, change, validate, show — so the surface is not read-only.
+
+| Tool | Wraps | Purpose |
+|---|---|---|
+| `list_items` | `--items --json` | What items exist, what each emits, what options it takes — **and the schema for defining a new one** (§4.1), so a model that finds no builtin fit knows it can author a `command` item rather than giving up. |
+| `list_colors` | `--colors --json` | The palette (§6), so a colour request resolves to a real name. |
+| `get_config` | reads the config path | The current config plus which path it came from (§5 search order) — the model must not guess which file is live. |
+| `set_config` | writes + `--check` | Write a full config. Validates **before** committing; a config that fails `--check` is rejected and the old one stays. Checkpoints first. |
+| `validate` | `--check --json` | Check a candidate config without writing it. |
+| `preview` | `--preview` | Render to a given width and return the rows, so the model can *see* the result rather than assert it. |
+| `revert` | the §12.2 ledger | Roll back to the origin, or to a named checkpoint. |
+
+Two rules make this safe enough to hand to a model:
+
+**`set_config` never commits an invalid config.** It validates, and on failure returns the
+diagnostics instead of writing. A statusline is a thing the user stares at all day; breaking it
+silently through an ambient tool call is the worst outcome available, and it costs one
+validation to make impossible.
+
+**`preview` is how the model checks its work, not `set_config`'s return value.** A write that
+succeeded is not evidence the result looks right. The loop is the same one §12.1 fixes for the
+slash commands — *query → edit → check → preview* — and the MCP tools exist so the model can run
+that loop itself. This is why `preview` returns rendered rows rather than a success flag.
+
+#### The worked example this surface has to satisfy
+
+> *"Add git diff stat to my status line at the end of the first pane, make adds green and
+> deletes red."*
+
+Nothing here is a new tool; it is the existing loop applied to a request that touches all three
+hard parts — an item that may not exist, a position in a tree, and colour *inside* one item.
+
+1. `list_items` — no builtin diff stat. The response carries the §4.1 command-item schema, so the
+   absence is a fork in the road rather than a dead end.
+2. `get_config` — returns the whole config, which is why it returns the whole config: the model
+   has to navigate to "the first pane" itself, and `surface.pane.children[0].items` is only
+   locatable if the tree is in front of it.
+3. `set_config` — writes a `git-diff-stat` command item with `match`, `format`, and per-part
+   `colors`, and appends `{ "item": "git-diff-stat" }` to that pane's `items`. Validation runs
+   before the commit; a bad regex or an unknown colour name comes back as diagnostics and the
+   user's working statusline is untouched.
+4. `preview` — renders it, so the model can see `+42 -17` in the right pane in the right colours
+   instead of reporting success on the strength of a 200 response.
+
+The user typed one sentence and never saw a config file. That is the bar for this surface: if a
+request of this shape needs the user to open an editor, the tools have not done their job.
 
 ## 13. Out of scope for v2
 

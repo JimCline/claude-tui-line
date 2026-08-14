@@ -58,7 +58,7 @@ public class OverflowModeTests
         var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 20, OverflowMode.Overflow, ellipsis: "…");
         var expected = RowLayout.Wrap(items, 20);
 
-        Assert.Equal(expected, buffer.Rows.Select(r => r.Markup));
+        Assert.Equal(expected, buffer.Rows);
     }
 
     [Fact]

@@ -18,11 +18,11 @@ public class HyperlinkTests
     public void WrapOfLinkedSegment_EveryContinuationRow_ReopensAndClosesTheLink()
     {
         const string url = "https://example.com/path";
-        var text = new string('A', 25);
+        var text = new string('A', 75);
         var markup = OscHyperlink.Wrap(url, Markup.Escape(text));
         var segment = new Segment(markup, text);
 
-        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Wrap, "…");
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 30, OverflowMode.Wrap, "…");
 
         Assert.Equal(3, buffer.Rows.Count);
         foreach (var row in buffer.Rows)
@@ -33,14 +33,54 @@ public class HyperlinkTests
     }
 
     [Fact]
+    public void WrapOfLinkedSegment_AtFallbackWidth_CollapsesToOneRow_LinkIntactAndUnsplit()
+    {
+        const string url = "https://example.com/path";
+        var text = new string('A', 25);
+        var markup = OscHyperlink.Wrap(url, Markup.Escape(text));
+        var segment = new Segment(markup, text);
+
+        // width=10 is below RowLayout.MinUsableWidth(20), so RenderLeaf's per-chunk wrap
+        // pre-pass still runs (producing 3 self-contained link chunks, as above at width=30),
+        // but RowLayout.Wrap's own fallback then collapses them onto one overwide row.
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Wrap, "…");
+
+        Assert.Single(buffer.Rows);
+        var row = buffer.Rows[0].Markup;
+
+        // OscHyperlink.OpenPrefix is private, so the introducer is derived from the public
+        // Close constant (Close = OpenPrefix + ST, and ST is 2 bytes) rather than duplicated.
+        var introducer = OscHyperlink.Close[..^2];
+        var opens = new List<int>();
+        var closes = new List<int>();
+        for (var i = row.IndexOf(introducer, StringComparison.Ordinal); i >= 0; i = row.IndexOf(introducer, i + 1, StringComparison.Ordinal))
+        {
+            var isClose = i + OscHyperlink.Close.Length <= row.Length
+                && string.CompareOrdinal(row.Substring(i, OscHyperlink.Close.Length), OscHyperlink.Close) == 0;
+            (isClose ? closes : opens).Add(i);
+        }
+
+        Assert.NotEmpty(opens);
+        Assert.Equal(opens.Count, closes.Count);
+
+        for (var k = 0; k < opens.Count; k++)
+        {
+            var closeEnd = closes[k] + OscHyperlink.Close.Length;
+            var slice = row[opens[k]..closeEnd];
+            Assert.True(OscHyperlink.TryUnwrap(slice, out var rowUrl, out _), $"OSC 8 wrap #{k} is not well-formed at the fallback join: '{slice}'");
+            Assert.Equal(url, rowUrl);
+        }
+    }
+
+    [Fact]
     public void WrapOfLinkedColoredSegment_EveryContinuationRow_KeepsBothColorAndLink()
     {
         const string url = "https://example.com/path";
-        var text = new string('B', 22);
+        var text = new string('B', 65);
         var coloredMarkup = $"[green]{Markup.Escape(text)}[/]";
         var segment = new Segment(OscHyperlink.Wrap(url, coloredMarkup), text);
 
-        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Wrap, "…");
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 30, OverflowMode.Wrap, "…");
 
         Assert.True(buffer.Rows.Count > 1, "fixture must actually wrap across multiple rows to exercise reopening");
         foreach (var row in buffer.Rows)
@@ -128,10 +168,107 @@ public class HyperlinkTests
     [Fact]
     public void BuildItemSegment_RawUnterminatedAnsiColor_PlainIsStrippedAndMarkupSelfResets()
     {
-        var segment = SegmentBuilder.BuildItemSegment("[31mHello", null);
+        var segment = SegmentBuilder.BuildItemSegment("\x1b[31mHello", null);
 
         Assert.Equal("Hello", segment.Plain);
-        Assert.EndsWith("[0m", segment.Markup);
+
+        // Round-trip through Spectre's own markup parser rather than inspecting the raw markup
+        // string directly: Segment.Markup is markup *source*, escaped so it parses without
+        // throwing, and it is what actually reaches the terminal (via a real console render)
+        // that must carry the real ESC[0m reset — not the source's own escaped bytes.
+        var writer = new StringWriter();
+        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.Yes,
+            ColorSystem = ColorSystemSupport.Standard,
+            Interactive = InteractionSupport.No,
+            Out = new AnsiConsoleOutput(writer),
+        });
+        console.Profile.Width = int.MaxValue / 2;
+
+        console.Markup(segment.Markup);
+
+        Assert.EndsWith("\x1b[0m", writer.ToString());
+    }
+
+    [Fact]
+    public void DisplayWidth_MeasuresLinkedRow_StripsBothOsc8AndMarkupTagsToPlainText()
+    {
+        const string url = "https://example.com/path";
+        const string text = "click";
+        var markup = OscHyperlink.Wrap(url, $"[green]{Markup.Escape(text)}[/]");
+
+        Assert.Equal(text, DisplayWidth.Strip(markup));
+        Assert.Equal(text.Length, DisplayWidth.Measure(markup));
+    }
+
+    [Fact]
+    public void EndToEnd_ConfiguredLink_RealPipelineRowReachesConsoleMarkupLineAsOsc8()
+    {
+        // Full pipeline, not a unit slice: ConfigLoader -> ItemValueResolver -> SizeResolver ->
+        // PaneTreeRenderer -> the same OscHyperlink.EscapeForRender + console.MarkupLine(row.Markup)
+        // calls Program.cs makes for every row of the split pipeline (Program.cs:104). Top-level
+        // Main isn't reachable from a test project, so this reproduces its exact statements
+        // in-process instead.
+        const string url = "https://example.com/org/repo";
+        const string configJson = """
+        {
+          "surface": {
+            "pane": {
+              "items": [ { "item": "remote-url", "link": "{}" } ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, configJson);
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var ctx = new ItemContext(new StatusInput(), gitBranch: null, engram: null, remoteUrlProbe: () => url);
+        var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values);
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors);
+
+        var writer = new StringWriter();
+        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.Yes,
+            ColorSystem = ColorSystemSupport.Standard,
+            Interactive = InteractionSupport.No,
+            Out = new AnsiConsoleOutput(writer),
+        });
+        console.Profile.Width = int.MaxValue / 2;
+
+        foreach (var row in rendered.Buffer.Rows)
+        {
+            console.MarkupLine(OscHyperlink.EscapeForRender(row.Markup));
+        }
+
+        var raw = writer.ToString();
+
+        // Not just "]8;;" appears somewhere: the literal OSC 8 open sequence with the URL embedded
+        // contiguously, and the literal close sequence, in that order — the exact bytes a terminal's
+        // hyperlink support keys off, not a loose substring.
+        var openPrefix = OscHyperlink.Close[..^2];
+        var st = OscHyperlink.Close[^2..];
+        var expectedOpen = $"{openPrefix}{url}{st}";
+
+        var openIndex = raw.IndexOf(expectedOpen, StringComparison.Ordinal);
+        var closeIndex = raw.IndexOf(OscHyperlink.Close, StringComparison.Ordinal);
+
+        Assert.True(openIndex >= 0, $"expected the exact OSC 8 open sequence for '{url}' in rendered output: {raw}");
+        Assert.True(closeIndex > openIndex, $"expected the OSC 8 close sequence after the open sequence in rendered output: {raw}");
     }
 
     [Fact]
@@ -154,7 +291,7 @@ public class HyperlinkTests
 
         foreach (var row in rows)
         {
-            console.MarkupLine(row);
+            console.MarkupLine(row.Markup);
         }
 
         var raw = writer.ToString();

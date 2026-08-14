@@ -32,7 +32,7 @@ public class NarrowSplitPaneTests
         var rows = PaneAssembler.RenderLeafRows(pane, 10, ctx, values, new Dictionary<string, ColorResolution.ColorRule>());
 
         Assert.Equal(2, rows.Count);
-        Assert.All(rows, r => Assert.True(Markup.Remove(r).Length <= 10, $"row '{r}' exceeds the pane's own width"));
+        Assert.All(rows, r => Assert.True(r.Width <= 10, $"row '{r.Markup}' exceeds the pane's own width"));
     }
 
     [Fact]
@@ -46,6 +46,6 @@ public class NarrowSplitPaneTests
         var rows = RowLayout.Wrap(new[] { segment, segment }, 10, allowFallback: true);
 
         Assert.Single(rows);
-        Assert.True(Markup.Remove(rows[0]).Length > 10);
+        Assert.True(rows[0].Width > 10);
     }
 }

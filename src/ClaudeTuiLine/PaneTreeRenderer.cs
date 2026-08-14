@@ -24,7 +24,7 @@ public static class PaneTreeRenderer
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
         var suppressed = SizeResolver.ShouldSuppressBorder(pane, node.OuterWidth);
 
-        IReadOnlyList<string> contentRows;
+        IReadOnlyList<PaneRow> contentRows;
         if (node.Children.Count == 0)
         {
             contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens);
@@ -57,11 +57,11 @@ public static class PaneTreeRenderer
         }
         else
         {
-            var rows = new List<string>();
+            var rows = new List<PaneRow>();
             foreach (var child in node.Children)
             {
                 var contribution = Render(child, ctx, values, tokens);
-                rows.AddRange(contribution.Buffer.Rows.Select(r => r.Markup));
+                rows.AddRange(contribution.Buffer.Rows);
             }
 
             contentRows = PadToWidth(rows, innerWidth);
@@ -75,14 +75,14 @@ public static class PaneTreeRenderer
 
         var borderColorMarkup = ColorResolution.Resolve(pane.Border.Color, values, tokens) ?? "grey";
         var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, pane.Border, borderColorMarkup, suppressed);
-        return new Compositor.PaneContribution(PaneBuffer.FromMarkupRows(borderedRows), node.OuterWidth, HasBackground: false, pane.Valign);
+        return new Compositor.PaneContribution(new PaneBuffer(borderedRows), node.OuterWidth, HasBackground: false, pane.Valign);
     }
 
     // Pads this pane's OWN inner content (before its border is drawn around it) up to
     // targetHeight, the same before/after valign split Compositor.PadRows uses for a sibling
     // contribution — applied one layer down, to a pane's own rows, so the border in
     // PaneBorderRenderer.Wrap spans the full height instead of just the natural content.
-    private static IReadOnlyList<string> PadHeight(IReadOnlyList<string> rows, int targetHeight, int width, PaneValign valign)
+    private static IReadOnlyList<PaneRow> PadHeight(IReadOnlyList<PaneRow> rows, int targetHeight, int width, PaneValign valign)
     {
         var deficit = Math.Max(0, targetHeight - rows.Count);
         var (before, after) = valign switch
@@ -92,8 +92,8 @@ public static class PaneTreeRenderer
             _ => (0, deficit),
         };
 
-        var blankRow = new string(' ', width);
-        var padded = new List<string>(rows.Count + deficit);
+        var blankRow = new PaneRow(new string(' ', width), width);
+        var padded = new List<PaneRow>(rows.Count + deficit);
         padded.AddRange(Enumerable.Repeat(blankRow, before));
         padded.AddRange(rows);
         padded.AddRange(Enumerable.Repeat(blankRow, after));
@@ -105,10 +105,6 @@ public static class PaneTreeRenderer
     // non-blank (SPEC.md rule 4 exception), which is not guaranteed for every child. Re-padding
     // here (harmless when already exact) is what keeps this split's own border cells aligned
     // regardless of what a nested composition trimmed away.
-    private static IReadOnlyList<string> PadToWidth(IReadOnlyList<string> rows, int width) =>
-        rows.Select(r =>
-        {
-            var natural = Spectre.Console.Markup.Remove(r).Length;
-            return natural >= width ? r : r + new string(' ', width - natural);
-        }).ToList();
+    private static IReadOnlyList<PaneRow> PadToWidth(IReadOnlyList<PaneRow> rows, int width) =>
+        rows.Select(r => r.Width >= width ? r : new PaneRow(r.Markup + new string(' ', width - r.Width), width)).ToList();
 }

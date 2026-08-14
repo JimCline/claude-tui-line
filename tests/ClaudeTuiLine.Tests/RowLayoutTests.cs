@@ -16,7 +16,7 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: null);
 
         var row = Assert.Single(rows);
-        Assert.Equal($"<a>{Sep}<b>", row);
+        Assert.Equal($"<a>{Sep}<b>", row.Markup);
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: null);
 
         var row = Assert.Single(rows);
-        Assert.Equal($"<a>{Sep}<b>", row);
+        Assert.Equal($"<a>{Sep}<b>", row.Markup);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 19);
 
         var row = Assert.Single(rows);
-        Assert.Equal($"<aaaaaaaaaa>{Sep}<bbbbbbbbbb>", row);
+        Assert.Equal($"<aaaaaaaaaa>{Sep}<bbbbbbbbbb>", row.Markup);
     }
 
     [Fact]
@@ -54,8 +54,8 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 20);
 
         Assert.Equal(2, rows.Count);
-        Assert.Equal("<aaaaaaaaaa>", rows[0]);
-        Assert.Equal("<bbbbbbbbbb>", rows[1]);
+        Assert.Equal("<aaaaaaaaaa>", rows[0].Markup);
+        Assert.Equal("<bbbbbbbbbb>", rows[1].Markup);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 27);
 
         var row = Assert.Single(rows);
-        Assert.Equal($"<{new string('a', 12)}>{Sep}<{new string('b', 12)}>", row);
+        Assert.Equal($"<{new string('a', 12)}>{Sep}<{new string('b', 12)}>", row.Markup);
     }
 
     [Fact]
@@ -78,8 +78,8 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 26); // one short of the 27 needed
 
         Assert.Equal(2, rows.Count);
-        Assert.Equal($"<{new string('a', 12)}>", rows[0]);
-        Assert.Equal($"<{new string('b', 12)}>", rows[1]);
+        Assert.Equal($"<{new string('a', 12)}>", rows[0].Markup);
+        Assert.Equal($"<{new string('b', 12)}>", rows[1].Markup);
     }
 
     [Fact]
@@ -91,8 +91,8 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 21);
 
         Assert.Equal(2, rows.Count);
-        Assert.Equal($"<{oversized}>", rows[0]); // whole 50-char segment intact, not truncated/split
-        Assert.Equal("<small>", rows[1]);
+        Assert.Equal($"<{oversized}>", rows[0].Markup); // whole 50-char segment intact, not truncated/split
+        Assert.Equal("<small>", rows[1].Markup);
     }
 
     [Fact]
@@ -108,8 +108,8 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 20);
 
         var row = Assert.Single(rows);
-        Assert.Equal($"<{branch}>", row);
-        Assert.Equal(26, row.Length); // "<" + 24-char segment + ">" — unsplit despite avail=20
+        Assert.Equal($"<{branch}>", row.Markup);
+        Assert.Equal(26, row.Markup.Length); // "<" + 24-char segment + ">" — unsplit despite avail=20
     }
 
     [Fact]
@@ -122,9 +122,9 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(segments, availableWidth: 23);
 
         Assert.Equal(3, rows.Count);
-        Assert.Equal($"<{w10}>{Sep}<{w10}>", rows[0]);
-        Assert.Equal($"<{w10}>{Sep}<{w10}>", rows[1]);
-        Assert.Equal($"<{w10}>", rows[2]);
+        Assert.Equal($"<{w10}>{Sep}<{w10}>", rows[0].Markup);
+        Assert.Equal($"<{w10}>{Sep}<{w10}>", rows[1].Markup);
+        Assert.Equal($"<{w10}>", rows[2].Markup);
     }
 
     [Fact]

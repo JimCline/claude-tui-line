@@ -13,7 +13,9 @@ namespace ClaudeTuiLine.Tests;
 /// </summary>
 public class RectangleInvariantTests
 {
-    private static int MeasuredWidth(string composedRow) => Spectre.Console.Markup.Remove(composedRow).Length;
+    private static int MeasuredWidth(string composedRow) => DisplayWidth.Measure(composedRow);
+
+    private static int MeasuredWidth(PaneRow composedRow) => MeasuredWidth(composedRow.Markup);
 
     [Fact]
     public void SinglePane_RaggedNaturalRowWidths_AllComposedRowsEqualPaneWidth()
@@ -28,7 +30,11 @@ public class RectangleInvariantTests
 
         var composed = Compositor.ComposeRoot(new[] { contribution });
 
-        Assert.All(composed, row => Assert.Equal(12, MeasuredWidth(row)));
+        Assert.All(composed, row =>
+        {
+            Assert.Equal(12, row.Width);
+            Assert.Equal(row.Width, MeasuredWidth(row));
+        });
     }
 
     [Fact]
@@ -44,7 +50,11 @@ public class RectangleInvariantTests
         var composed = Compositor.ComposeRoot(new[] { left, right });
 
         Assert.Equal(3, composed.Count); // padded to the taller sibling's height
-        Assert.All(composed, row => Assert.Equal(10, MeasuredWidth(row))); // 6 + 4
+        Assert.All(composed, row =>
+        {
+            Assert.Equal(10, row.Width); // 6 + 4
+            Assert.Equal(row.Width, MeasuredWidth(row));
+        });
     }
 
     [Fact]

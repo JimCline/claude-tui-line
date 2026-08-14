@@ -101,7 +101,7 @@ static async Task<int> RunAsync()
             var rootContribution = PaneTreeRenderer.Render(resolvedRoot, ctx, values, tokens);
             foreach (var row in rootContribution.Buffer.Rows)
             {
-                console.MarkupLine(row.Markup);
+                console.MarkupLine(OscHyperlink.EscapeForRender(row.Markup));
             }
 
             return 0;
@@ -127,9 +127,9 @@ static async Task<int> RunAsync()
         // §2.4: row padding to the pane's own width (trimmed back at the very end) only applies
         // once a pane width is actually known; with no COLUMNS there is no width to pad to, so
         // the buffer's own rows are used as-is.
-        IReadOnlyList<string> rows = contentWidth is int width
+        IReadOnlyList<PaneRow> rows = contentWidth is int width
             ? Compositor.ComposeRoot(new[] { new Compositor.PaneContribution(buffer, width, HasBackground: false) })
-            : buffer.Rows.Select(r => r.Markup).ToList();
+            : buffer.Rows;
 
         // SPEC.md §3/§6b: one predicate — did §6 take its single-line fallback at this content
         // width? — decides border suppression; renderingPanel decides Panel construction. Only a
@@ -143,7 +143,7 @@ static async Task<int> RunAsync()
         {
             var boxBorder = pane.Border.Style!;
             var borderColor = ColorResolution.ResolveBorderColor(pane.Border.Color, values, tokens);
-            var panel = new Panel(new Markup(string.Join('\n', rows)))
+            var panel = new Panel(new Markup(string.Join('\n', rows.Select(r => OscHyperlink.EscapeForRender(r.Markup)))))
                 .Padding(1, 0)
                 .Border(boxBorder)
                 .BorderStyle(new Style(borderColor));
@@ -156,14 +156,20 @@ static async Task<int> RunAsync()
         {
             foreach (var row in rows)
             {
-                console.MarkupLine(row);
+                console.MarkupLine(OscHyperlink.EscapeForRender(row.Markup));
             }
         }
 
         return 0;
     }
-    catch
+    catch (Exception ex)
     {
+        // A render failure must not exit silently identical to a correctly-configured empty
+        // statusline (exit 0, empty stdout, empty stderr) — that made a real defect indistinguishable
+        // from "nothing configured to render". The exit code stays 0 regardless: this runs on every
+        // prompt render, and a nonzero exit or a stack trace on stderr would spam the terminal.
+        Console.Out.WriteLine("claude-tui-line: render failed (see stderr)");
+        Console.Error.WriteLine($"{ex.GetType().Name}: {ex.Message}");
         return 0;
     }
 }

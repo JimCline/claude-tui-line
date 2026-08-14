@@ -10,7 +10,7 @@ namespace ClaudeTuiLine;
 /// </summary>
 public static class PaneAssembler
 {
-    public static IReadOnlyList<string> RenderLeafRows(
+    public static IReadOnlyList<PaneRow> RenderLeafRows(
         Pane pane,
         int innerWidth,
         ItemContext ctx,
@@ -24,15 +24,15 @@ public static class PaneAssembler
         return rawRows.Select(row => AlignRow(row, innerWidth, pane.Align)).ToList();
     }
 
-    private static IReadOnlyList<string> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx)
+    private static IReadOnlyList<PaneRow> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx)
     {
         var segments = SegmentBuilder.Build(ctx);
         var overflow = ResolveOverflow(pane);
         var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, pane.Ellipsis, allowFallback: false);
-        return buffer.Rows.Select(r => r.Markup).ToList();
+        return buffer.Rows;
     }
 
-    private static IReadOnlyList<string> RenderItemRows(
+    private static IReadOnlyList<PaneRow> RenderItemRows(
         Pane pane,
         int innerWidth,
         ItemContext ctx,
@@ -40,7 +40,7 @@ public static class PaneAssembler
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens)
     {
         var overflow = ResolveOverflow(pane);
-        var rows = new List<string>();
+        var rows = new List<PaneRow>();
         var packedGroup = new List<Segment>();
 
         void FlushGroup()
@@ -51,7 +51,7 @@ public static class PaneAssembler
             }
 
             var buffer = PaneRenderer.RenderLeaf(packedGroup, innerWidth, overflow, pane.Ellipsis, allowFallback: false);
-            rows.AddRange(buffer.Rows.Select(r => r.Markup));
+            rows.AddRange(buffer.Rows);
             packedGroup.Clear();
         }
 
@@ -77,16 +77,17 @@ public static class PaneAssembler
     private static OverflowMode ResolveOverflow(Pane pane) =>
         pane.Overflow is OverflowMode mode && mode != OverflowMode.Overflow ? mode : OverflowMode.Truncate;
 
-    private static string AlignRow(string markup, int targetWidth, PaneAlign align)
+    private static PaneRow AlignRow(PaneRow row, int targetWidth, PaneAlign align)
     {
-        var natural = Spectre.Console.Markup.Remove(markup).Length;
-        var deficit = Math.Max(0, targetWidth - natural);
+        var deficit = Math.Max(0, targetWidth - row.Width);
 
-        return align switch
+        var newMarkup = align switch
         {
-            PaneAlign.Center => new string(' ', deficit / 2) + markup + new string(' ', deficit - deficit / 2),
-            PaneAlign.Right => new string(' ', deficit) + markup,
-            _ => markup + new string(' ', deficit),
+            PaneAlign.Center => new string(' ', deficit / 2) + row.Markup + new string(' ', deficit - deficit / 2),
+            PaneAlign.Right => new string(' ', deficit) + row.Markup,
+            _ => row.Markup + new string(' ', deficit),
         };
+
+        return new PaneRow(newMarkup, row.Width + deficit);
     }
 }

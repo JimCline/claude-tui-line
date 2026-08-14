@@ -27,22 +27,35 @@ public static class Compositor
     /// trailing whitespace once on the composed row — unless the rightmost sibling has a
     /// background color, in which case those trailing cells are visible and must survive.
     /// </summary>
-    public static IReadOnlyList<string> ComposeRoot(IReadOnlyList<PaneContribution> siblings)
+    public static IReadOnlyList<PaneRow> ComposeRoot(IReadOnlyList<PaneContribution> siblings)
     {
         if (siblings.Count == 0)
         {
-            return Array.Empty<string>();
+            return Array.Empty<PaneRow>();
         }
 
         var height = siblings.Max(s => s.Buffer.Rows.Count);
         var paddedPerPane = siblings.Select(s => PadRows(s, height)).ToList();
         var rightmostHasBackground = siblings[^1].HasBackground;
 
-        var composed = new List<string>(height);
+        var composed = new List<PaneRow>(height);
         for (var row = 0; row < height; row++)
         {
-            var joined = string.Concat(paddedPerPane.Select(p => p[row]));
-            composed.Add(rightmostHasBackground ? joined : joined.TrimEnd(' '));
+            var joinedMarkup = string.Concat(paddedPerPane.Select(p => p[row].Markup));
+            var joinedWidth = paddedPerPane.Sum(p => p[row].Width);
+
+            if (rightmostHasBackground)
+            {
+                composed.Add(new PaneRow(joinedMarkup, joinedWidth));
+                continue;
+            }
+
+            // Padding is always appended as literal ASCII space characters (never markup
+            // syntax), so the character-count delta TrimEnd removes exactly equals the width
+            // it removes — no re-measurement needed.
+            var trimmed = joinedMarkup.TrimEnd(' ');
+            var trimmedWidth = joinedWidth - (joinedMarkup.Length - trimmed.Length);
+            composed.Add(new PaneRow(trimmed, trimmedWidth));
         }
 
         return composed;
@@ -53,15 +66,15 @@ public static class Compositor
     // PaneRow.Width — the ANSI-stripped metric (rule 3) — and appended as literal, unstyled
     // trailing spaces after the row's own (already well-formed) markup, which is what makes it
     // safe for ComposeRoot to later trim with a plain string TrimEnd.
-    private static List<string> PadRows(PaneContribution contribution, int targetHeight)
+    private static List<PaneRow> PadRows(PaneContribution contribution, int targetHeight)
     {
         var width = Math.Max(0, contribution.Width);
 
         var content = contribution.Buffer.Rows
-            .Select(row => row.Markup + new string(' ', Math.Max(0, width - row.Width)))
+            .Select(row => new PaneRow(row.Markup + new string(' ', Math.Max(0, width - row.Width)), Math.Max(width, row.Width)))
             .ToList();
 
-        var blankRow = new string(' ', width);
+        var blankRow = new PaneRow(new string(' ', width), width);
         var deficit = Math.Max(0, targetHeight - content.Count);
         var (before, after) = contribution.Valign switch
         {
@@ -70,7 +83,7 @@ public static class Compositor
             _ => (0, deficit),
         };
 
-        var padded = new List<string>(targetHeight);
+        var padded = new List<PaneRow>(targetHeight);
         padded.AddRange(Enumerable.Repeat(blankRow, before));
         padded.AddRange(content);
         padded.AddRange(Enumerable.Repeat(blankRow, after));

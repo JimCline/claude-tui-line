@@ -30,9 +30,9 @@ public static class RowLayout
     /// rendering a pane inside a split pass <c>false</c> so a narrow pane packs and wraps or
     /// truncates like any other pane instead of emitting one overwide row.
     /// </param>
-    public static IReadOnlyList<string> Wrap(IReadOnlyList<Segment> segments, int? availableWidth, bool allowFallback = true)
+    public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<Segment> segments, int? availableWidth, bool allowFallback = true)
     {
-        var rows = new List<string>();
+        var rows = new List<PaneRow>();
         if (segments.Count == 0)
         {
             return rows;
@@ -40,7 +40,9 @@ public static class RowLayout
 
         if (availableWidth is null || (allowFallback && availableWidth < MinUsableWidth))
         {
-            rows.Add(string.Join(SeparatorMarkup, segments.Select(s => s.Markup)));
+            var fallbackMarkup = string.Join(SeparatorMarkup, segments.Select(s => s.Markup));
+            var fallbackWidth = segments.Sum(s => s.Plain.Length) + SeparatorWidth * (segments.Count - 1);
+            rows.Add(new PaneRow(fallbackMarkup, fallbackWidth));
             return rows;
         }
 
@@ -65,7 +67,7 @@ public static class RowLayout
             }
             else
             {
-                rows.Add(rowBuilder.ToString());
+                rows.Add(new PaneRow(rowBuilder.ToString(), rowWidth));
                 rowBuilder.Clear();
                 rowBuilder.Append(seg.Markup);
                 rowWidth = segWidth;
@@ -74,7 +76,7 @@ public static class RowLayout
 
         if (rowStarted)
         {
-            rows.Add(rowBuilder.ToString());
+            rows.Add(new PaneRow(rowBuilder.ToString(), rowWidth));
         }
 
         return rows;

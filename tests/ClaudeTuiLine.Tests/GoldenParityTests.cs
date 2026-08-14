@@ -73,9 +73,9 @@ public class GoldenParityTests
         var overflow = pane.Overflow ?? OverflowMode.Overflow;
         var buffer = PaneRenderer.RenderLeaf(segments, contentWidth, overflow, pane.Ellipsis);
 
-        IReadOnlyList<string> rows = contentWidth is int width
+        IReadOnlyList<PaneRow> rows = contentWidth is int width
             ? Compositor.ComposeRoot(new[] { new Compositor.PaneContribution(buffer, width, HasBackground: false) })
-            : buffer.Rows.Select(r => r.Markup).ToList();
+            : buffer.Rows;
 
         var fallback = RowLayout.IsFallbackWidth(contentWidth);
         var suppressBorder = pane.Border.Style is not null && fallback;
@@ -95,7 +95,7 @@ public class GoldenParityTests
         {
             var boxBorder = pane.Border.Style!;
             var borderColor = ColorResolution.ResolveBorderColor(pane.Border.Color, new Dictionary<string, string?>(), topLevel.Colors);
-            var panel = new Panel(new Markup(string.Join('\n', rows)))
+            var panel = new Panel(new Markup(string.Join('\n', rows.Select(r => r.Markup))))
                 .Padding(1, 0)
                 .Border(boxBorder)
                 .BorderStyle(new Style(borderColor));
@@ -108,7 +108,7 @@ public class GoldenParityTests
         {
             foreach (var row in rows)
             {
-                console.MarkupLine(row);
+                console.MarkupLine(row.Markup);
             }
         }
 

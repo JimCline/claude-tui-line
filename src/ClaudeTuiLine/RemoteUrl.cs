@@ -83,7 +83,7 @@ public static class RemoteUrl
         }
     }
 
-    internal static string Normalize(string raw)
+    internal static string? Normalize(string raw)
     {
         var url = raw.EndsWith(".git", StringComparison.Ordinal) ? raw[..^4] : raw;
 
@@ -96,9 +96,38 @@ public static class RemoteUrl
                 var path = url[(colonIndex + 1)..];
                 return $"https://{host}/{path}";
             }
+
+            return null;
         }
 
-        return url;
+        if (url.StartsWith("ssh://git@", StringComparison.Ordinal))
+        {
+            // The SSH port has no bearing on the host's web UI (almost always 443); carrying it
+            // into the rewritten https:// URL produces a link that looks plausible and reliably
+            // fails, so it is dropped rather than preserved.
+            var rest = url["ssh://git@".Length..];
+            var slashIndex = rest.IndexOf('/');
+            if (slashIndex > 0)
+            {
+                var hostPart = rest[..slashIndex];
+                var path = rest[(slashIndex + 1)..];
+                var colonIndex = hostPart.IndexOf(':');
+                var host = colonIndex >= 0 ? hostPart[..colonIndex] : hostPart;
+                if (host.Length > 0 && path.Length > 0)
+                {
+                    return $"https://{host}/{path}";
+                }
+            }
+
+            return null;
+        }
+
+        // Anything else — a local filesystem path, a file:// URL, or a scheme this function
+        // doesn't map — is not a recognized web remote. §3.2.1's link-suppression path (a missing
+        // resolved value) handles a null return by dropping the link and keeping the item.
+        return url.StartsWith("https://", StringComparison.Ordinal) || url.StartsWith("http://", StringComparison.Ordinal)
+            ? url
+            : null;
     }
 
     private static void TryKill(Process process)
