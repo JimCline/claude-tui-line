@@ -3863,6 +3863,28 @@ orchestrator removed the duplicate overload and a stale `HeightLadderTests.cs` r
 removed `BorderReserve` constant). Full suite green at **1235/1235** after cleanup. Landed as merge
 commit `e8c9afd` plus fixup commit `5d1ee89`, pushed.
 
+### #16: §5.0.1 paneWidth split into a width-partitioned widths/ store
+
+`ItemCache.StampPaneWidth` used to write paneWidth into the same on-disk cache the live statusline
+reads next tick, so a `--preview` at a synthetic width could hand that width to the user's real
+command items at their real width, invisibly. §9.3.4 requires the store to be keyed by resolved
+surface width so a preview at 60 and a live render at 120 read/write disjoint entries.
+
+Replaced `CacheEntry.PaneWidth` with a sibling `widths/` directory (mirrors `ItemCache`'s existing
+per-item-file layout) keyed by `WidthKeyFor(id, argv, cwd, surfaceWidth)`. `StampPaneWidth` (the old
+stamp-only-if-exists write) is gone, replaced by unconditional `TryReadWidth`/`WriteWidth` — no
+reason left to gate on pre-existence once the key is already surface-width-partitioned. The interim
+`stampWidths: false` escape hatch `--preview` used is removed entirely; the write is now always
+safe because the store can't cross-contaminate. `CommandProvider.ResolveAsync` and
+`ItemValueResolver.ResolveAsync` thread `widthsDir`/`surfaceWidth` through; `Program.cs` computes
+`widthsDir` alongside `cacheDir` in both `RunAsync` and `RunPreview`.
+
+New coverage: a test writing two widths for the same id/command/cwd at surface widths 60 and 120,
+asserting each resolves independently. Per the session's new no-per-task-falsification-tests
+directive, this is normal coverage, not a proof-of-failure test. Full suite: 1236/1236 passed
+(independently re-verified via task-gopher, both pre-merge on the worktree and post-merge on
+`main`). Landed as merge commit `d95f6ca` (branch tip `4ed325a`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
