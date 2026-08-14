@@ -1840,6 +1840,41 @@ Also tightened: `commands/revert.md` cited "Rule 1" of a file that now has two n
 starting at 1. It meant the one in "Writing `settings.json`" and now says so. Same ambiguity class
 as §10.N, one document over — and unlike section numbers, no script catches "Rule N".
 
+### §12.7 — `setup` had no spec section at all
+
+§12 documented `migrate`, `edit`, `revert` and the MCP server. It did not document `setup` — the
+command the README sends every new user to, and the only one that can create the `origin` entry.
+Not a thin section: **no section**. Five decisions lived exclusively in `commands/setup.md`, which
+the CLI and the MCP server do not read:
+
+- **The SDK check must run in the project directory.** `dotnet --version` reports the SDK selected
+  for the *current* directory, and a `global.json` above it can pin another. Check in one place,
+  build in another, and a passing toolchain check is for an SDK the build never uses — after which
+  the failure gets reported as a build error rather than a toolchain one.
+- **An unset path variable names a real directory, and a worse one.** Unset,
+  `"${CLAUDE_PLUGIN_DATA}/bin"` expands to `/bin`, making the build a release publish into the
+  system binary directory. `settings.json` then points at `/bin/claude-tui-line`, and the preview
+  confirms it renders. The `:-` fallback is load-bearing, not padding.
+- **Verify by running the value, not the variable.** Read `statusLine.command` back out of
+  `settings.json` and run that string verbatim. The build already proved the path; the untested
+  thing is *the expansion*, because `settings.json` does not interpolate variables. Test the
+  variable and the preview renders perfectly while the install is broken — and §12.5's revert
+  already verifies the other way, which is two commands answering one question differently.
+- **Say the preview payload is minimal**, or a correct install reads as half-broken and the user's
+  first act is debugging something that works.
+- **If the backup was a `checkpoint`, say so and give the timestamp.** Bare revert restores the
+  older `origin` — correct by design, and not what someone told "your statusline is backed up"
+  expects.
+
+Numbered `12.7` and therefore printed after the MCP server despite running first, because §12.6
+already owns nine subsections and renumbering to satisfy reading order would break every existing
+citation. The section says so in its first line rather than leaving the reader to wonder.
+
+It also states how `setup`'s build destination relates to §14: a third location, deliberately.
+§14 governs `publish/`, the deploy target a developer's own live statusline runs, which is why
+writing there needs approval; `setup` writes into the plugin's data directory, which belongs to the
+installed plugin and cannot collide with a working tree.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

@@ -4263,6 +4263,57 @@ tool descriptions must say so, since a model reads them and nothing else, and bo
 look-before-you-leap default and §12.6.6's no-improvising rule work by making the cautious call
 the obvious one. That only holds if the model knows which call is the cautious one.
 
+### 12.7 `/claude-tui-line:setup`
+
+Numbered last and run first. `setup` is the command the README sends every new user to, it is the
+only one that can create the `origin` entry, and until now it was the only command in this section
+with no subsection at all — five decisions lived exclusively inside `commands/setup.md`, where the
+CLI and the MCP server would never see them. §14.4 is about exactly this shape.
+
+It checks the toolchain, builds, backs up per §12.2, writes `statusLine`, and shows a render. The
+rulings that are not obvious:
+
+**The SDK check runs in the project directory, not the user's.** `dotnet --version` reports the SDK
+selected *for the current directory*, and any `global.json` above it can pin a different one.
+Checking in one directory and building in another can pass a check for an SDK the build never uses,
+and then report the resulting failure as a build error rather than a toolchain one.
+
+**An unset path variable names a real directory, and it is a worse one.** The build goes to
+`"${CLAUDE_PLUGIN_DATA:-$HOME/.claude/claude-tui-line}/bin"`, and the fallback is load-bearing
+rather than defensive padding: unset, `"${CLAUDE_PLUGIN_DATA}/bin"` expands to **`/bin`**, making
+the command a release publish into the system binary directory — failing on permissions, or with a
+privileged shell, succeeding. `settings.json` would then point at `/bin/claude-tui-line` and the
+preview would confirm it renders. Resolve the directory once into a variable and use that variable
+everywhere, so there is one place this can be wrong.
+
+**Verify by running the value, not the variable.** Read `statusLine.command` back out of
+`settings.json` and run *that string, verbatim*. Not the path expression that produced it — that
+path was already proven by the build, and it is not what is in doubt. The one untested thing after
+the write is **the expansion**: `settings.json` does not interpolate shell or plugin variables, so a
+literal `${CLAUDE_PLUGIN_DATA}` written through unexpanded produces a command that does not exist.
+Testing the variable verifies the half that was never at risk — the preview renders perfectly,
+setup reports success, and the user gets a blank statusline with nothing pointing at why. §12.5's
+revert already verifies this way, by printing and running the command it restored; two commands
+answering the same question differently is worse than either being wrong alone, and this is the one
+that runs on every install.
+
+**Say that the preview payload is minimal.** It carries a `cwd` and a model name and nothing else,
+so items depending on workspace, session, or usage fields render absent and will appear once it is
+live. Unsaid, a correct install reads as a half-broken one and the user's first act is debugging
+something that works.
+
+**If the backup was a `checkpoint` rather than an `origin`, say so and give its timestamp.** Bare
+`/claude-tui-line:revert` then does *not* restore the state just backed up — it restores the older
+`origin`, correctly and by §12.5's design — and a user who was told "your statusline is backed up"
+will not expect that. The default is right; leaving the difference unsaid is what is wrong.
+
+**Build output, and how it relates to §14.** This is a third location, and deliberately so: §14
+governs `publish/`, the deploy target a developer's own live statusline executes, which is why
+writing there needs approval. `setup` writes to the plugin's data directory instead — a location
+that belongs to the installed plugin, that survives plugin updates, and that cannot collide with a
+working tree the user may also be building in. §14.1's one-command rule still applies to what it
+runs; what differs is the destination, and that a user invoking `setup` has plainly asked for it.
+
 ## 13. Out of scope for v2
 
 - ~~True-color / 256-color palettes.~~ **Resolved — see §6.2.** The decision this bullet was
