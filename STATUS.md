@@ -3723,6 +3723,29 @@ minSize-keeps-border case. Test fixups: `CommandProviderTests.cs` (3 call sites,
 `EndToEndItemValuesTests.cs` (1 call site, `.Values` added). Committed directly to main (in-tree work,
 not a worktree task) as `62a5741`, fast-forward, pushed.
 
+### #35: `--preview --json` `rows[]` shape test coverage
+
+First worktree task from `cdtui-implementor2` (worktree `../claude-tui-line-wt-35`, branch `task-35`).
+New `PreviewJsonRowsTests.cs` (3 tests): every row's `width` equals `text.Length` after ANSI-strip;
+`contentWidth` is present on content rows and absent (not null) on border rows; JSON property-name
+shape matches `ItemsCommandTests`' existing style. The actual `rows[]` rules live in §9.3.4 (plus
+§9.3.2/§9.3.3 for bare-vs-json, §9.6 for the base shape) — corrected in this entry since the original
+dispatch had mis-cited §9.6.2.2, which covers `--items --json`, not `--preview`.
+
+`RunPreview` has no public `Build()`-style entry point the way `ItemsCommand`/`ColorsCommand` do (it's
+a top-level local function in `Program.cs`), so it isn't reachable via `InternalsVisibleTo`. Tests
+exercise the built CLI as a subprocess instead — the same mechanism `tools/check-examples.sh` already
+uses (`CLAUDE_TUI_LINE_BIN` honored, falls back to `dotnet run -c Release`). New pattern for the test
+suite; backlogged as #48 rather than refactoring `RunPreview` now.
+
+One divergence flagged, not fixed: `rows[].width` is always `text.Length` (UTF-16 code units), while
+§9.3.4's prose says it's "computed by the same function the layout used" — only `contentWidth` actually
+reuses the layout's measured value. Didn't affect the ASCII fixtures either way. Backlogged as #49,
+linked to #20 (surrogate-pair slicing) as the likely shared root cause rather than treated separately.
+
+Merged (non-fast-forward, main had moved) after a clean build and a targeted test run (3/3 passed).
+Landed as `78467b0`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
