@@ -299,6 +299,59 @@ public static class ItemValueResolver
     }
 
     /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.5.1 step 4: a second implementation of <see cref="ScanReferences"/>'s
+    /// output, built from <see cref="ReferenceExtractors"/>/<see cref="ColorTokenExtractors"/>
+    /// instead of a hand-rolled walk. Kept alongside <see cref="ScanReferences"/>, not yet called by
+    /// any <c>--check</c> path, until an equivalence test proves the two agree on a corpus of real
+    /// configs; step 5 then promotes this into <see cref="ScanReferences"/> and deletes the
+    /// hand-rolled walk. <see cref="ReferenceScan.DerivedItemIds"/> still comes from inspecting
+    /// <c>items</c> directly — whether a declaring entry also carries a <see cref="PaneItem.From"/>
+    /// is a fact about that entry, not a reference occurrence any extractor bucket yields.
+    /// </summary>
+    internal static ReferenceScan ScanReferencesViaExtractors(Pane root, string rootPath, IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens)
+    {
+        var items = new List<ScanEntry>();
+        var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
+        Walk(root, rootPath, items, colorExprs);
+
+        var ctx = new ScanContext(items, colorExprs, tokens);
+
+        var references = new List<IdReference>();
+        var selfDeclared = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var extractor in ReferenceExtractors)
+        {
+            foreach (var candidate in extractor(ctx))
+            {
+                if (candidate.Kind == ReferenceKind.Declaration)
+                {
+                    selfDeclared.Add(candidate.Id);
+                }
+                else
+                {
+                    references.Add(new IdReference(candidate.Id, candidate.Path, candidate.Form!.Value));
+                }
+            }
+        }
+
+        var derivedItemIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in items)
+        {
+            if (entry.Item.Id is { Length: > 0 } ownId && entry.Item.From is { Length: > 0 })
+            {
+                derivedItemIds.Add(ownId);
+            }
+        }
+
+        var colorTokenReferences = new List<ColorTokenReference>();
+        foreach (var extractor in ColorTokenExtractors)
+        {
+            colorTokenReferences.AddRange(extractor(ctx));
+        }
+
+        return new ReferenceScan(references, selfDeclared, derivedItemIds, colorTokenReferences, colorExprs);
+    }
+
+    /// <summary>
     /// SPEC-V2-FRAMEWORK.md §8: computes every derived item's (<see cref="PaneItem.From"/>) value
     /// from a snapshot of <paramref name="values"/> taken before any derived result is written
     /// back, then merges all of them in afterward. This makes chaining — a derived item's
