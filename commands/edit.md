@@ -40,6 +40,14 @@ If there is no config file, say so and offer to create one seeded with the curre
 agreement first: a user who did not know they had no config may want `/claude-tui-line:migrate`
 instead.
 
+**If they agree, take step 4's checkpoint before creating the file, not after.** Seeding a config
+is a write, and the ledger's rule is that every step which can abort precedes every step which
+writes. Creating it here and checkpointing at step 4 records the seeded file as the state to roll
+back to — so a failed edit rolls back to a config the user did not have when this command started,
+and "no config, defaults apply" stops being reachable. The entry taken first records
+`configCopy: null`, which is the ledger's way of saying there was nothing here, and a rollback
+against it deletes the file rather than restoring one.
+
 Read the whole file. You need the tree in front of you to navigate to "the first pane" —
 `surface.pane.children[0].items` is only locatable if you can see the structure.
 
@@ -61,7 +69,11 @@ Read and follow `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`, appending a **`ch
 the first edit of a session. Not an `origin` — `origin` is written exactly once ever and this is
 not it.
 
-**Confirm the entry you appended actually contains `configCopy` and `configSha256`.** This command
+**Confirm the entry you appended actually carries the config fields** — `configOriginalPath`
+present, and `configCopy` either naming a copy or explicitly `null`. A `null` is a legitimate
+answer here and not a failure: it is the ledger recording that no config existed, which is the
+normal case when step 2 was about to seed one. What must not pass is the fields being *missing*,
+which means the procedure did not look. This command
 changes `claude-tui-line.json` and nothing else, so an entry holding only `settings.json` is a
 backup of the one file `/edit` cannot break — and step 7's rollback would then restore a
 `statusLine` key nobody touched, leave the broken config exactly where it is, and report success.
@@ -133,7 +145,10 @@ second the entire time.
 
 **Rolling back means copying step 4's `configCopy` back over the config file** — the artifact this
 command modified. It does *not* mean restoring that entry's `statusLine`, which was never changed
-and whose restoration would fix nothing while looking exactly like a fix. Then re-run
+and whose restoration would fix nothing while looking exactly like a fix. If `configCopy` is
+`null`, there was no config before this command ran, and rolling back means **deleting** the file
+you created — that is the restoration of that state, the same way an entry with `"statusLine":
+null` restores by removing the key. Then re-run
 `--preview` and confirm the rollback actually took, for the same reason step 7 exists at all: a
 recovery reported on the strength of having written a file is not a recovery.
 

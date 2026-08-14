@@ -841,6 +841,62 @@ Two smaller rulings inside it:
   and survives a colour-system change. The diagnostic points at a real improvement rather than a
   phantom defect, which is the only reason a technically-avoidable warning is allowed to stay.
 
+### `setup` walked — the only command that runs today, and it verified the wrong half
+
+Task #12 was marked complete, which is not the same as audited. `setup` is the one command that
+works without the CLI, it is the first thing a new user runs, and it is the one that performs the
+backup the whole project's safety story rests on. Five findings.
+
+**The one that matters is step 5.** It rendered a preview by running
+`${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line` — the variable. But step 4 writes settings.json, which
+does *not* interpolate plugin variables, so it must write an **expanded absolute path**, and that
+expansion is the only thing in the whole procedure still untested at step 5. The binary was proven
+in step 2. So a wrong expansion — a typo, or the literal `${CLAUDE_PLUGIN_DATA}` written through
+unexpanded — produces a perfect preview, a success report, and a blank statusline, with nothing
+anywhere pointing at the cause. §7.1's class exactly, in the install path: present, plausible,
+wrong. Step 5 now reads `statusLine.command` back out of the file and runs *that string*.
+
+`/revert` step 7 already got this right — it prints and runs the command it restored. Two commands
+answering the same question different ways, and the weaker one ran on every install.
+
+**The other four:**
+
+- Step 6 told the user their statusline was backed up and that `revert` restores it. True when
+  step 3 wrote an `origin`; **false when it wrote a `checkpoint`**, which is the documented case
+  where setup runs on a machine that already had one. Bare `revert` then correctly restores the
+  older `origin` — not what setup just saved. The default is right; saying nothing about it is
+  not. Step 6 now reports the kind and hands over the timestamp.
+- Step 1 ran `dotnet --version` in the user's cwd while step 2 builds elsewhere. `global.json`
+  makes that two different SDKs, so the check can pass for a toolchain the build never uses and
+  the failure then presents as a build error. Now runs in the project directory.
+- The sample payload carries `cwd` and `model` only, so items depending on workspace/session
+  fields render absent. A correct install reads as a broken one and the user's first act is to
+  debug something that works. Now said out loud.
+- Ordering (checkpoint before any write) was already correct. Recorded as a clean result.
+
+**And the config-absence marker, found by walking setup into the ledger.** The ledger's config
+section said to omit all three fields when no config exists and "note it in `note`" — while citing
+`"statusLine": null` as its precedent. It is not that precedent. Three missing fields are
+indistinguishable from an entry written before configs were captured at all, and free text is not
+something a rollback can branch on: *no config was here* and *this ledger cannot say* arrive as the
+same answer and call for opposite actions. Now `configOriginalPath` plus an explicit
+`configCopy: null`. Third time in this project that absence needed a distinguished value rather
+than a missing key, after §12.6.9's `revision: "absent"` — assume the fourth has the same shape.
+
+That marker then propagated into `/edit` twice, and the second was a defect the first created:
+
+1. Step 2 offers to seed a config when none exists, then step 4 checkpoints. So the checkpoint
+   records the *seeded* file, and a failed edit rolls back to a config the user did not have when
+   the command started — "no config, defaults apply" becomes unreachable by rollback. Same
+   ordering defect I fixed in `/revert` by swapping steps 3 and 4: a write ahead of the
+   checkpoint. Now the checkpoint is taken first, and step 7's rollback deletes rather than
+   restores when `configCopy` is null.
+2. Step 4's guard — "stop if the entry has no `configCopy`" — would then fire on exactly that
+   legitimate null. Adding a distinguished value turned a correct check into a false positive one
+   edit later, which is the same trap as tonight's `color-down-converted` message: broaden the
+   data and the things reading it silently stop meaning what they said. Now it distinguishes
+   `null` (looked, found nothing — fine) from missing (never looked — stop).
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

@@ -81,8 +81,28 @@ An entry also carries the claude-tui-line config, under the same three-field sha
 
 Record these **whenever a config file exists** at the path §5's search order resolves to
 (`$CLAUDE_TUI_LINE_CONFIG` first, then `~/.claude/claude-tui-line.json`) — not only when the
-command is about to change it. Omit all three when there is no config file; as with
-`"statusLine": null`, absence recorded is different from absence unknown, so note it in `note`.
+command is about to change it.
+
+**When no config file exists, record the absence rather than omitting the fields:**
+
+```json
+"configOriginalPath": "/Users/someone/.claude/claude-tui-line.json",
+"configCopy":         null
+```
+
+`configOriginalPath` is the path the search order resolved to — where a config *would* have been —
+and a null `configCopy` says we looked there and found nothing. `configSha256` is omitted, since
+there is nothing to hash.
+
+This mirrors `"statusLine": null` exactly, which is the point: an earlier version of this section
+invoked that precedent and then did something weaker, telling authors to omit all three fields and
+mention it in free-text `note`. Those are not the same. Three fields missing is indistinguishable
+from an entry written before configs were captured at all, and prose in `note` is not something a
+rollback can branch on. So a command asking "was there a config here?" gets *no config was here*
+and *this ledger cannot say* as the same answer, and the two call for opposite actions — delete the
+file, or leave it alone. This is the third place in this project where absence needed a
+distinguished value rather than a missing key (see also SPEC §12.6.9's `revision: "absent"`); it is
+worth assuming it will be the shape of the fourth.
 
 **This is what makes `/claude-tui-line:edit` recoverable at all.** `/edit` changes the config and
 nothing else. An entry holding only `settings.json` is a backup of the one file that command
@@ -182,7 +202,9 @@ Any command that is about to write `settings.json` or `claude-tui-line.json`:
 6. **Resolve the config path (§5's search order) and, if a file is there, copy and hash it too.**
    Do this whichever file you came here to write — an entry that captures only the artifact this
    particular command happens to modify cannot recover the other one, and the command that needs
-   it will not be the one that took the backup.
+   it will not be the one that took the backup. **If no file is there, still record
+   `configOriginalPath` with `configCopy: null`** — the resolved path plus an explicit "nothing was
+   here", never three omitted fields.
 7. Append **one** entry — `origin` if and only if no `origin` entry exists **and** the current
    `statusLine` does not already point at a claude-tui-line binary; otherwise `checkpoint`.
 8. Write `ledger.json` back.

@@ -11,11 +11,16 @@ broken command once a second.
 ## 1. Check the toolchain
 
 ```bash
-dotnet --version
+(cd "${CLAUDE_PLUGIN_ROOT}/src/ClaudeTuiLine" && dotnet --version)
 ```
 
 Needs .NET 10 or newer. If `dotnet` is missing or older, stop and tell the user to install the
 .NET 10 SDK from https://dotnet.microsoft.com/download. Do not attempt to install it yourself.
+
+Run it from the project directory, not from wherever the user happens to be. `dotnet --version`
+reports the SDK selected *for the current directory*, which a `global.json` anywhere above it can
+pin — so checking in one directory and building in another can pass a check for an SDK the build
+never uses, and report the resulting failure as a build error rather than a toolchain one.
 
 ## 2. Build the binary
 
@@ -71,18 +76,35 @@ Expand `${CLAUDE_PLUGIN_DATA}` to a real absolute path — settings.json does no
 variables. Write **only** the `statusLine` key, atomically (temp file in the same directory, then
 rename), preserving every other key and the file's formatting. Edit it; do not rewrite it.
 
-## 5. Show the user what they will get
+## 5. Show the user what they will get — by running what you actually wrote
 
-Render a preview by feeding the binary a sample payload, rather than asking the user to squint at
-their own statusline and guess whether it changed:
+Read the `statusLine.command` value back out of `~/.claude/settings.json` and run **that string,
+verbatim**:
 
 ```bash
 echo '{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}' \
-  | COLUMNS=$(tput cols) "${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line"
+  | COLUMNS=$(tput cols) <the exact command string now in settings.json>
 ```
 
-Show the output. If it is empty, that is a symptom worth chasing rather than reporting as success
-— check stderr and say so plainly.
+**Not `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`.** That path was already proven in step 2 and is
+not what is in doubt. The one untested thing after step 4 is *the expansion* — whether the absolute
+path you substituted is the path that exists. Testing the variable instead of the value verifies
+the half that was never at risk: if the expansion is wrong, or the literal `${CLAUDE_PLUGIN_DATA}`
+was written through unexpanded, this preview still renders perfectly, setup still reports success,
+and the user gets a blank statusline with nothing anywhere pointing at why. Reading the value back
+out costs one step and is the only version of this check that can fail when the install is broken.
+
+`/claude-tui-line:revert` already verifies this way, printing and running the command it restored.
+Two commands answering the same question differently is worse than either being wrong alone, and
+this is the one that runs on every install.
+
+Show the output. If it is empty, that is a symptom worth chasing rather than reporting as success —
+check stderr and say so plainly.
+
+Say that the sample payload is **minimal**: real payloads carry workspace, session and usage fields
+this one does not, so items that depend on them render absent here and will appear once it is live.
+Otherwise a correct install reads as a half-broken one, and the user's first act is to debug
+something that is working.
 
 ## 6. Tell them what happens next
 
@@ -91,7 +113,13 @@ Report, briefly:
 - where the binary lives
 - where the backup went, and that `/claude-tui-line:revert` restores it — it reads the ledger at
   `~/.claude/claude-tui-line/backups/ledger.json`, and targets the `origin` entry by default no
-  matter how many changes come after
+  matter how many changes come after.
+
+  **If step 3 wrote a `checkpoint` rather than an `origin`**, say so and give its timestamp. Bare
+  `/claude-tui-line:revert` then does *not* restore what you just backed up — it restores the
+  older `origin`, correctly and by design, and the user who read "your statusline is backed up"
+  will not expect that. Tell them the argument to pass to get this state back. The default is
+  right; leaving the difference unsaid is what is wrong
 - that config goes in `~/.claude/settings.json`'s sibling, `~/.claude/claude-tui-line.json`, and
   that with no config file the built-in defaults apply
 - that `$CLAUDE_TUI_LINE_CONFIG` overrides that path if they want to keep configs elsewhere
