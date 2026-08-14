@@ -1949,9 +1949,21 @@ one run over its box rectangle: `left`/`right` contribute vertical runs down the
 column; `top`/`bottom` contribute horizontal runs across the box's first/last row. For a vertical
 run in column `c` spanning rows `r0..r1`, set at each row `r` in that range: bit `S` if `r < r1`,
 bit `N` if `r > r0`. For a horizontal run in row `r` spanning columns `c0..c1`, set at each column
-`c`: bit `E` if `c < c1`, bit `W` if `c > c0`. The mask at a cell is the bitwise OR of every
-contribution landing on it — the direct encoding of §2.10's "a physical line is drawn if **any**
-adjacent pane asks for it," applied per cell rather than per boundary. It also produces corners
+`c`: bit `E` if `c < c1`, bit `W` if `c > c0`.
+
+**One step precedes the OR, and only under `collapse: true`.** For each interior boundary — a
+column shared by two horizontally-adjacent panes, or a row shared by two vertically-adjacent
+panes — collect the runs its contributors supply along that boundary and replace them with a
+single run spanning their convex hull: from the lowest `r0` to the highest `r1` (or `c0`/`c1` on
+the horizontal axis). Accumulate masks from that hull run, not from the individual contributions.
+This is the step that fills an interior gap between two shrink-wrapped neighbours (§3), and it is
+the only place the hull rule enters the construction. A pane's own outer edges, and every edge
+under `collapse: false`, are accumulated directly from their contributions with no hull step —
+they have no co-contributor to take a hull with.
+
+The mask at a cell is the bitwise OR of every contribution landing on it (after the hull
+substitution above, where it applies) — the direct encoding of §2.10's "a physical line is drawn
+if **any** adjacent pane asks for it," applied per cell rather than per boundary. It also produces corners
 with no corner special-case: a box's top-left cell receives `S` from its left edge's run (it is
 that run's `r0`) and `E` from its top edge's run (it is that run's `c0`), giving mask `0b0110` →
 `┌`. Under `collapse: false` no grid is built at all — panes are separate boxes, each rendering its
@@ -1960,7 +1972,9 @@ per-cell grid is machinery that exists only for the collapsed model; the default
 constructs it.
 
 **3. A shared column whose neighbours are different heights.** The vertical run in a shared column
-is the union of the contributing panes' runs — §2.10's "any adjacent pane asks for it," per cell.
+is the **convex hull** of the contributing panes' runs. §2.10's "any adjacent pane asks for it"
+decides *whether* a boundary carries a line and *who* contributes to it; the hull decides *how far*
+that line runs. The two are separate questions and the paragraph below settles the second.
 With a two-row pane beside a three-row pane under `collapse: true`: over the rows both boxes
 occupy, the column is a shared edge and §2.10.1 rule 4's tie-break decides its style and colour;
 over the rows only the taller box occupies, the line is still drawn as that pane's own right edge,
