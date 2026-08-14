@@ -81,29 +81,38 @@ have caught them having been retired as passed.
 duplicate, nine instances of it, and — more usefully — a reason it happened that is structural
 rather than careless.
 
-`ConfigCheck.cs:289–297` holds nine hand-written token lists. Each is a second copy of a set that
-already exists somewhere else as the cases of a `switch`:
+`ConfigCheck.cs:289–297` held nine hand-written token lists, one per kind, each a second copy of a
+set that already existed somewhere else as the cases of a `switch`. Task #38 closed eight of the
+nine, turning each kind's accepted set into a `static readonly` collection colocated with its
+parser; `ConfigCheck.cs:289–297` now holds only `size`'s list, exempted for the reason given below.
+The table records where each kind's set lives today:
 
 | Kind | Where the value is parsed | Where the accepted list is written |
 |---|---|---|
-| `border.style` | `Config.cs:628` `BorderStyleParsing.TryParse` | `ConfigCheck.cs:289` |
-| `size` | no single closed-set parser — mixed literals and forms | `ConfigCheck.cs:290` |
-| `valign` | `Pane.cs:30` `ParseCore` | `ConfigCheck.cs:291` |
-| `align` | `Pane.cs:58` `ParseCore` | `ConfigCheck.cs:292` |
-| `overflow` | `OverflowMode.cs:28` `Parse` | `ConfigCheck.cs:293` |
-| `case` | `ItemValueResolver.cs:337` `ParseCaseMode` | `ConfigCheck.cs:294` |
-| `split` | `Config.cs:459` `ParseSplitCore` | `ConfigCheck.cs:295` |
-| `distribute` | `Pane.cs:90` `ParseCore` | `ConfigCheck.cs:296` |
-| `colorSystem` | `Config.cs:383` `ParseColorSystemCore` | `ConfigCheck.cs:297` |
+| `border.style` | `Config.cs:672` `BorderStyleParsing.TryParse` | `Config.cs:660` `BorderStyleParsing.Accepted` |
+| `size` | no single closed-set parser — mixed literals and forms | `ConfigCheck.cs:293` |
+| `valign` | `Pane.cs:39` `ParseCore` | `Pane.cs:30` `PaneValignParsing.Accepted` |
+| `align` | `Pane.cs:82` `ParseCore` | `Pane.cs:73` `PaneAlignParsing.Accepted` |
+| `overflow` | `OverflowMode.cs:37` `Parse` | `OverflowMode.cs:22` `OverflowModeParsing.Accepted` |
+| `case` | `ItemValueResolver.cs:361` `ParseCaseMode` | `ItemValueResolver.cs:353` `CaseAccepted` |
+| `split` | `Config.cs:483` `ParseSplitCore` | `Config.cs:474` `SplitAccepted` |
+| `distribute` | `Pane.cs:128` `ParseCore` | `Pane.cs:120` `PaneDistributeParsing.Accepted` |
+| `colorSystem` | `Config.cs:392` `ParseColorSystemCore` | `Config.cs:383` `ColorSystemAccepted` |
 
-**All nine agree today**, which is the whole problem — §1.1's healthy registry and its
-silently-incomplete twin are the same object, and nothing here distinguishes them.
+**All nine agreed at the time this was written**, which was the whole problem — §1.1's healthy
+registry and its silently-incomplete twin were the same object, and nothing distinguished them. That
+is no longer true of eight of the nine: they are not a second copy that happens to agree, they are
+the one object the parser and the diagnostic both read. `size` still has the shape this paragraph
+warns about, which is why the two failure directions below still apply to it.
 
-**The border row is the one worth reading closely, because someone already fixed this and it did not
-take.** `BorderStyleParsing` was deliberately extracted, and the comment above it at `Config.cs:625`
-says it exists so the checker can ask *"was this string one of the recognized ones" through the
-exact same switch the loader uses, **rather than a second copy of the token list***. Twenty lines
-away, `ConfigCheck.cs:289` is a second copy of the token list, all six literals.
+**The border row was the one worth reading closely, because someone had already tried to fix this
+and it had not taken.** `BorderStyleParsing` was deliberately extracted, and the comment above it —
+then at `Config.cs:625`, now `Config.cs:652` after #38's rebuild — said it existed so the checker
+could ask *"was this string one of the recognized ones" through the exact same switch the loader
+uses, **rather than a second copy of the token list***. (That comment now reads "accepted-token
+lookup" instead of "switch," reflecting #38's change from a shared parser to a shared data
+collection — see below.) Twenty lines away, `ConfigCheck.cs:289` was still a second copy of the
+token list, all six literals — proof that extracting the parser alone had not been enough.
 
 That is not someone ignoring the comment. **A `switch` is not enumerable.** You can ask it "do you
 accept this?" and you can never ask it "what do you accept?" — so extracting a shared parser makes
@@ -119,7 +128,7 @@ a tie.
 **What ties them is making the set data.** One `static readonly` collection per kind, holding the
 accepted tokens; the parser becomes a lookup against it, and the diagnostic reads the same object.
 Then there is no second copy to drift, and adding a token is one edit by construction rather than by
-discipline.
+discipline. Task #38 built exactly this, for every kind but `size`.
 
 **Do not force `size` into that shape.** Its list is `an integer`, `a percentage`, `content`,
 `fill`, `auto` — three literals and two descriptions of a *form*, which is why it has no closed-set
@@ -153,7 +162,7 @@ exempts `size`.
 
 ##### The inventory
 
-| Where | What it is | Agrees with `ConfigCheck.cs:289–297`? |
+| Where | What it is | Agrees with §1.1.1's per-kind registry? |
 |---|---|---|
 | `README.md:136–150` | a table whose column is headed **`accepted values`** | **no** — see below |
 | `README.md:152–153` | `border.style`, six literals in prose | yes |
