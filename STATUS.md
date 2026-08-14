@@ -3885,6 +3885,31 @@ directive, this is normal coverage, not a proof-of-failure test. Full suite: 123
 (independently re-verified via task-gopher, both pre-merge on the worktree and post-merge on
 `main`). Landed as merge commit `d95f6ca` (branch tip `4ed325a`), pushed.
 
+### #20: defect 16 — wrap/truncate slicing through UTF-16 surrogate pairs
+
+`PaneRenderer.WrapSegment`/`TruncateSegment` cut `segment.Plain` by raw UTF-16 index with no check
+for whether the cut landed between a high and low surrogate, so a non-BMP character (most emoji)
+straddling a wrap or truncate boundary could be split into two lone surrogates — invalid UTF-16
+written to stdout, not merely a clipped glyph. Independent of the existing `Plain.Length`-as-column
+approximation, which is already correct for a 2-unit/2-column emoji.
+
+Fix: new `SafeCutIndex(plain, index)` helper advances the index by one when it falls between a high
+surrogate at `index-1` and a low surrogate at `index`; both `TruncateSegment` slice sites and
+`WrapSegment`'s chunk-end route through it. `WrapSegment`'s loop changed from a fixed `i += innerWidth`
+stride to a `while` loop tracking running position (`i = end` after each chunk), since adjusting one
+chunk's end shifts where the next chunk must start — `SafeCutIndex`'s output is always itself
+surrogate-safe so no re-check is needed at the top of the next iteration.
+
+New coverage in `OverflowModeTests.cs` (established home for wrap/truncate edge cases): two normal
+tests (not falsification-style, per the session's standing directive) constructing an emoji
+straddling the exact cut index for both the wrap and truncate paths, plus a shared
+`AssertNoLoneSurrogates` helper checked against every row. This closes a real gap — §2.6's trap list
+covered escape sequences but never got the equivalent sentence for surrogate-pair characters.
+
+Full suite: 1238/1238 passed (2 new tests over the #16 baseline), independently re-verified via
+task-gopher both pre-merge on the worktree and post-merge on `main`. Landed as merge commit
+`19dc964` (branch tip `2803c81`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
