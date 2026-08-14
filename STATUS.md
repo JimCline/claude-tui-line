@@ -28,23 +28,47 @@ not by itself enough; this project has twice had a green suite over a broken ins
 
 ## In flight
 
-- **Defect 11** (§5's resolution set) — fixed and **reviewed against the diff**; held out of
-  `8306620` while it was the suspect for defect 13, and **cleared of that** (defect 13 turned out
-  to be the test's own racy counter — see the table). Its three files (`ItemValueResolver.cs`,
-  `LeafContent.cs`, `HyperlinkTests.cs`) are still uncommitted in the working tree, now only
-  because the implementor is mid-change on the defect-13 fix; the tree as it stands builds clean
-  and passes **1069/1069, exit 0**, verified in a scratch copy rather than in place. The fix is
-  right: `CollectIds` restructured into a
+- **Phase 5 CLI** (§9) — with the implementor, and now the **critical path**: §12.1 makes the
+  binary the oracle for every authoring command, so Phase 6 below is blocked on it entirely.
+  Ordered `--check` → `--items` → `--preview` → `--colors`, and the ordering is reasoned:
+  `--check` first because §7 makes a bad config *silent*, so it is the only one that prevents
+  damage rather than adding convenience. It reports by **JSON Pointer** and must **reuse
+  `ReferenceExtractors`** rather than growing a second config walk — a checker that passes while
+  the resolver drops an id is defect 11 re-opened somewhere new and equally silent. `--check`
+  is also where the silent-acceptance defects 3–6 become visible without changing runtime
+  behaviour. `--preview` needs `--config <path>` so a candidate can be seen **without being
+  installed**, which is what lets migrate show a result before writing.
+- **Phase 6 authoring commands** (§12.3–12.5) — `migrate`, `edit`, `revert` **written and
+  committed, blocked on §9**. Each opens by asking the binary for `--items`, and **stops** if the
+  CLI is absent rather than falling back to a list written from memory: §12.1 forbids that
+  because a prompt-file item list is a second registry, and a remembered id that no longer exists
+  resolves to nothing and is silently suppressed. The README says plainly that these three do not
+  work yet. **Not verified end-to-end** — nothing can be until §9 exists.
+- **The backup ledger** (§12.2) — `docs/backup-ledger.md`, one definition shared by all four
+  commands. A first draft of these commands used timestamped `settings.json.backup-*` copies and
+  had exactly the bug §12.2 exists to prevent: migrate → edit → migrate again captures
+  *claude-tui-line's own* command as the thing to restore, so revert restores the tool the user is
+  escaping, and the escape hatch closes as it becomes needed. Replaced with the `origin` /
+  `checkpoint` distinction, `origin` written exactly once ever, SHA-256 recorded per artifact and
+  a mismatch **reported rather than overwritten**. Also unexercised: no command has run against a
+  real ledger yet.
+
+- ~~**Defects 11 and 13**~~ — **both fixed, committed as `5ed9ccb` and pushed.** Verified
+  independently of the report claiming it: clean Release build, three consecutive full-suite runs
+  at **1069/1069**, and both fixes confirmed present in the tree (`[ThreadStatic]` at
+  `SizeResolver.cs:332`, the non-parallel collection at `MinRowsDistributeTests.cs:12`) rather
+  than merely reported. Isolated, the true packer count is **14** and stable across 8 runs — so
+  the 45 this file recorded as a baseline was itself contaminated, just less than the 314 was.
+  Defect 11's fix: `CollectIds` restructured into a
   `ReferenceExtractors` array with one lambda per §5 reference form, so adding §4.2's argv
   placeholder or §3.3's compound parts is an append rather than an edit — that array is now the
   single definition of what ids a config references, and **`--check` must reuse it rather than
   grow a second config walk**. Colour-token `from` was checked and is *not* affected, closing the
   question STATUS previously left open at defect 11: the link resolver was the only broken form.
-- **Defect 13** — diagnosed here as a racy test counter, fix with the implementor. See the
-  defect table. One consequence of defect 11 worth a spec decision, unrelated to 13: a `link`
-  naming `{remote-url}` now genuinely resolves `remote-url`, which shells out to git. That is
-  the fix working as intended, but it makes an item that is opt-in *for cost reasons* reachable
-  without the user placing it. §3.2 may need to say so.
+  One consequence of defect 11 still wants a spec decision: a `link` naming `{remote-url}` now
+  genuinely resolves `remote-url`, which shells out to git. That is the fix working as intended,
+  but it makes an item that is opt-in *for cost reasons* reachable without the user placing it.
+  §3.2 may need to say so.
 
 Notes carried forward from `min-rows`, now in **Done and verified**: implementation is
 `PaneDistribute` → `ResolveVerticalMinRows` → `SolveMinRows` → `MinWidthForRowCount` →

@@ -39,6 +39,25 @@ from source rather than shipping a binary.
 statusline you already have** before touching anything, writes the new `statusLine` setting, and
 shows you a rendered preview.
 
+Three more commands cover the rest of the lifecycle — adopt an existing statusline, change it in
+conversation, and go back:
+
+| command | what it does |
+|---|---|
+| `/claude-tui-line:migrate` | Reads your current statusline script and maps each element onto an item — built-in, a `command` item wrapping your own logic, or reported as unmappable. Shows you the result before writing anything. |
+| `/claude-tui-line:edit` | "Add git diff stat at the end of the first pane, adds green and deletes red." Edits the config, validates it, and shows you before-and-after renders. |
+| `/claude-tui-line:revert` | Restores the statusline you had before any of this. |
+
+All four share one backup ledger at `~/.claude/claude-tui-line/backups/`, which records the state
+from *before claude-tui-line was ever installed* separately from every state since. That
+distinction is the point: migrate, edit, migrate again, and a naive "back up whatever is there now"
+would capture claude-tui-line's own command as the thing to restore. `revert` targets the original
+by default, so the escape hatch survives any number of changes. See
+[docs/backup-ledger.md](docs/backup-ledger.md).
+
+> These three need the CLI (`--items`, `--check`, `--preview`), which is **not built yet** — they
+> will tell you so and stop rather than guessing. `setup` works today.
+
 ### By hand
 
 ```bash

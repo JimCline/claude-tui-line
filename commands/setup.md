@@ -33,19 +33,22 @@ stop.
 
 ## 3. Back up whatever statusline is already configured
 
-**This step is mandatory and must happen before step 4 writes anything.** Read
-`~/.claude/settings.json`.
+**This step is mandatory and must happen before step 4 writes anything.**
 
-- If there is no `statusLine` key, note that and continue.
-- If there is one, copy the *whole settings file* to
-  `~/.claude/settings.json.backup-<timestamp>` using a real timestamp (`date +%Y%m%d-%H%M%S`),
-  and additionally record the existing `statusLine` value verbatim in your reply so the user can
-  see exactly what is being replaced.
-- If `statusLine.command` points at a script the user wrote, **also copy that script** next to
-  the settings backup. Replacing a config the user can restore from a backup is fine; orphaning a
-  script they spent time on is not.
+Read `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md` and follow it in full. Do not improvise a
+timestamped file copy — the ledger exists because the obvious design fails on the *second* use,
+capturing claude-tui-line's own command as the thing to restore, and revert then restores the tool
+the user was trying to escape.
 
-Report the backup paths. If you cannot write the backup, stop — do not proceed to step 4.
+For this command the entry is almost always **`origin`**: the state before claude-tui-line ever
+touched this machine, written exactly once ever. Read the ledger first and append a `checkpoint`
+instead if an `origin` already exists — that means setup has run here before.
+
+Record `"statusLine": null` if there is no existing key. That is a real, restorable state, and it
+is different from not knowing what was there.
+
+Report the backup path and which kind of entry you appended. If the backup cannot be written,
+**stop** — do not proceed to step 4.
 
 ## 4. Point Claude Code at the binary
 
@@ -62,7 +65,8 @@ Edit `~/.claude/settings.json` to set:
 ```
 
 Expand `${CLAUDE_PLUGIN_DATA}` to a real absolute path — settings.json does not interpolate plugin
-variables. Preserve every other key in the file; edit it, do not rewrite it.
+variables. Write **only** the `statusLine` key, atomically (temp file in the same directory, then
+rename), preserving every other key and the file's formatting. Edit it; do not rewrite it.
 
 ## 5. Show the user what they will get
 
@@ -82,11 +86,14 @@ Show the output. If it is empty, that is a symptom worth chasing rather than rep
 Report, briefly:
 
 - where the binary lives
-- where the backup went, and that `/claude-tui-line:revert` will restore it *(note: revert is not
-  built yet — until it is, tell the user the backup path and that restoring is a manual file copy)*
+- where the backup went, and that `/claude-tui-line:revert` restores it — it finds backups by the
+  `settings.json.backup-<timestamp>` name written in step 3, which is why that naming matters
 - that config goes in `~/.claude/settings.json`'s sibling, `~/.claude/claude-tui-line.json`, and
   that with no config file the built-in defaults apply
 - that `$CLAUDE_TUI_LINE_CONFIG` overrides that path if they want to keep configs elsewhere
+
+- that `/claude-tui-line:edit` changes the statusline in plain English, so they do not have to
+  hand-write JSON to try something
 
 Do not invent configuration examples in your summary. Point them at the project README, which
 documents every pane key, all sixteen built-in items, custom `command` items, derived items,
