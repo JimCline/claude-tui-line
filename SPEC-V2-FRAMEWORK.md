@@ -3865,6 +3865,14 @@ can delete is not a backup.
   once, ever.** If an `origin` entry exists, no command may write another.
 - **`checkpoint`** — any state captured since.
 
+**When no config file exists, the entry records the absence rather than omitting the fields:**
+`configOriginalPath` is the path §5's search order resolved to, and `configCopy` is `null`. This
+mirrors `"statusLine": null` and for the same reason — *nothing was here* and *this ledger cannot
+say* are opposite facts that call for opposite recoveries, and three missing fields cannot tell
+them apart from an entry written before configs were captured at all. Absence needing a
+distinguished value rather than a missing key is now the third instance in this project (see also
+§12.6.9's `revision: "absent"`), which is enough to treat as the default assumption for the fourth.
+
 That distinction is the whole point of the ledger rather than a timestamped file. Migrate, edit,
 migrate again, and a naive "back up whatever is there now" captures *claude-tui-line's own*
 command as the thing to restore; revert then cheerfully restores the tool the user is trying to
@@ -3903,6 +3911,17 @@ prompts actually read at runtime; this is the design, that is the procedure.
    The question to ask at each call site — and the one nothing inside the procedure can answer —
    is **does what this saves include what this command is about to change?**
 
+   Its other half is **one entry per command invocation, taken before the first write** — not one
+   per file written. The two are the same ruling seen from either end: an entry holds everything,
+   so nothing needs a second entry. Without the second half the first reads as an instruction to
+   back up before each write, and `migrate` — which writes the config and then `settings.json` —
+   would take two, the second capturing the config it had just written. That is a restore point
+   for a state that existed for one instant and that nobody would ever want back (migrated config,
+   original `statusLine`), permanently, since rule 1 forbids removing it. **The procedure is for
+   the command that has not yet backed up.** `commands/migrate.md` step 8 says so at its own call
+   site; it is a rule here so that the next command to write two files does not have to rediscover
+   it.
+
 ### 12.3 `/claude-tui-line:migrate`
 
 Adopts an existing statusline. An existing statusline is an arbitrary program — the user's real
@@ -3933,6 +3952,38 @@ Anything else is a silent drop wearing a success message.
 side-by-side preview, and the tier-3 list, and only then writes — recording `origin` first if
 this is the first time.
 
+**Tier 2 inherits a budget the original never ran under.** `ttlSeconds` and `timeoutMs` default to
+30 s and 150 ms, and 150 ms is tight for a real script — the user's statusline was a program that
+could take as long as it liked, and every fragment lifted out of it is now a `command` provider
+that gets killed at the deadline and renders as nothing (§7). So migrate sets both **deliberately
+on every command item and reports what it chose**, rather than letting the default apply by
+omission. This is the one place a faithful port can silently lose an element that mapped cleanly
+in every other respect, which is why it is a ruling and not a default: the failure looks exactly
+like the item having never been migrated at all.
+
+**Colour is preserved by kind, not by appearance.** Where the original used one of the sixteen
+standard ANSI colours, migrate carries it across *by name*, because those are theme-mapped and
+keep following the user's terminal theme exactly as the original did. Where the original named a
+*specific* shade — a 256-palette index or a truecolor escape — a name is a downgrade, so the
+256 name or `#rrggbb` is used instead, and the report says that this also requires `colorSystem`
+(§6.2, whose default profile approximates them to the nearest of the sixteen). A colour that
+varied by value in the original is a colour rule with `match` or `thresholds`, not a fixed colour.
+`--colors`'s `recommended` list is a recommendation and not the accepted set; migrate does not
+refuse a colour for being absent from it.
+
+**The config is written to the path §5's search order resolves to, never to the default by
+assumption.** If `$CLAUDE_TUI_LINE_CONFIG` points elsewhere and the default is written anyway, the
+renderer reads the file migrate did not write: nothing errors, the statusline does not change, and
+every preceding step still reports success. The command reports which path it wrote.
+
+**The config is written before `statusLine` is repointed.** The moment `statusLine.command`
+changes, the binary begins running once a second against whatever config is on disk at that
+instant; in the other order that is a window of built-in defaults the user never approved. Ordering
+two writes is free, and it is the whole fix.
+
+Migrate does **not** run the ledger procedure a second time at write. Its backup was taken before
+it read anything, and one entry per invocation is §12.2 rule 4.
+
 ### 12.4 `/claude-tui-line:edit`
 
 Conversational editing: "move context into the right pane", "make the border follow the model".
@@ -3945,6 +3996,42 @@ Two constraints on the model, both learned from this project's own failures:
   versions; a remembered id resolves to nothing and is silently suppressed (§7).
 - **Never widen the request.** Reformatting the whole config while adding one item makes the
   diff unreviewable and buries an unintended change where nobody will look for it.
+
+**What a rollback restores is the config, not the checkpoint's `statusLine`.** `/edit` changes
+`claude-tui-line.json` and nothing else, so recovery means copying the entry's `configCopy` back
+over the config file. Restoring that entry's `statusLine` — a key this command never touched —
+changes nothing, leaves the broken config exactly where it is, and looks precisely like a fix.
+This is §12.2 rule 4 seen from the recovery end, and the ruling is stated at both ends because
+each end fails silently on its own.
+
+**A `configCopy` of `null` rolls back by deleting the file.** There was no config before the
+command ran; that is the state, and re-creating an empty or default one is not it. Same shape as
+`"statusLine": null` restoring by removing the key.
+
+**Rule 4 is verified at the call site, not assumed.** After appending the checkpoint, `/edit`
+confirms the entry actually carries `configOriginalPath`, with `configCopy` either naming a copy
+or explicitly `null`, and **stops** if the fields are simply missing — missing means the procedure
+did not look, and an unrecoverable edit is not worth saving one round trip. Nothing inside the
+ledger procedure can answer whether what it saved covers what this caller is about to change.
+
+**Seeding a config is a write, so the checkpoint precedes it.** When no config file exists and the
+user agrees to create one, the checkpoint is taken *before* the file is created. In the other order
+the entry records the seeded file as the state to roll back to, so a failed edit lands the user on
+a config they did not have when the command started, and "no config, defaults apply" stops being
+reachable at all.
+
+**A passing `--check` is not evidence the result looks right.** An edit is verified by previewing
+at the terminal's width *and* at 80 and 60 columns, because most layout mistakes only appear when
+something has to wrap. Three things are then reported honestly: whether the intended change
+appeared (an item resolving to empty renders invisible, and invisible reads as absent), whether
+anything else moved (adding an item rewraps its neighbours — correct behaviour, but the user
+should hear it here rather than discover it later), and whether it still degrades rather than
+breaks at the narrow widths.
+
+**On failure, roll back first and explain afterwards.** A broken statusline runs once a second for
+the entire length of the explanation. And the rollback is itself previewed before being reported —
+a recovery announced on the strength of having written a file is the same defect this section
+opens with.
 
 ### 12.5 `/claude-tui-line:revert`
 

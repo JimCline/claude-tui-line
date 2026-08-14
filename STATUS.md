@@ -1875,6 +1875,59 @@ It also states how `setup`'s build destination relates to §14: a third location
 writing there needs approval; `setup` writes into the plugin's data directory, which belongs to the
 installed plugin and cannot collide with a working tree.
 
+### The sweep finished on `migrate` and `edit` — and the ledger doc contradicted a command it governs
+
+Applying §14.4's question to the last two command prompts. Both were thin sections over long
+prompts, which is the shape that produced §12.5 and §12.7.
+
+**The contradiction.** `docs/backup-ledger.md` opened with *"Every command that writes
+`settings.json` **or** `claude-tui-line.json` follows this. No exceptions, no abbreviations."*
+`commands/migrate.md` step 8 said *"Do not run the ledger procedure again here."* Both documents
+are handed to the same model in the same invocation, and step 2 tells it to read the ledger doc in
+full. Migrate writes two files; read literally, the doc demands a second entry, and that entry
+captures the config migrate has *just written* — a permanent restore point (rule 1 forbids removing
+it) for a state that existed for one instant and that nobody would ever want back: migrated config,
+original `statusLine`.
+
+Migrate's reasoning was right and its framing was wrong. It read as an exception claimed by a
+caller against a document that says it has none, which is the weakest possible position for a rule
+to be in. The fix was to find the principle that makes it not an exception: **one entry per
+invocation, taken before the first write — not one per file.** That is the same ruling as rule 4
+("an entry captures every artifact") seen from the other end. An entry holds everything, so nothing
+needs a second entry. Now in the doc's scope line, in §12.2 rule 4, and cited rather than argued at
+migrate's own call site.
+
+**Four more decisions promoted into §12.3.** The sharpest is the timeout: `ttlSeconds` and
+`timeoutMs` default to 30 s and 150 ms, and the user's original statusline was a program that could
+take as long as it liked. Every fragment lifted out of it becomes a `command` provider under a
+budget it never ran under, and over-budget means killed and rendered as nothing (§7) — a loss that
+looks identical to never having migrated the element. Also: colour preserved *by kind* (ANSI names
+stay theme-mapped, specific shades become 256/hex and need `colorSystem`); write to the path §5's
+search order resolves to, never the default by assumption, or the renderer reads the file you did
+not write while every step reports success; and write the config *before* repointing `statusLine`,
+since the binary starts running once a second the instant that key changes.
+
+**§12.4 said nothing about what recovery is.** `commands/edit.md` carries the whole of it. Promoted:
+a rollback restores the entry's `configCopy` over the config, **not** its `statusLine` — restoring
+a key `/edit` never touched changes nothing, leaves the broken config in place, and looks exactly
+like a fix. A `configCopy` of `null` rolls back by *deleting* the file. Rule 4 is verified at the
+call site and the command stops if the fields are missing, because nothing inside the procedure can
+answer whether what it saved covers what its caller is about to change. Seeding a config is a write,
+so the checkpoint precedes it — otherwise the rollback target is the seeded file and "no config,
+defaults apply" stops being reachable. And an edit is verified by previewing at 80 and 60 columns
+as well as the terminal's width, because a passing `--check` proves nothing about layout.
+
+§12.2 also gained the ledger's encoding of absence — `configOriginalPath` present with
+`configCopy: null` — which lived only in the procedure doc. *Nothing was here* and *this ledger
+cannot say* are opposite facts calling for opposite recoveries (delete the file, or leave it
+alone), and three omitted fields cannot distinguish them from an entry written before configs were
+captured at all. Third instance in this project of absence needing a distinguished value rather
+than a missing key, after `"statusLine": null` and §12.6.9's `revision: "absent"`. Assume the
+fourth.
+
+That closes the sweep: every document in the repo has now been read against the question *what does
+this say that no reader of the current one will ever see?*
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

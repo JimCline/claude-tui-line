@@ -179,11 +179,12 @@ not approve at step 7.
 Then point `statusLine.command` at the binary, using the ledger's *writing* rules — only the
 `statusLine` key, atomically, every other key and the file's formatting preserved.
 
-**Do not run the ledger procedure again here.** The backup was taken at step 2, deliberately, before
-this command read anything. Re-running it now would append a second entry whose config capture is
-the config *you just wrote* — a restore point for a state that existed for one instant and that
-nobody would ever want back: migrated config, original `statusLine`. The procedure is for the
-command that has not yet backed up. This one has.
+**Do not run the ledger procedure again here** — not as an exception to it, but because it says so:
+one entry per invocation, taken before the first write, covering every artifact. The backup was
+taken at step 2, deliberately, before this command read anything, and it already holds both files.
+Re-running it now would append a second entry whose config capture is the config *you just wrote* —
+a restore point for a state that existed for one instant and that nobody would ever want back:
+migrated config, original `statusLine`. Permanently, since rule 1 forbids removing it.
 
 Report, in this order:
 

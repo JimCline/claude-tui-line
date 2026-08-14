@@ -3,6 +3,12 @@
 **Every command that writes `settings.json` *or* `claude-tui-line.json` follows this. No
 exceptions, no abbreviations.**
 
+**Once per invocation, before the first write — not once per file.** A command that writes both
+files takes *one* entry, and takes it before it writes either. Running the procedure a second time
+mid-command is not extra safety: the second entry captures what the command has already written, so
+it is a restore point for a half-finished state that existed for an instant and that nobody would
+ever want back. See rule 4 — one entry, everything in it, taken before anything moves.
+
 > That scope line used to read "writes to `settings.json`", and the narrower version hid a real
 > defect for as long as it stood. `/claude-tui-line:edit` never touches `settings.json` — it edits
 > `claude-tui-line.json` — yet it was instructed to checkpoint through this procedure, whose entry
