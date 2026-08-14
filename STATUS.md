@@ -2709,6 +2709,35 @@ The citation itself was fixed by pointing at §9.6.2.2 — the `--items` section
 the `check-examples.sh` ruling — rather than by adding a `#### 9.6.2.3` heading, which would have
 split the `version` ruling out of the section whose title promises it.
 
+## `--preview` landed in the implementor's tree; three rulings, one of them a change (§9.3.4)
+
+`--preview` (bare and `--json`) plus `notes[]` are implemented and green — build 0/0, suite
+1143/1143 — but **uncommitted**, and one ruling changes the diff. Task #33 was closed from the other
+direction: the implementor hit §9.3.1 while building the synthetic-input path, found nothing
+anywhere referenced `SyntheticFixture`, and added the three assertions. #32's collector was already
+closed. Both marked done.
+
+The three questions came back as "the spec pins the content but not this", which is the shape a real
+gap arrives in. Ruled in **§9.3.4** rather than in the reply, because a ruling that lives in a
+conversation is a ruling nobody can cite.
+
+1. **`rows[]` is a line of the rendered surface, borders included** — changed from the pre-Panel
+   content rows it was built with. The decider was not fidelity but *agreement*: a bordered pane
+   writes three lines and would report one, so bare `--preview` and `--preview --json` would
+   disagree about how many rows exist, while `migrate.md` promises an LLM they are one render seen
+   two ways. Border-Rounded is the default, so that is the common case.
+2. **Preview must never write the `paneWidth` stamp** — confirmed, for a bigger reason than the
+   caution it was done out of. The stamp goes to the cache **on disk**, which the live statusline
+   reads next tick, so `--preview --columns 60` would hand `60` to the user's real `command` items
+   at their actual width. A read-only preview reaching the render path through a shared store is
+   §9.1 violated one indirection out. #16's description now carries the fix: key the widths store by
+   resolved surface width, so the boolean disappears instead of becoming permanent.
+3. **Note text is pinned the moment anything is told to read it.** `migrate.md` already teaches an
+   LLM to quote two note strings verbatim. The rule is not "quoted notes are pinned" — it is that an
+   unpinned note *will* be quoted by whoever writes the next prompt, and will then drift with
+   nothing failing. All collector note texts go in §9.8.1's list. The §9.3 preamble lines stay
+   content-pinned only; they address a person reading a terminal.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
