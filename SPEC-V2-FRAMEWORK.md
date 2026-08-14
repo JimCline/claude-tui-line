@@ -1764,7 +1764,18 @@ the framework does not use, and is no longer evidence about the framework at all
 - **cwd**: the session's `.cwd`, so `git`-flavored commands behave as the user expects.
 - **Output**: stdout with the trailing newline stripped. Each line becomes one row of the item's
   block (§3.1), capped at `maxLines` (default 4) so a runaway script cannot flood the surface;
-  excess lines are dropped. **`--preview` reports the drop as a render note** (§9.8.1), naming the
+  excess lines are dropped.
+
+  > **Not built, and this paragraph said otherwise in the present tense for as long as it has
+  > existed.** `CommandProvider` takes `stdout.Split('\n', 2)[0]` — the first line, unconditionally
+  > — and no `maxLines` key exists anywhere in the config types. A `command` item is single-line
+  > today. Everything in this bullet about multiple rows and a cap is a design, not a description,
+  > and §9.8.2 rules that the note below cannot be the thing that carries `--preview`'s note
+  > channel, because a note needs a producer. Found by the implementor going to read the mechanism
+  > this text told them to reuse — which is the only way this class is ever found, since the
+  > document was perfectly self-consistent about it.
+
+  **`--preview` reports the drop as a render note** (§9.8.1), naming the
   item and the cap — not `--check`, which never runs the command and therefore cannot know
   (§9.1.1). The note goes to stderr in the human form and to `notes[]` in the JSON form; stdout
   stays byte-comparable either way, so `/migrate` can diff a preview against the original script's
@@ -2965,6 +2976,39 @@ Three of the four needed a decision and one did not, and the difference was only
 looking. Adding output to this one to match the others would be symmetry bought at the cost of the
 convention every tool on the machine already teaches.
 
+#### 9.3.3 What §9.6 did not say: bare `--preview`, and why there is no gutter
+
+The fourth bare form, and the first where the document had already answered — wrongly. §9.6 said
+`--preview --json` returns each row's measured width "rather than printing widths in a gutter as the
+human form does." Nothing else in the document describes the human form, which makes that clause its
+entire specification, arrived at as a contrast drawn to explain the JSON rather than as a decision
+about the text.
+
+**There is no gutter. Bare `--preview` writes the rendered surface to stdout and nothing else** —
+one line per row, styled per §9.3.2, byte-for-byte what the render path would have emitted at that
+width.
+
+The reason is a consumer the gutter clause did not have in view. §12.3's fidelity step and §12.4's
+before/after step both capture `--preview`'s stdout and diff it: migrate against the *original*
+statusline's own output, edit against an earlier capture of itself. A width gutter puts a prefix on
+every line that the original never produced, and the instruction those steps give — strip escape
+sequences from both — does not remove it. The one comparison the bare form exists to serve is the
+one a gutter silently breaks, and it breaks it in the direction where every line differs, which
+reads as a total mismatch rather than as a formatting artifact.
+
+**This is not an exception to §9.6, and not a new rule.** §9.8.1 already rules that render notes go
+to stderr *precisely so stdout stays byte-comparable*, and a width printed beside a row is
+information about the render rather than the render. It was on the wrong stream by §9.8.1's own
+test from the moment it was written; §9.6 only predates the test being pointed at it.
+
+**The widths still get said — on stderr, as a note, unconditionally.** One line naming the resolved
+column count and where it came from (the `--columns` argument, `COLUMNS`, or the fallback), emitted
+before the notes §9.8.1 assigns to this command. Unconditional rather than only-when-implicit,
+because §12.5 appends three runs to one file and a width line is what tells a reader which block of
+notes belongs to which run. It costs nothing on a stream nothing diffs.
+
+`--preview --json` is unaffected: `rows[].width` stays where §9.6 put it, for the reason §9.6 gives.
+
 ### 9.4 Exit codes and severities
 
 | exit | meaning |
@@ -3257,6 +3301,37 @@ This is also the load-bearing half of §2.3's `distribute` correction. Adding `e
 that `switch` fixes one key on one day; changing the shape is what stops the next key from arriving
 pre-broken.
 
+#### 9.4.4 Modes are exclusive by construction, not by enumeration
+
+§9.6.3.1 says `--colors` is mutually exclusive with `--check`, `--items`, and `--version`. True, and
+unmaintainable: it is a list of pairs written when there were four commands, it does not mention
+`--preview`, and the reason it does not is not oversight — it is that nobody adds a row to a
+pairwise table when they add a command. Four commands is six pairs and five is ten. §1's failure,
+relocated into argv.
+
+**`--check`, `--version`, `--items`, `--colors`, and `--preview` are modes. Exactly zero or one may
+appear; two or more is exit 2.** Zero is the render path — not a special case but the definition:
+the renderer is what the binary does when no mode was selected, which is why the render path takes
+no flag of its own and why §9.1 can call it untouched.
+
+Stated that way the rule holds for the sixth command without being edited, and §9.6.3.1's list
+becomes a consequence rather than a second authority.
+
+**`--json`, `--columns N`, and `--config <path>` are modifiers, not modes**, and the question they
+raise is not exclusivity but applicability. **A modifier the selected mode does not read is exit 2,
+not ignored.** Silently accepting `--check --columns 80` tells a user they checked at 80 columns,
+which §9.8 says is not a thing `--check` can do; the flag was typed because someone believed
+something false, and the exit code is the only chance to say so. This is §2.3.2's
+`key-not-applicable` diagnostic, one surface out — with the difference that argv has no severity
+axis, so what is a warning in config is a usage error here.
+
+Which modifier applies where is not a new list either. `--config` is read by the modes that load
+config, which §9.4 already settles by saying which can reach exit 3: `--check` and `--preview`.
+`--columns` is read by the mode that renders, which is `--preview` alone. `--json` is read by the
+modes §9.6 gives a JSON shape to — `--check`, `--items`, `--colors`, `--preview` — and `--version`
+has none, so `--version --json` is exit 2. Every one of those is a lookup in a section that already
+had to be right for another reason.
+
 ### 9.5 `--check` reuses `ReferenceExtractors`
 
 Every diagnostic about an id — an unknown item, a `from` naming nothing, a `link` placeholder
@@ -3292,10 +3367,11 @@ append that both the resolver and the checker inherit.
   "notes": [ { "message": "pane 2 dropped: no width remained at 109 columns" } ] }
 ```
 
-`--preview --json` returns each row's text **and** its measured width, rather than printing
-widths in a gutter as the human form does — a model parsing rows should not have to strip
-decoration to get them, and the width is the number that makes overflow visible rather than
-inferred. `notes[]` carries what §9.8 assigns to `--preview` and to nothing else — what was
+`--preview --json` returns each row's text **and** its measured width — a model parsing rows should
+not have to strip decoration to get them, and the width is the number that makes overflow visible
+rather than inferred. This sentence used to draw that contrast against "printing widths in a gutter
+as the human form does," which was the only description of the human form anywhere and was wrong;
+§9.3.3 rules the bare form and says why the gutter could not have been right. `notes[]` carries what §9.8 assigns to `--preview` and to nothing else — what was
 dropped or truncated at this width; §9.8.1 rules its shape and why it is not `diagnostics`.
 
 **`code` values are a compatibility surface.** Once a code ships, its meaning is fixed; a new
@@ -3599,12 +3675,24 @@ Writing an illustrative value is frictionless; verifying it means reading a buil
 machine closes that gap.
 
 **It exists: `tools/check-examples.sh`,** the third check, and the only one that runs the code. It
-enforces two rules, both exact, neither guessing at what a line "looks like":
+enforces three rules, all exact, none guessing at what a line "looks like":
 
 - a `"example": "…"` **inside a fenced block** must be a value some item renders;
 - inside a fenced block that reproduces `--items` plain output — identified by its own trailing
   `Item kinds:` pointer line, not by resembling a table — a row whose first column is a known item
-  id must carry that item's live example in its second.
+  id must carry that item's live example in its second;
+- a markdown table preceded by an `<!-- items-table -->` comment must **enumerate the live set
+  exactly** — no id absent, none listed that no longer exists, and each row's `(opt-in)` marker
+  agreeing with that item's `default: false`.
+
+The third rule checks a different thing from the first two: they ask whether a documented *value*
+is real, and it asks whether a documented *list* is complete, which no per-row check can see. The
+README's item table is what it was written for. §9 forbids an item list in a skill or command's
+prose and both prompts say not to copy one out of the README — so nothing automated trusts that
+table, and it stays, because it is what a person reads before deciding to build. Not-forbidden is
+not checked, though, and it asserts two things the binary knows. The marker must be an HTML comment
+because prose has no in-band string to anchor on the way `--items` output does, and the README's
+other tables must stay unscanned.
 
 Columns are split on runs of two-or-more spaces, so the padding widths in the illustration above
 are not load-bearing. Pinning them would freeze the half this section explicitly left free.
@@ -3778,8 +3866,10 @@ they follow the terminal theme, which is the one thing the field means.
   same `AssemblyVersionInfo.InformationalVersion` accessor. §12.6.8 surfaces `cliVersion` from
   whichever call a tool happens to make, and a field present on one JSON command and absent on
   its sibling is a distinction no consumer can act on.
-- `--colors` is **mutually exclusive with `--check`, `--items`, and `--version`**, reported through
-  the same pairwise usage error and the same exit 2 as the pairs already wired.
+- `--colors` is **a mode, so it is exclusive with every other mode** — exit 2 alongside any of them.
+  This bullet used to enumerate `--check`, `--items`, and `--version` by name, which was true when
+  those were all there were and silently stopped being the whole list the moment `--preview` was
+  added. §9.4.4 states the rule the enumeration was standing in for.
 - It **reads no config and probes nothing**, so it cannot reach exit 3 and always exits 0 — the
   same standing as `--items` in §9.6.2.2.
 - The plain form is a **convenience view; the JSON is the contract.** Column layout may change
@@ -3926,6 +4016,53 @@ Three rulings on the shape, each closing a way this could have become the thing 
   on the occasions it is right.
 - **Notes never affect the exit code**, restating §9.8 above so that the JSON form cannot quietly
   acquire a different rule from the human one.
+
+#### 9.8.2 A note channel with no producer, and the collector that fixes it
+
+§9.8.1 established that render notes are a channel and that `--preview --json` was missing it. It
+then illustrated the channel with two cases, and **neither of them can produce a note today.**
+
+- The `maxLines` cap is the example §9.8.1 leans on hardest, and §4 now records that the feature it
+  reports on does not exist — `command` items are single-line, there is no cap, so there is nothing
+  to be capped and nothing to say about it.
+- Pane-dropping and segment truncation *do* happen — `SizeResolver.AllocateWithDrop` drops panes
+  that no width remained for, `PaneRenderer` truncates segments — and both are **silent**. No
+  signal reaches any caller. The `"pane 2 dropped: no width remained at 109 columns"` in §9.6's own
+  JSON example has no code that could emit it.
+
+**So `--preview` must not ship with `notes[]` stubbed to empty.** An always-empty array is not a
+partial implementation of this channel, it is the channel's failure mode with a success message on
+it: a consumer reading `notes: []` concludes nothing was dropped, and §12.3 and §12.4 both instruct
+a reader to treat that conclusion as load-bearing — migrate keys "the mapping is fine, the layout
+does not fit" off a note being present, and edit distinguishes "my change dropped a pane" from "it
+was already dropped" by diffing note lists. Empty-because-unbuilt and empty-because-nothing-happened
+are indistinguishable at the consumer, and the second is by far the more common truth, so the wrong
+reading is the one that always wins.
+
+**Pane-drop and truncation instrumentation is therefore in scope for `--preview` itself**, not a
+follow-on. The `maxLines` note is not: it arrives with the feature, as its own task.
+
+**How the signal leaves the render path: a collector, passed down, never null.**
+
+`SizeResolver` and `PaneRenderer` take a notes collector and append to it. The render path
+constructs one and discards it; `--preview` constructs one and serializes it. The alternative —
+changing return types so drops ride out through the values — is more honest in the small and does
+not survive `PaneRenderer`'s per-segment truncation, which happens deep inside a draw loop whose
+return value is a drawn row.
+
+**The collector is never nullable, and that is the whole design.** A sink that the render path
+passes `null` to is two paths again — the instrumented one that only `--preview` exercises and the
+uninstrumented one that actually ships to users — which is Defect 15's exact shape: the same
+behaviour with two capability sets, agreeing on every input anyone thinks to test. Passing a real
+collector and throwing it away costs one allocation per render and buys a single path. §9.1's
+constraint is satisfied on the letter that matters: what the render path *draws* is unchanged, and
+it is unchanged because the drawing code is the same code, not because it took the other branch.
+
+Two things fall out that are worth having independently. Layout tests can assert on the notes a
+render produced without going anywhere near `--preview`, which is §10.1's discipline reaching a
+place that had no observable at all. And the collector becomes the one place a note is defined, so
+`--preview --json`'s `notes[]`, the human form's stderr lines (§9.3.3), and §12.6.10's per-render
+`notes[]` are three renderings of one object rather than three chances to word it differently.
 
 ## 10. Testing requirements
 
