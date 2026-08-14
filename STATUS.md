@@ -236,7 +236,7 @@ Still needed **before making it public**:
 
 ## Session log — overnight, 13→14 Aug 2026
 
-All design, no implementation: the implementor holds `src/` for §9, so I stayed out of it. Nine
+All design, no implementation: the implementor holds `src/` for §9, so I stayed out of it. Twelve
 commits, all pushed.
 
 - **Genericized the hardcoded home path** (`6dcb68f`) — the last pre-public item. Preserved path
@@ -267,9 +267,24 @@ commits, all pushed.
 - **Verified the plugin scaffolding structurally**; STATUS now says what was actually checked
   rather than "parses by inspection."
 
-A grep sweep of every flag and diagnostic code in the spec found no other dangling references. The
-two real inconsistencies both came from the implementor trying to build two sections at once —
-which is the argument for having a separate pair of eyes on the spec, not just a reader.
+- **Ran a consistency pass over every unbuilt section**, prompted by the finding that §9 was the
+  deepest section in the spec and still contradicted itself twice. §2.10 and §3.3 first
+  (`7e157c0`, `1a59cbe`), then §4.2 (`1c89d8c`), which was the last one unchecked. §4.2 turned up
+  three things: reject conditions with no diagnostic codes, the same omission §3.3 had; an
+  apparent §3.2.1 contradiction that resolved into a real distinction — a dangling `{other-id}` is
+  a *warning* in a `link` and an *error* in a `command` item's argv, because §3.2.1 defines what a
+  dropped link does and nothing defines what an unexpanded argv entry becomes; and a new
+  `placeholder-env-collision`, since `CLAUDE_TUI_LINE_VAL_<ID>` mangling is many-to-one and
+  `agent-short` and `agent.short` both land on `AGENT_SHORT`. The same commit fixed §9.8's third
+  bullet, which still charged gutters and border reserve as independent addends — the double-count
+  `7e157c0` had already corrected in its first bullet.
+
+**Every section of the spec has now been consistency-checked.** A grep sweep of every flag and
+diagnostic code found no dangling references, but grep was never going to be enough: none of the
+inconsistencies it missed were dangling identifiers. They were two sections defining one condition
+with different severities, and one formula corrected at one of its two use sites. Two came from the
+implementor building two sections at once, which is the argument for a separate pair of eyes on the
+spec rather than just a reader.
 
 ## Standing constraints
 
