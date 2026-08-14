@@ -75,6 +75,74 @@ milestone is a rule that stops being enforced the moment it succeeds, which is p
 registry begins falling behind: not by anyone deciding to duplicate it, but by the check that would
 have caught them having been retired as passed.
 
+#### 1.1.1 The inventory: nine accepted-value lists, none of them tied to its parser
+
+§1.1 states the rule and never checks the codebase against it. Doing that turns up one class of
+duplicate, nine instances of it, and — more usefully — a reason it happened that is structural
+rather than careless.
+
+`ConfigCheck.cs:289–297` holds nine hand-written token lists. Each is a second copy of a set that
+already exists somewhere else as the cases of a `switch`:
+
+| Kind | Where the value is parsed | Where the accepted list is written |
+|---|---|---|
+| `border.style` | `Config.cs:628` `BorderStyleParsing.TryParse` | `ConfigCheck.cs:289` |
+| `size` | no single closed-set parser — mixed literals and forms | `ConfigCheck.cs:290` |
+| `valign` | `Pane.cs:30` `ParseCore` | `ConfigCheck.cs:291` |
+| `align` | `Pane.cs:58` `ParseCore` | `ConfigCheck.cs:292` |
+| `overflow` | `OverflowMode.cs:28` `Parse` | `ConfigCheck.cs:293` |
+| `case` | `ItemValueResolver.cs:337` `ParseCaseMode` | `ConfigCheck.cs:294` |
+| `split` | `Config.cs:459` `ParseSplitCore` | `ConfigCheck.cs:295` |
+| `distribute` | `Pane.cs:90` `ParseCore` | `ConfigCheck.cs:296` |
+| `colorSystem` | `Config.cs:383` `ParseColorSystemCore` | `ConfigCheck.cs:297` |
+
+**All nine agree today**, which is the whole problem — §1.1's healthy registry and its
+silently-incomplete twin are the same object, and nothing here distinguishes them.
+
+**The border row is the one worth reading closely, because someone already fixed this and it did not
+take.** `BorderStyleParsing` was deliberately extracted, and the comment above it at `Config.cs:625`
+says it exists so the checker can ask *"was this string one of the recognized ones" through the
+exact same switch the loader uses, **rather than a second copy of the token list***. Twenty lines
+away, `ConfigCheck.cs:289` is a second copy of the token list, all six literals.
+
+That is not someone ignoring the comment. **A `switch` is not enumerable.** You can ask it "do you
+accept this?" and you can never ask it "what do you accept?" — so extracting a shared parser makes
+two acceptance *behaviours* agree, and cannot make the documented *set* agree, because the set was
+never a value anyone could obtain. The extraction achieved everything its mechanism was capable of
+achieving, and the gap it was written to close stayed open.
+
+This is §1.1's own distinction arriving in an unfamiliar costume. A shared parser *looks* mechanical
+— it is a function, it is called, it cannot be forgotten. But with respect to the accepted set it is
+still only a sentence instructing whoever comes next, and §1.1 already ruled that a sentence is not
+a tie.
+
+**What ties them is making the set data.** One `static readonly` collection per kind, holding the
+accepted tokens; the parser becomes a lookup against it, and the diagnostic reads the same object.
+Then there is no second copy to drift, and adding a token is one edit by construction rather than by
+discipline.
+
+**Do not force `size` into that shape.** Its list is `an integer`, `a percentage`, `content`,
+`fill`, `auto` — three literals and two descriptions of a *form*, which is why it has no closed-set
+parser. The shared representation has to carry accepted forms alongside accepted literals, or the
+size diagnostic gets less readable in exchange for a tidiness it cannot benefit from.
+
+The failure this prevents runs in both directions, and neither announces itself:
+
+- **Token added to the parser, not to the list.** `--check` reports a value that works as an error:
+  *"'ellipsis' is not a overflow — expected wrap, truncate, or overflow"*. The config is valid, the
+  renderer honours it, and the validator calls the user wrong.
+- **Token removed from the parser, left in the list.** The diagnostic advertises a value that now
+  falls through to the default, which §9.4.3 exists to make loud and which this makes quiet again by
+  telling the user to go there.
+
+The first direction is the more damaging, for a reason particular to this project: **the diagnostic
+is the only statement of the accepted set most users will ever read.** Nobody opens `Pane.cs`, and
+the error message arrives exactly when they are looking for one.
+
+Whether the README and this spec carry a third and fourth copy is **not established here** and is
+the next thing to check — §9.6.2.2's drift test covers item examples, not enum tokens, so there is
+no reason to assume it is covered and no evidence yet that it is not.
+
 ## 2. The render surface and panes
 
 ### 2.1 What the surface is
