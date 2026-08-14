@@ -13,7 +13,7 @@ namespace ClaudeTuiLine.Tests;
 /// </summary>
 public class NarrowSplitPaneTests
 {
-    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null);
+    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null, PaneBorderEdges.All);
 
     private static Pane ItemsPane(OverflowMode overflow, params PaneItem[] items) =>
         new(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, overflow, "…", null, items);

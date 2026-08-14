@@ -34,27 +34,42 @@ public static class PaneBorderRenderer
 
         var width = Math.Max(0, innerWidth);
         var style = border.Style;
+        var edges = border.Edges;
         var outerWidth = width + SizeResolver.OwnBorderReserve(border);
+        var horizontalSpan = width + 2;
 
         string Part(BoxBorderPart part) => suppressed ? " " : style.GetPart(part);
 
         string Colored(string glyphs) =>
             suppressed ? Markup.Escape(glyphs) : $"[{colorMarkup}]{Markup.Escape(glyphs)}[/]";
 
-        var left = Colored(Part(BoxBorderPart.Left));
-        var right = Colored(Part(BoxBorderPart.Right));
+        // §2.10: an edge that is off is not drawn — the top/bottom rows are omitted entirely when
+        // Top/Bottom is off (matching OwnRowReserve), and a corner is omitted whenever the vertical
+        // edge it would meet is off, while the horizontal run itself still spans the full
+        // padding+content width regardless, so outerWidth comes out exactly right in every
+        // edge-on/off combination without needing a junction table. §2.8.2's omitEdges (row budget
+        // under 3) forces top/bottom off the same way regardless of the edge config.
+        var leftGlyph = edges.Left ? Colored(Part(BoxBorderPart.Left)) : "";
+        var rightGlyph = edges.Right ? Colored(Part(BoxBorderPart.Right)) : "";
 
-        if (omitEdges)
+        var rows = new List<PaneRow>(contentRows.Count + 2);
+
+        if (edges.Top && !omitEdges)
         {
-            return contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + SizeResolver.OwnBorderReserve(border))).ToList();
+            var topLeft = edges.Left ? Part(BoxBorderPart.TopLeft) : "";
+            var topRight = edges.Right ? Part(BoxBorderPart.TopRight) : "";
+            rows.Add(new PaneRow(Colored(topLeft + Repeat(Part(BoxBorderPart.Top), horizontalSpan) + topRight), outerWidth));
         }
 
-        var top = Colored(Part(BoxBorderPart.TopLeft) + Repeat(Part(BoxBorderPart.Top), width + 2) + Part(BoxBorderPart.TopRight));
-        var bottom = Colored(Part(BoxBorderPart.BottomLeft) + Repeat(Part(BoxBorderPart.Bottom), width + 2) + Part(BoxBorderPart.BottomRight));
+        rows.AddRange(contentRows.Select(row => new PaneRow(leftGlyph + " " + row.Markup + " " + rightGlyph, row.Width + SizeResolver.OwnBorderReserve(border))));
 
-        var rows = new List<PaneRow>(contentRows.Count + 2) { new(top, outerWidth) };
-        rows.AddRange(contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + SizeResolver.OwnBorderReserve(border))));
-        rows.Add(new PaneRow(bottom, outerWidth));
+        if (edges.Bottom && !omitEdges)
+        {
+            var bottomLeft = edges.Left ? Part(BoxBorderPart.BottomLeft) : "";
+            var bottomRight = edges.Right ? Part(BoxBorderPart.BottomRight) : "";
+            rows.Add(new PaneRow(Colored(bottomLeft + Repeat(Part(BoxBorderPart.Bottom), horizontalSpan) + bottomRight), outerWidth));
+        }
+
         return rows;
     }
 

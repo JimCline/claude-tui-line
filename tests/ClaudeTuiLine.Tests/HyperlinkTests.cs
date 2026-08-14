@@ -12,7 +12,7 @@ namespace ClaudeTuiLine.Tests;
 /// </summary>
 public class HyperlinkTests
 {
-    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null);
+    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null, PaneBorderEdges.All);
 
     [Fact]
     public void WrapOfLinkedSegment_EveryContinuationRow_ReopensAndClosesTheLink()

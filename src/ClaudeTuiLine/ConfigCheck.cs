@@ -69,6 +69,7 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckArgvPlaceholders(root, rootPath));
         diagnostics.AddRange(CheckEnums(config));
         diagnostics.AddRange(CheckLeafOnlyKeysOnSplits(config));
+        diagnostics.AddRange(CheckBorderInsideOnLeaf(config));
         diagnostics.AddRange(CheckStructuralSizes(root, rootPath));
         diagnostics.AddRange(CheckOverflowPosition(root, rootPath));
         diagnostics.AddRange(CheckEmptyPanes(root, rootPath));
@@ -487,6 +488,31 @@ public static class ConfigChecker
             {
                 yield return new Diagnostic(path + "/ellipsis", DiagnosticSeverity.Warning, "leaf-only-key-on-split",
                     "\"ellipsis\" has no effect on a split; only a leaf pane's own overflow marker uses it");
+            }
+        }
+    }
+
+    // ---- §2.10.1: "inside" computes interior-divider edges for a split's children; a leaf has no
+    // interior for that to divide, so the shorthand silences its border entirely instead ----
+
+    private static IEnumerable<Diagnostic> CheckBorderInsideOnLeaf(UserConfig? config)
+    {
+        if (config?.Surface?.Pane is not { } surfacePane)
+        {
+            yield break;
+        }
+
+        foreach (var (pane, path) in WalkRawPanes(surfacePane, "/surface/pane"))
+        {
+            if (pane.Children is { Count: > 0 })
+            {
+                continue;
+            }
+
+            if (string.Equals(pane.Border?.Shorthand, "inside", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return new Diagnostic(path + "/border", DiagnosticSeverity.Warning, "border-inside-on-leaf",
+                    "a leaf has no interior, so this silences its border entirely");
             }
         }
     }

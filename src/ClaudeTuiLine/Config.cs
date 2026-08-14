@@ -8,6 +8,7 @@ namespace ClaudeTuiLine;
 public sealed class UserConfig
 {
     [JsonPropertyName("border")]
+    [JsonConverter(typeof(BorderConfigConverter))]
     public BorderConfig? Border { get; set; }
 
     [JsonPropertyName("layout")]
@@ -39,6 +40,34 @@ public sealed class BorderConfig
 
     [JsonPropertyName("style")]
     public string? Style { get; set; }
+
+    /// <summary>SPEC-V2-FRAMEWORK.md §2.10: which of the four edges draw, when set individually rather than via a shorthand.</summary>
+    [JsonPropertyName("edges")]
+    public BorderEdgesConfig? Edges { get; set; }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 1: populated only when this pane's <c>border</c> value was
+    /// a bare JSON string (<c>"all"</c>/<c>"outline"</c>/<c>"inside"</c>/<c>"none"</c>) rather than an
+    /// object — set by <see cref="BorderConfigConverter"/>'s string branch, never bound by ordinary
+    /// property deserialization (deliberately no <see cref="JsonPropertyNameAttribute"/>).
+    /// </summary>
+    public string? Shorthand { get; set; }
+}
+
+/// <summary>SPEC-V2-FRAMEWORK.md §2.10: an explicit per-edge <c>border.edges</c> declaration; an omitted field defaults to <c>true</c> (§2.9's "default is bordered" philosophy applied per edge).</summary>
+public sealed class BorderEdgesConfig
+{
+    [JsonPropertyName("top")]
+    public bool? Top { get; set; }
+
+    [JsonPropertyName("right")]
+    public bool? Right { get; set; }
+
+    [JsonPropertyName("bottom")]
+    public bool? Bottom { get; set; }
+
+    [JsonPropertyName("left")]
+    public bool? Left { get; set; }
 }
 
 public sealed class LayoutConfig
@@ -76,6 +105,7 @@ public sealed class PaneConfig
     public int? MaxSize { get; set; }
 
     [JsonPropertyName("border")]
+    [JsonConverter(typeof(BorderConfigConverter))]
     public BorderConfig? Border { get; set; }
 
     [JsonPropertyName("overflow")]
@@ -297,9 +327,41 @@ internal sealed class ColorExprJsonConverter : JsonConverter<ColorExprJsonConfig
         throw new NotSupportedException("Config is read-only; color is never serialized back out.");
 }
 
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §2.10: a pane's <c>border</c> value is either a JSON object (the existing
+/// enabled/color/style/edges shape) or a bare shorthand string (<c>"all"</c>/<c>"outline"</c>/
+/// <c>"inside"</c>/<c>"none"</c>, §2.10.1 rule 1). Mirrors <see cref="ColorExprJsonConverter"/>'s
+/// string-or-object pattern; the object branch deserializes through <see cref="BorderConfig"/>'s
+/// own source-gen metadata directly rather than recursing through this converter, since this
+/// attribute is attached at the owning property (<see cref="UserConfig.Border"/>/
+/// <see cref="PaneConfig.Border"/>), never at the <see cref="BorderConfig"/> type itself.
+/// </summary>
+internal sealed class BorderConfigConverter : JsonConverter<BorderConfig?>
+{
+    public override BorderConfig? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return new BorderConfig { Shorthand = reader.GetString() };
+        }
+
+        if (reader.TokenType != JsonTokenType.StartObject)
+        {
+            reader.Skip();
+            return null;
+        }
+
+        return JsonSerializer.Deserialize(ref reader, ConfigJsonContext.Default.BorderConfig);
+    }
+
+    public override void Write(Utf8JsonWriter writer, BorderConfig? value, JsonSerializerOptions options) =>
+        throw new NotSupportedException("Config is read-only; border is never serialized back out.");
+}
+
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = false)]
 [JsonSerializable(typeof(UserConfig))]
 [JsonSerializable(typeof(ColorRuleJsonConfig))]
+[JsonSerializable(typeof(BorderConfig))]
 public partial class ConfigJsonContext : JsonSerializerContext
 {
 }
@@ -318,6 +380,7 @@ public partial class ConfigJsonContext : JsonSerializerContext
 public sealed record ResolvedConfig(
     ColorResolution.ColorExpr BorderColor,
     BoxBorder? Style,
+    PaneBorderEdges Edges,
     int ChromeReserve,
     ColorSystemSupport ColorSystem,
     IReadOnlyDictionary<string, ColorResolution.ColorRule> Colors,
@@ -380,13 +443,14 @@ public static class ConfigLoader
 
     internal static ResolvedConfig ResolveTopLevel(UserConfig? config)
     {
-        var resolvedBorder = ResolveBorder(config?.Border, isSplitContainer: false);
+        var (edges, _) = ResolveBorderPropagation(config?.Border, inherited: null, PaneSplit.None, childCount: 0);
+        var resolvedBorder = ResolveBorder(config?.Border, isSplitContainer: false, edges);
         var chromeReserve = config?.Layout?.ChromeReserve ?? DefaultChromeReserve;
         var colorSystem = ParseColorSystem(config?.ColorSystem);
         var colors = ParseColorTable(config?.Colors);
         var surfaceMaxRows = config?.Surface?.MaxRows ?? DefaultSurfaceMaxRows;
 
-        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, chromeReserve, colorSystem, colors, surfaceMaxRows);
+        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows);
     }
 
     private static readonly (string Token, ColorSystemSupport Value)[] ColorSystemAccepted =
@@ -447,27 +511,44 @@ public static class ConfigLoader
                 PaneSplit.None,
                 Array.Empty<Pane>(),
                 "auto",
-                new PaneBorder(topLevel.BorderColor, topLevel.Style),
+                new PaneBorder(topLevel.BorderColor, topLevel.Style, topLevel.Edges),
                 null,
                 DefaultEllipsis,
                 null,
                 ToPaneItems(config?.Items));
         }
 
-        return ResolvePane(surfacePane);
+        return ResolvePane(surfacePane, inherited: null);
     }
 
-    private static Pane ResolvePane(PaneConfig cfg)
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 1: what an ancestor's <c>outline</c>/<c>inside</c>
+    /// shorthand hands down to one child — the edges that child's border should resolve to absent
+    /// its own explicit declaration, and whether that same instruction keeps propagating to
+    /// <em>that child's own</em> descendants (<c>outline</c>: yes, unbounded depth, per "every
+    /// descendant"; <c>inside</c>: no — see the open question flagged in the implementation report
+    /// about whether a deeper, un-overridden nested split should inherit further).
+    /// </summary>
+    private readonly record struct InheritedBorderDirective(PaneBorderEdges Edges, bool ContinuesToDescendants);
+
+    private static Pane ResolvePane(PaneConfig cfg, InheritedBorderDirective? inherited)
     {
-        var children = cfg.Children?.Select(ResolvePane).ToList() ?? (IReadOnlyList<Pane>)Array.Empty<Pane>();
-        var split = NormalizeSplit(ParseSplit(cfg.Split), children.Count);
+        var childCfgs = cfg.Children ?? (IReadOnlyList<PaneConfig>)Array.Empty<PaneConfig>();
+        var split = NormalizeSplit(ParseSplit(cfg.Split), childCfgs.Count);
         var isSplitContainer = split != PaneSplit.None;
+
+        var (edges, childDirectives) = ResolveBorderPropagation(cfg.Border, inherited, split, childCfgs.Count);
+        var border = ResolveBorder(cfg.Border, isSplitContainer, edges);
+
+        var children = childCfgs.Count == 0
+            ? (IReadOnlyList<Pane>)Array.Empty<Pane>()
+            : childCfgs.Select((c, i) => ResolvePane(c, childDirectives[i])).ToList();
 
         return new Pane(
             split,
             children,
             cfg.Size ?? "auto",
-            ResolveBorder(cfg.Border, isSplitContainer),
+            border,
             OverflowModeParsing.Parse(cfg.Overflow),
             cfg.Ellipsis ?? DefaultEllipsis,
             cfg.MaxRows,
@@ -479,6 +560,90 @@ public static class ConfigLoader
             PaneAlignParsing.Parse(cfg.Align),
             PaneDistributeParsing.Parse(cfg.Distribute),
             PaneHeightParsing.Parse(cfg.Height));
+    }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 1: resolves one pane's own edges plus, when that pane is a
+    /// split, what each of its <paramref name="childCount"/> children inherits. A pane's own
+    /// explicit <c>border</c> declaration — shorthand, <c>edges</c> object, or a plain
+    /// enabled/color/style declaration — always wins over <paramref name="inherited"/> ("nearest
+    /// declaration wins") and, since it is itself a fresh declaration, fully supersedes whatever the
+    /// ancestor was propagating: only <c>outline</c>/<c>inside</c> hand anything further down.
+    /// Absent an explicit declaration, an <c>outline</c> ancestor's instruction is flat and keeps
+    /// propagating unchanged; an <c>inside</c> ancestor's instruction reaches only its direct
+    /// children (<see cref="InsideChildDirectives"/>) and stops there.
+    /// </summary>
+    private static (PaneBorderEdges Edges, IReadOnlyList<InheritedBorderDirective?> ChildDirectives) ResolveBorderPropagation(
+        BorderConfig? cfgBorder, InheritedBorderDirective? inherited, PaneSplit split, int childCount)
+    {
+        if (cfgBorder is not null)
+        {
+            if (string.Equals(cfgBorder.Shorthand, "outline", StringComparison.OrdinalIgnoreCase))
+            {
+                return (PaneBorderEdges.All, Repeat(new InheritedBorderDirective(PaneBorderEdges.None, ContinuesToDescendants: true), childCount));
+            }
+
+            if (string.Equals(cfgBorder.Shorthand, "inside", StringComparison.OrdinalIgnoreCase))
+            {
+                return (PaneBorderEdges.None, InsideChildDirectives(split, childCount));
+            }
+
+            if (string.Equals(cfgBorder.Shorthand, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                return (PaneBorderEdges.All, Repeat(null, childCount));
+            }
+
+            if (string.Equals(cfgBorder.Shorthand, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                return (PaneBorderEdges.None, Repeat(null, childCount));
+            }
+
+            if (cfgBorder.Edges is { } edgesCfg)
+            {
+                var edges = new PaneBorderEdges(
+                    edgesCfg.Top ?? true,
+                    edgesCfg.Right ?? true,
+                    edgesCfg.Bottom ?? true,
+                    edgesCfg.Left ?? true);
+                return (edges, Repeat(null, childCount));
+            }
+
+            // A plain enabled/color/style-only declaration (no shorthand or edges object), or an
+            // unrecognized shorthand token — falls back to all four edges, the same conservative
+            // default a plain declaration always resolved to before edges existed.
+            return (PaneBorderEdges.All, Repeat(null, childCount));
+        }
+
+        if (inherited is { } directive)
+        {
+            return (directive.Edges, Repeat(directive.ContinuesToDescendants ? directive : null, childCount));
+        }
+
+        return (PaneBorderEdges.All, Repeat(null, childCount));
+    }
+
+    private static IReadOnlyList<InheritedBorderDirective?> Repeat(InheritedBorderDirective? value, int count) =>
+        Enumerable.Repeat(value, count).ToList();
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 1: <c>inside</c>'s per-child edges — each child is charged
+    /// for the edge(s) it shares with its immediate neighbour(s) along the split axis (the first
+    /// child has nothing before it, the last nothing after), and nothing on the cross axis.
+    /// </summary>
+    private static IReadOnlyList<InheritedBorderDirective?> InsideChildDirectives(PaneSplit split, int childCount)
+    {
+        var result = new InheritedBorderDirective?[childCount];
+        for (var i = 0; i < childCount; i++)
+        {
+            var isFirst = i == 0;
+            var isLast = i == childCount - 1;
+            var edges = split == PaneSplit.Horizontal
+                ? new PaneBorderEdges(Top: !isFirst, Right: false, Bottom: !isLast, Left: false)
+                : new PaneBorderEdges(Top: false, Right: !isLast, Bottom: false, Left: !isFirst);
+            result[i] = new InheritedBorderDirective(edges, ContinuesToDescendants: false);
+        }
+
+        return result;
     }
 
     private static readonly (string Token, PaneSplit Value)[] SplitAccepted =
@@ -546,7 +711,7 @@ public static class ConfigLoader
     /// defaults to bordered (v1 behavior) and a split container defaults to borderless, so adding
     /// a split to a config never silently adds chrome.
     /// </summary>
-    private static PaneBorder ResolveBorder(BorderConfig? border, bool isSplitContainer)
+    private static PaneBorder ResolveBorder(BorderConfig? border, bool isSplitContainer, PaneBorderEdges edges)
     {
         var enabled = border?.Enabled ?? !isSplitContainer;
         var color = ParseColorExpr(border?.Color, owningItemId: null) ?? DefaultColorExpr;
@@ -562,7 +727,16 @@ public static class ConfigLoader
             style = null;
         }
 
-        return new PaneBorder(color, style);
+        // §2.10: a pane whose resolved edges are all off (an explicit "none"/all-false edges
+        // object, or an "outline" ancestor forcing this descendant off) has nothing to draw —
+        // collapse Style to null so it also carries zero reserve, rather than staying "enabled"
+        // with unused padding reserve and nothing to render.
+        if (style is not null && !edges.Top && !edges.Right && !edges.Bottom && !edges.Left)
+        {
+            style = null;
+        }
+
+        return new PaneBorder(color, style, edges);
     }
 
     /// <summary>
