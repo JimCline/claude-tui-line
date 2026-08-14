@@ -50,7 +50,7 @@ public static class PaneBorderRenderer
 
         if (omitEdges)
         {
-            return contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + BorderReserve)).ToList();
+            return contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + SizeResolver.OwnBorderReserve(border))).ToList();
         }
 
         var top = Colored(Part(BoxBorderPart.TopLeft) + Repeat(Part(BoxBorderPart.Top), width + 2) + Part(BoxBorderPart.TopRight));

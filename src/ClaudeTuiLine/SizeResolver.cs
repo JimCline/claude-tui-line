@@ -77,6 +77,8 @@ public static class SizeResolver
     /// </summary>
     internal static int OwnBorderReserve(Pane pane) => pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
 
+    internal static int OwnBorderReserve(PaneBorder border) => border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.10: what a vertical split reserves for itself before dividing width
     /// among its <paramref name="childCount"/> children — its own <see cref="OwnBorderReserve"/>
