@@ -63,6 +63,11 @@ Omit the three `script*` fields when the previous command was not a script on di
 
 Timestamps are UTC, ISO 8601. Compute hashes with `shasum -a 256 <file>` and store the bare hex.
 
+Artifact filenames are second-resolution, so two writes in the same second collide. If the name
+you are about to write already exists, append a counter (`-2`, `-3`) rather than writing over it —
+rule 1 below is absolute, and a naming scheme that silently overwrites would breach it by accident
+rather than by decision.
+
 ## The two kinds
 
 - **`origin`** — the state before claude-tui-line ever touched this machine. **Written exactly once,
@@ -70,6 +75,20 @@ Timestamps are UTC, ISO 8601. Compute hashes with `shasum -a 256 <file>` and sto
   write another, no matter how long ago it was or how wrong it looks. Append a `checkpoint`
   instead.
 - **`checkpoint`** — any state captured since. Written freely, as often as anything writes.
+
+**An `origin` must never record a `statusLine` that already points at a claude-tui-line binary.**
+Check before writing one. A user can arrive at that state without this tool ever having run — by
+hand-editing `settings.json` and only later invoking `/claude-tui-line:setup` — and the naive
+"no `origin` exists, so this is the origin" rule would then record claude-tui-line's own command
+as the state to escape *to*. Because `origin` is written exactly once ever, that is unfixable
+afterwards: the escape hatch is poisoned at the moment it is created, which is worse than the
+second-use failure this whole design exists to prevent.
+
+When the live `statusLine` already points at a claude-tui-line binary and no `origin` exists,
+append a **`checkpoint`** and leave `origin` unwritten. A missing `origin` is an honest state and
+the commands already handle it — `revert` lists the checkpoints, flags which ones point at a
+claude-tui-line binary, and lets the user choose. A *false* `origin` gets no such handling,
+because nothing downstream has any reason to doubt it.
 
 Reverting is itself a change: it appends a `checkpoint` for the state it replaced, and it does
 **not** consume or remove the `origin`. Reverting a revert has to be possible.
@@ -106,7 +125,8 @@ Any command that is about to write `settings.json`:
 3. Read the live `settings.json` and its current `statusLine` value.
 4. Copy `settings.json` into the backup directory with a timestamped name; hash it.
 5. If `statusLine.command` names a script on disk, copy that too; hash it.
-6. Append **one** entry — `origin` if and only if no `origin` entry exists, otherwise `checkpoint`.
+6. Append **one** entry — `origin` if and only if no `origin` entry exists **and** the current
+   `statusLine` does not already point at a claude-tui-line binary; otherwise `checkpoint`.
 7. Write `ledger.json` back.
 8. **Only now** write the new `statusLine` into `settings.json`, atomically, preserving other keys.
 9. Report the backup path and the kind of entry you appended.

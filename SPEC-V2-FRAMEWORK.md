@@ -1936,6 +1936,15 @@ command as the thing to restore; revert then cheerfully restores the tool the us
 escape. `origin` is written once and revert targets it by default, so the escape hatch survives
 any number of intervening changes.
 
+**An `origin` may never record a `statusLine` already pointing at a claude-tui-line binary**, and
+"no `origin` exists yet" is not sufficient grounds to write one. A user can reach that state
+without this tool having run — hand-editing `settings.json`, then invoking `setup` afterwards —
+and the once-ever rule makes the resulting false `origin` permanent. That is strictly worse than
+the second-use failure above: there, the escape hatch degrades; here, it is poisoned at creation
+and nothing downstream has cause to doubt it. In that case append a `checkpoint` and leave
+`origin` unwritten. A missing `origin` is honest and already handled — §12.5 lists the
+checkpoints and flags which point at a claude-tui-line binary.
+
 Three rules, none optional:
 
 1. **Nothing in the backup directory is ever overwritten or deleted by any command.** Reverting

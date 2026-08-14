@@ -40,9 +40,12 @@ timestamped file copy — the ledger exists because the obvious design fails on 
 capturing claude-tui-line's own command as the thing to restore, and revert then restores the tool
 the user was trying to escape.
 
-For this command the entry is almost always **`origin`**: the state before claude-tui-line ever
-touched this machine, written exactly once ever. Read the ledger first and append a `checkpoint`
-instead if an `origin` already exists — that means setup has run here before.
+For this command the entry is usually **`origin`**: the state before claude-tui-line ever touched
+this machine, written exactly once ever. Two conditions make it a `checkpoint` instead, and the
+ledger requires checking both — an `origin` already exists (setup has run here before), **or** the
+current `statusLine` already points at a claude-tui-line binary. The second happens when someone
+wires the binary up by hand and runs setup afterwards; recording that as `origin` would make the
+tool its own escape hatch, permanently, since `origin` is written once ever.
 
 Record `"statusLine": null` if there is no existing key. That is a real, restorable state, and it
 is different from not knowing what was there.
