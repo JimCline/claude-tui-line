@@ -2,7 +2,7 @@
 
 Running progress against `SPEC-V2-FRAMEWORK.md`. Updated as work lands.
 
-**Last updated:** 2026-08-13
+**Last updated:** 2026-08-14
 
 A line is only **Done** here if it was verified independently of the report claiming it —
 rebuilt from source with a matching SHA-256, or checked against rendered bytes. "Tests pass" is
@@ -54,7 +54,10 @@ not by itself enough; this project has twice had a green suite over a broken ins
   CLI is absent rather than falling back to a list written from memory: §12.1 forbids that
   because a prompt-file item list is a second registry, and a remembered id that no longer exists
   resolves to nothing and is silently suppressed. The README says plainly that these three do not
-  work yet. **Not verified end-to-end** — nothing can be until §9 exists.
+  work yet. **Not verified end-to-end** — nothing can be until §9 exists. **Walked over cases on
+  14 Aug and six defects fixed**, one of them severe: `/edit`'s checkpoint did not contain the file
+  `/edit` modifies, so its rollback path was a no-op that reported success. See the session-log
+  entry below; the prose is fixed, still unexercised.
 - **The backup ledger** (§12.2) — `docs/backup-ledger.md`, one definition shared by all four
   commands. A first draft of these commands used timestamped `settings.json.backup-*` copies and
   had exactly the bug §12.2 exists to prevent: migrate → edit → migrate again captures
@@ -62,7 +65,11 @@ not by itself enough; this project has twice had a green suite over a broken ins
   escaping, and the escape hatch closes as it becomes needed. Replaced with the `origin` /
   `checkpoint` distinction, `origin` written exactly once ever, SHA-256 recorded per artifact and
   a mismatch **reported rather than overwritten**. Also unexercised: no command has run against a
-  real ledger yet.
+  real ledger yet. **Amended 14 Aug:** an entry now carries `claude-tui-line.json` as a third
+  artifact alongside `settings.json` and the user's script, recorded whenever a config exists
+  rather than when the running command intends to change it — without it `/edit` had no
+  recoverable backup at all. The hash-check rule was also wrong in a way that would have made
+  `revert` refuse on every run; both are in the session log.
 
 - ~~**Defects 11 and 13**~~ — **both fixed, committed as `5ed9ccb` and pushed.** Verified
   independently of the report claiming it: clean Release build, three consecutive full-suite runs

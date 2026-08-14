@@ -81,9 +81,9 @@ Then point Claude Code at the binary, in `~/.claude/settings.json`:
 `refreshInterval: 1` means the binary runs once per second, so **startup cost is render cost** —
 which is why this is AOT-compiled rather than a script.
 
-If you already have a statusline script, back it up before you replace it. (A `migrate` command
-that does this for you, and maps your existing script's elements onto items, is planned but not
-built.)
+If you already have a statusline script, back it up before you replace it. Installing as a plugin
+instead gets you `/claude-tui-line:migrate`, which does the backup and maps your script's elements
+onto items — though it needs the CLI, which is not built yet.
 
 ## Configuration
 
