@@ -81,35 +81,49 @@ public class ConfigUnreadableMessageTests
     }
 
     [Fact]
-    public void Rung4_ProtectedPositionPrefixSurvivesTruncation_OnlyMessageIsEaten()
+    public void Rung4_ProtectedLineNumberSurvivesTruncation_PointerAndMessageAreEaten()
     {
         const string path = "/Users/x/my.json";
-        const string position = "line 9, $.path: ";
-        const string message = "unexpected end of input while parsing a deeply nested JSON object literal";
-        var reason = position + message;
-        var width = 50; // forces rung 4; wide enough for the whole position, not the whole message.
+        const string lineNumberText = "line 9";
+        const string tail = ", $.path: unexpected end of input while parsing a deeply nested JSON object literal";
+        var reason = lineNumberText + tail;
+        var width = 50; // forces rung 4; wide enough for the line number, not the whole tail.
 
-        var result = ConfigUnreadableMessage.Format(path, reason, width, position.Length);
+        var result = ConfigUnreadableMessage.Format(path, reason, width, lineNumberText.Length);
 
         Assert.Equal(width, result.Length);
-        Assert.StartsWith("claude-tui-line: " + position, result);
+        Assert.StartsWith("claude-tui-line: " + lineNumberText, result);
         Assert.EndsWith("…", result);
         Assert.DoesNotContain(path, result);
-        Assert.DoesNotContain(message, result);
+        Assert.DoesNotContain("deeply nested JSON object literal", result);
     }
 
     [Fact]
-    public void Rung5_FallsThrough_WhenBudgetTooNarrowForProtectedPrefix()
+    public void Rung4_TailDropsEntirely_RatherThanEndingInADanglingSeparator()
     {
         const string path = "/Users/x/my.json";
-        const string position = "line 9, $.surface.pane.items[1]: ";
-        const string message = "trailing comma";
-        var reason = position + message;
+        const string lineNumberText = "line 9";
+        const string tail = ", $.path: trailing comma";
+        var reason = lineNumberText + tail;
+        var width = 23; // exactly enough for "claude-tui-line: line 9" — no room for any of the tail.
 
-        // Past the ladder's usual rung-5 threshold, but narrower than the protected position
-        // prefix alone — rung 4 has no way to answer without truncating into the position, which
-        // it must never do, so this degrades all the way to the bare tool name instead.
-        var result = ConfigUnreadableMessage.Format(path, reason, 20, position.Length);
+        var result = ConfigUnreadableMessage.Format(path, reason, width, lineNumberText.Length);
+
+        Assert.Equal("claude-tui-line: line 9", result);
+    }
+
+    [Fact]
+    public void Rung5_FallsThrough_WhenBudgetTooNarrowForProtectedLineNumber()
+    {
+        const string path = "/Users/x/my.json";
+        const string lineNumberText = "line 9";
+        const string tail = ", $.path: trailing comma";
+        var reason = lineNumberText + tail;
+
+        // Narrower than "claude-tui-line: " + the line number alone — rung 4 has no way to
+        // answer without truncating into the line number itself, which it must never do, so this
+        // degrades all the way to the bare tool name instead.
+        var result = ConfigUnreadableMessage.Format(path, reason, 20, lineNumberText.Length);
 
         Assert.Equal("claude-tui-line", result);
     }

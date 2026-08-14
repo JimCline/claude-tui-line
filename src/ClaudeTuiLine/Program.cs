@@ -785,9 +785,11 @@ static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? Unre
 // SPEC-V2-FRAMEWORK.md §9.2.2: "line <n>, <path within the document>: <message>", read from
 // JsonException's typed LineNumber/Path rather than scraped from Message text .NET is free to
 // reword. LineNumber is 0-indexed in the CLR API; +1 matches the line a text editor shows, since
-// that's the file position this exists to let a reader jump to. The returned protected length is
-// the composed position's own length, so the caller's rung-4 truncation never eats into it — only
-// the raw message appended after it, which is recoverable by opening the file.
+// that's the file position this exists to let a reader jump to. Only "line <n>" is irreplaceable
+// — the Pointer is what a reader sees the moment they open the file at that line, and the message
+// is .NET's own wording — so the protected length covers the line number alone; the caller's
+// rung-4 truncation eats the Pointer and message first, and the line number only once nothing
+// else is left to give up.
 static (string Reason, int ProtectedLength) ComposeUnreadableReason(ConfigReadResult result)
 {
     var message = result.ErrorMessage ?? "could not be parsed";
@@ -796,8 +798,8 @@ static (string Reason, int ProtectedLength) ComposeUnreadableReason(ConfigReadRe
         return (message, 0);
     }
 
-    var position = $"line {lineNumber + 1}, {jsonPath}: ";
-    return (position + message, position.Length);
+    var lineNumberText = $"line {lineNumber + 1}";
+    return ($"{lineNumberText}, {jsonPath}: {message}", lineNumberText.Length);
 }
 
 static (ResolvedConfig TopLevel, Pane RootPane) BuildFallbackConfig()

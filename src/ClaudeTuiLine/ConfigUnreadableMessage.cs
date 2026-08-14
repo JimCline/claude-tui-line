@@ -12,10 +12,11 @@ public static class ConfigUnreadableMessage
     private const string Prefix = "claude-tui-line: ";
     private const string BareName = "claude-tui-line";
 
-    // reasonProtectedLength marks a prefix of reason (e.g. a composed "line <n>, <path>: ") that
-    // rung 4 must never truncate into — only reason[reasonProtectedLength..] is eaten. §9.2.2:
-    // truncation degrades toward what the user cannot otherwise obtain, and a position the parser
-    // reported is not otherwise obtainable, while the message text after it is (open the file).
+    // reasonProtectedLength marks a prefix of reason (the composed "line <n>") that rung 4 must
+    // never truncate into — only reason[reasonProtectedLength..] is eaten. §9.2.2: truncation
+    // degrades toward what the user cannot otherwise obtain, and a line number the parser
+    // reported is not otherwise obtainable, while the Pointer and message after it are (open the
+    // file).
     public static string Format(string path, string reason, int? width, int reasonProtectedLength = 0)
     {
         var full = Prefix + path + ": " + reason;
@@ -66,7 +67,9 @@ public static class ConfigUnreadableMessage
     }
 
     // Splits reason at reasonProtectedLength and only ever truncates the part after it, leaving
-    // the protected prefix (when there is one) intact regardless of how tight budget is.
+    // the protected prefix (when there is one) intact regardless of how tight budget is. If
+    // nothing but joining punctuation survives that truncation, the remainder is dropped
+    // entirely rather than left dangling on a bare "," or ": ".
     private static string TruncateProtected(string reason, int reasonProtectedLength, int budget)
     {
         if (reasonProtectedLength == 0)
@@ -76,7 +79,20 @@ public static class ConfigUnreadableMessage
 
         var protectedPart = reason[..reasonProtectedLength];
         var truncatablePart = reason[reasonProtectedLength..];
-        return protectedPart + TruncateWithEllipsis(truncatablePart, budget - reasonProtectedLength);
+        var truncatedTail = TruncateWithEllipsis(truncatablePart, budget - reasonProtectedLength);
+        return HasRealContent(truncatedTail) ? protectedPart + truncatedTail : protectedPart;
+    }
+
+    // A truncated tail is worth showing only if some character survives besides the punctuation
+    // that joins it to the protected prefix ("," ":" " ") and the ellipsis appended by
+    // TruncateWithEllipsis — a tail that is only that punctuation says nothing the protected
+    // prefix didn't already.
+    private static bool HasRealContent(string truncatedTail)
+    {
+        var withoutEllipsis = truncatedTail.EndsWith(ConfigLoader.DefaultEllipsis, StringComparison.Ordinal)
+            ? truncatedTail[..^ConfigLoader.DefaultEllipsis.Length]
+            : truncatedTail;
+        return withoutEllipsis.Any(c => c is not (',' or ':' or ' '));
     }
 
     // Mirrors PaneRenderer.TruncateSegment's policy: too narrow for the marker at all clips the
