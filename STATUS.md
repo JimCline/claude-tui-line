@@ -70,13 +70,21 @@ not by itself enough; this project has twice had a green suite over a broken ins
 
 ## Repository
 
-`git init -b main` done. `.gitignore` written. 69 files staged. **Nothing committed, nothing
-pushed, no remote.** Still needed before publishing:
+**Backed up.** `github.com/JimCline/claude-tui-line` — **private**, 73 files, initial commit
+`60eeb34` pushed to `main` and verified against the remote ref. `main` is protected against
+force-push and deletion with admin bypass on, so the backup cannot be rewritten away but the
+owner is never blocked.
+
+Scanned before pushing: no credentials, no company data, no build artifacts.
+
+Still needed **before making it public**:
 
 - README, LICENSE (MIT recommended)
-- First commit
-- Public repo under `JimCline`, branch protection on `main` with admin bypass
-- Genericize the hardcoded `/Users/jimcline/...` path at `CAPTURE.md:9`
+- Genericize `/Users/jimcline/...` — it appears in `CAPTURE.md:9`, `bench/fixture.json:2`,
+  `tests/.../fixtures/full.json:2`, and three test files. Not sensitive, but it is a username
+  in a public tree. **Changing the fixture cwd risks the golden-parity baseline** — the
+  rendered `directory` item derives from that path — so keep the final path segment identical
+  and re-run parity rather than assuming.
 
 ## Standing constraints
 
