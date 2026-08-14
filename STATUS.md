@@ -377,6 +377,25 @@ The pass stopped being bookkeeping and started finding things.
     failed *invocation* and have no `path`; they must never be confused with a `diagnostics` entry
     pointing into the user's config.
 
+- **The registry immediately found two more, and both turned out to be warnings that should not
+  exist.** §9.4's prose named two warnings no code covered, so the first act of the new registry
+  was to catch its own omissions. Checking them against the code rather than adding rows:
+  - *"A `command` item with no `timeoutMs`"* — **removed.** The premise was an unbounded
+    subprocess in a once-a-second loop. There is no unbounded subprocess:
+    `CommandProvider.DefaultTimeoutMs = 150`, whole process tree killed. The warning would have
+    sent every author to set a key already set for them. `commands/migrate.md` rested on the same
+    false premise and has been corrected — the advice to choose the values deliberately survives,
+    since 150 ms is genuinely tight for a migrated script, but the *reason* is now the true one.
+  - *"A pane with no items"* — **narrowed** to `content`/`fill` only, code `pane-no-items`. §2.11's
+    own division does the work: those collapse, so the declaration achieved nothing; an empty
+    `fixed`/`percent` pane keeps its extent and is a legitimate **spacer**. Unqualified, this
+    warning fired on working intent.
+
+  The shared lesson, now in §9.4: **a diagnostic's premise is a claim about the implementation and
+  goes stale like any other.** Both were true when written; one stopped being true when a default
+  landed, the other when §2.11 was ruled. Neither was reachable by grep — nothing dangled, and both
+  read as sensible prose right up until they were checked against the thing they asserted.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

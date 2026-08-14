@@ -1879,10 +1879,30 @@ Two severities, and the split resolves defects 3–6 (silent acceptance):
 - **`error`** — the config does not do what it says. An unknown item id; an unknown value for
   `size`, `style`, `align`, `valign`, `overflow`, or `case`; an unknown colour name; `overflow:
   "overflow"` on a pane inside a split (§2.6); a pane whose fixed sizes cannot fit its parent.
-- **`warning`** — it is satisfiable, but probably not what was meant. A pane with no items; a
-  `command` item with no `timeoutMs`; a `link` naming an id that resolves to nothing; under
-  `collapse: true`, two panes asking for different colours or styles on one shared edge (§2.10).
-  Code: `collapsed-edge-conflict`.
+- **`warning`** — it is satisfiable, but probably not what was meant. A `content` or `fill` pane
+  with no items (`pane-no-items`); a `link` naming an id that resolves to nothing
+  (`unknown-link-target`); under `collapse: true`, two panes asking for different colours or
+  styles on one shared edge (`collapsed-edge-conflict`, §2.10).
+
+**Two warnings that used to be on that list have been removed, both for firing on configs that
+are fine.** They are recorded rather than quietly dropped, because each was wrong in a way worth
+not repeating.
+
+- **`command` item with no `timeoutMs`.** The premise was that an unbounded subprocess inside a
+  once-a-second loop presents as a frozen statusline. There is no unbounded subprocess:
+  `CommandProvider` defaults to `DefaultTimeoutMs = 150` and kills the whole process tree. The
+  warning would have sent every author to set a key that was already set for them. Choosing the
+  value deliberately is still good practice — 150 ms is tight for a real script — but good
+  practice is what documentation is for, not what a diagnostic is for.
+- **A pane with no items**, unqualified. Narrowed rather than removed, because §2.11's own
+  division already separates the two cases: an empty `content`/`fill` pane collapses, so writing
+  it accomplished nothing and the author almost certainly meant something else. An empty
+  `fixed`/`percent` pane keeps its extent — that is a **spacer**, a legitimate and deliberate
+  construct, and warning on it would be a false positive on working intent.
+
+The shared lesson: a diagnostic's premise is a claim about the implementation, and it goes stale
+exactly like any other. Both of these were true when written and stopped being true when a
+default landed and when §2.11 was ruled.
 
 The dangling `link` moved from `error` to `warning` here, and that correction is the reason the
 next paragraph exists.
@@ -2081,6 +2101,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
 | `min-exceeds-max` | `minSize` greater than `maxSize` on one pane — unachievable everywhere | error | 9.8 |
 | `collapsed-edge-conflict` | adjacent panes disagree about a shared edge under `border.collapse` | warning | 2.10 |
+| `pane-no-items` | a `content` or `fill` pane declaring no items — it collapses, so the declaration did nothing. **Not** `fixed`/`percent`, which keep their extent and are legitimate spacers | warning | 9.4 |
 
 **Tool-protocol codes** — a different channel, and consumers must not confuse the two. These
 appear as a top-level `{ "ok": false, "code": … }` describing a failed *invocation*, never as an

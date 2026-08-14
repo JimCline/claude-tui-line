@@ -80,9 +80,12 @@ looks wrong precisely when the user notices.
    migration can be lossless: worst case every element shells out to a snippet of the user's own
    script, and they still gain panes, borders, sizing, and colour rules over logic that already
    worked. Prefer an argv array to `"shell": true`; reach for `shell` only when pipes or expansion
-   are genuinely needed, and say so in your report when you do. Give every command item a
-   `ttlSeconds` and a `timeoutMs` — this runs once a second, and an unbounded command in that loop
-   presents to the user as a frozen statusline.
+   are genuinely needed, and say so in your report when you do. Set `ttlSeconds` and `timeoutMs` on every
+   command item **deliberately**, and report what you chose. Not because they are unset otherwise
+   — they default to 30 s and 150 ms — but because 150 ms is tight for a real script, and a
+   migrated command that quietly exceeds it is killed and renders as nothing (§7). The original
+   script ran under no such budget, so this is the one place a faithful port can silently lose an
+   element that otherwise mapped cleanly.
 
 3. **Unmappable** — reported to the user, never silently dropped.
 
