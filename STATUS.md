@@ -2063,6 +2063,59 @@ Closes task #30. All three doc checks are now in CI, and the closed-world gap na
 closed for the sixteen builtins' default renders — and only for those. Every other worked example in
 the specification remains an unverified assertion about the implementation.
 
+### Getting ahead of `--colors` instead of reviewing it afterwards
+
+`--items` came back with four blockers, two of which were spec defects. Rather than wait for the
+same thing on `--colors`, §9.6.3 got the audit first — and it had the identical hole §9.6.2.2 was
+written to fill, plus one consequence sharper than that case. §9.6.3.1 is the result.
+
+**Bare `--colors` prints ANSI, and it is the deliberate exception to §9.6.2.2's plain-only rule.**
+§2 requires each swatch rendered in its own colour; §9.6.2.2 says bare `--items` is never styled,
+even on a TTY. Both correct, and they collide on the same implementer within days — with the
+absolute-sounding rule being the one most recently implemented. The principle that makes both
+follow: *is the styling the value, or a coat of paint on the value?* An item's example survives
+stripping; a swatch stripped of its colour is nineteen rows reading `olive`, `teal`, `fuchsia`,
+which is the guessing the command exists to end.
+
+Two more found by reading the code against the section:
+
+- **The curated list already exists** as `ColorResolution.StandardColorNames`, serving §6.2.1.
+  §9.6.3 said it "exists nowhere today" — stale. `--colors` is its second consumer, not its author.
+- **The round-trip test proves less than the section claims**, exactly on the three entries that
+  are not colours. `ResolveLiteral` returns `style.Foreground`, non-nullable, so "non-null result"
+  silently degrades to "did the parse succeed" — right for the sixteen, vacuous for `default`,
+  `dim` and `bold`, which parse as decorations yielding `Color.Default`. Assertion split, and the
+  count of the three pinned so a real colour cannot join them via a rename.
+
+### The renderer writes to stderr for two commands that never read it
+
+§7: render notes go to stderr in the human form so "stdout stays byte-comparable either way, **so
+`/migrate` can diff a preview against the original script's output**." That split was designed for
+`/migrate` and `/edit`. Neither had ever been told. Both captured stdout alone.
+
+The cost is not cosmetic. A dropped pane and a `maxLines` cap each arrive as nothing but a token
+missing from the diff, and the obvious response — re-map the element — is wrong for both. One needs
+the width reported to the user, the other needs the cap raised. The note is the only thing that says
+which. `/edit` now captures on both the "before" and "after" previews and diffs them, because that
+comparison is the sole difference between "my edit dropped a pane" and "a pane was already being
+dropped at 60 columns" — and `--check` reports neither, since neither is a config error.
+
+Same class as everything else this week: **what does this say that no reader of the current document
+will ever see?** The answer was in §7, one line, describing a benefit to a file that never got the
+memo.
+
+### A resolving citation can still point at the wrong section
+
+§9.6.3 cited §12.2 for the colour ruling. §12.2 is the ledger; the ruling is §12.3's.
+`check-citations.sh` passed the whole time — it proves a section exists, never that it says what the
+citing sentence claims.
+
+Measured before proposing a fourth check: only **15 of 630 citations** carry a quoted phrase that
+could be verified mechanically, and several of those quotes are deliberate paraphrase a checker
+would flag wrongly. A check covering a fortieth of the surface while crying wolf on part of it is
+below the bar `check-counts.sh` sets in its own header. Left manual, and written into §13.3 so the
+next person knows it was a decision rather than an oversight.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

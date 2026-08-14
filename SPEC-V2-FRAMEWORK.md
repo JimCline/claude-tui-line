@@ -3577,7 +3577,7 @@ allowed to be hand-written precisely because that test refuses to let it be wron
 
 **`--colors --json` must say which set it is.** This matters more than it sounds, and it is the
 same failure as §9.6.2's missing `kinds` section wearing different clothes. §12's authoring tools
-treat `--colors` as authority the way they treat `--items`, and §12.2 instructs the migrator to
+treat `--colors` as authority the way they treat `--items`, and §12.3 instructs the migrator to
 preserve colours "by name, from `--colors`". A bare list of nineteen names reads as exhaustive, so
 a model asked for `#ff8800` — which parses fine and always has — will consult the list, not find
 it, and refuse or silently substitute. The output therefore carries the distinction explicitly:
@@ -4828,3 +4828,14 @@ Two things generalise:
 document resolve, which is a closed-world check; this defect is about what is missing from the
 world entirely. Cross-document reachability is not mechanically checkable in three lines of shell,
 which is exactly why it is written down here instead.
+
+**A resolving citation can still point at the wrong section, and that is a third gap left open on
+purpose.** §9.6.3 read "§12.2 instructs the migrator to preserve colours" for as long as it stood.
+§12.2 is the backup ledger and says nothing about colour; the ruling is §12.3's. The citation
+resolved, so the check passed — it proves a section *exists*, never that it says what the citing
+sentence claims. The only mechanically checkable sub-case is a citation carrying a quoted phrase,
+where the phrase could be searched for in the cited section. That is **15 of this document's 630
+citations**, and several of those quotes are deliberate paraphrase, which a checker would report as
+failures. A fourth check would cover a fortieth of the surface while crying wolf on part of it —
+below the bar `check-counts.sh` sets in its own header, and an ignored check occupies the slot a
+real one would have. So this one stays manual, and stays written down.
