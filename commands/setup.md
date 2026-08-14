@@ -144,7 +144,7 @@ Report, briefly:
 
 - where the binary lives
 - where the backup went, and that `/claude-tui-line:revert` restores it — it reads the ledger at
-  `~/.claude/claude-tui-line/backups/ledger.json`, and targets the `origin` entry by default no
+  `~/.claude/claude-tui-line/backups/ledger.jsonl`, and targets the `origin` entry by default no
   matter how many changes come after.
 
   **If step 3 wrote a `checkpoint` rather than an `origin`**, say so and give its timestamp. Bare

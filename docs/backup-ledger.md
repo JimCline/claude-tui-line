@@ -36,7 +36,7 @@ every state since. That distinction is the entire reason this is a ledger and no
 
 ```
 ~/.claude/claude-tui-line/backups/
-  ledger.json
+  ledger.jsonl
   <timestamp>-settings.json
   <timestamp>-<original-script-basename>
 ```
@@ -48,26 +48,36 @@ Create the directory if it does not exist. If you cannot create or write to it, 
 you are running** and report why. Never proceed with a write on the theory that the backup can be
 taken afterwards.
 
-## `ledger.json`
+## `ledger.jsonl`
 
-A JSON array, **append-only**. Read it, append one entry, write the whole array back. Never edit or
-remove an existing entry.
+**JSON Lines: one entry per line, and adding an entry appends that one line.** Never edit or remove
+an existing entry — and never rewrite the file in order to add one.
 
 ```json
-[
-  {
-    "kind": "origin",
-    "timestamp": "2026-08-13T04:12:07Z",
-    "statusLine": { "type": "command", "command": "/Users/someone/.claude/statusline.sh", "refreshInterval": 1 },
-    "settingsCopy": "20260813-041207-settings.json",
-    "settingsSha256": "9f2b…",
-    "scriptOriginalPath": "/Users/someone/.claude/statusline.sh",
-    "scriptCopy": "20260813-041207-statusline.sh",
-    "scriptSha256": "4c81…",
-    "note": "state before claude-tui-line was first installed"
-  }
-]
+{"kind":"origin","timestamp":"2026-08-13T04:12:07Z","statusLine":{"type":"command","command":"/Users/someone/.claude/statusline.sh","refreshInterval":1},"settingsCopy":"20260813-041207-settings.json","settingsSha256":"9f2b…","scriptOriginalPath":"/Users/someone/.claude/statusline.sh","scriptCopy":"20260813-041207-statusline.sh","scriptSha256":"4c81…","note":"state before claude-tui-line was first installed"}
 ```
+
+One line, no wrapping — a pretty-printed entry spans lines, and then the format's one guarantee is
+gone. Write it with `>>`, never with a whole-file write tool:
+
+```bash
+printf '%s\n' "$entry_json" >> ~/.claude/claude-tui-line/backups/ledger.jsonl
+```
+
+This was a JSON array until SPEC §12.2.1, and the reason for the change is worth carrying at the
+call site. An array cannot be appended to — its closing bracket has to move — so adding an entry
+meant reading the whole file and writing it back. **You** are the thing that does that: no compiled
+code writes this file, so "write the array back" meant re-emitting every prior entry, each holding
+opaque SHA-256 digests, unrecognised `statusLine` keys, and absolute paths, from context. Dropping
+one is undetectable afterwards, because a lost entry and an entry never written leave the same file.
+The entry most at risk is the oldest, which is `origin`, which is the one that can never be
+recreated: once a claude-tui-line binary is installed, the test in step 7 can never again come out
+`origin`, so the loss is permanent and nothing downstream reports it.
+
+**Reading it:** parse each non-empty line as its own object. A missing file means no entries. If the
+*final* line is incomplete, discard that line and use the rest — a torn append costs the newest
+entry and leaves every earlier one byte-identical, which is the whole reason for the format. That is
+not the "unreadable ledger" that stops `revert`; every complete line before it is still the ledger.
 
 `statusLine` holds the previous value **verbatim**, including keys you do not recognise. If there
 was no `statusLine` key at all, record `"statusLine": null` — that is a real, restorable state, and
@@ -229,7 +239,8 @@ the one definition; the commands cite it rather than restating it.
 Any command that is about to write `settings.json` or `claude-tui-line.json`:
 
 1. Ensure `~/.claude/claude-tui-line/backups/` exists and is writable. Stop if not.
-2. Read `ledger.json` (treat a missing file as `[]`).
+2. Read `ledger.jsonl` (a missing file means no entries; a torn final line is discarded, not fatal).
+   You are reading it to *decide* step 7, and for nothing else — do not hold it to write it back.
 3. Read the live `settings.json` and its current `statusLine` value.
 4. Copy `settings.json` into the backup directory with a timestamped name; hash it.
 5. If `statusLine.command` names a script on disk, copy that too; hash it.
@@ -239,7 +250,8 @@ Any command that is about to write `settings.json` or `claude-tui-line.json`:
    here", never three omitted fields.
 7. Append **one** entry — `origin` if and only if no `origin` entry exists **and** the current
    `statusLine` does not already point at a claude-tui-line binary; otherwise `checkpoint`.
-8. Write `ledger.json` back.
+8. Append it as **one line** to `ledger.jsonl`, with `>>`. Existing lines are not read here, not
+   re-emitted, and not touched.
 9. **Only now** write: the new `statusLine` into `settings.json` atomically, preserving other keys,
    and/or the new `claude-tui-line.json`.
 10. Report the backup path and the kind of entry you appended.

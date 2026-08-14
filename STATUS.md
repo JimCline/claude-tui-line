@@ -3007,6 +3007,44 @@ dependency an explicit citation rather than a coincidence, so `check-citations` 
 now records §2.11.3's ordering constraint as a real `blockedBy` on #17 instead of a sentence in a
 document nobody re-reads before starting work.
 
+## The ledger is JSON Lines now (§12.2.1)
+
+§12.2 said "`ledger.json` is append-only" and `docs/backup-ledger.md` expanded that into "A JSON
+array, append-only. Read it, append one entry, write the whole array back." A JSON array cannot be
+appended to — the closing bracket has to move — so the procedure's own next sentence was *rewrite
+every prior byte*. "Append-only" was the semantic; the operation was the opposite of it.
+
+What made that fatal rather than untidy: **no `.cs` file writes the ledger, and none is planned
+to.** Checked — zero hits for `FileMode.Append`, `AppendAllText`, `AppendAllLines`, and no source
+file mentions the ledger at all. Per §12.1 the commands are prompts, so the writer is always an LLM
+with a whole-file write tool, and "write the array back" meant re-emitting every prior entry from
+context: SHA-256 digests, `statusLine` keys it is explicitly told it will not recognise, absolute
+paths, growing every invocation. Rule 1 forbids removing an entry, but under a whole-file rewrite
+that rule is not just unenforced — it is uncheckable, because a dropped entry and an entry never
+written leave the same file.
+
+The loss lands on the oldest entry, which is `origin`, which is the one that can never be
+recreated — rule 4 writes `origin` only when the live `statusLine` does not already point at a
+claude-tui-line binary, and after install that is permanently false. So a dropped `origin` produces
+no error and no gap: every later entry is a correctly-written `checkpoint`, forever. §12.5 rules a
+damaged ledger stops `revert` and forbids reconstructing one, so there is no recovery. §12.2's
+opening argument is that the naive design lets the escape hatch close quietly exactly as it becomes
+needed; it then chose a write path that reintroduced that failure one layer down.
+
+Ruled in §12.2.1: JSON Lines, file renamed `ledger.jsonl`, appended with `>>` and never with a
+whole-file write; the ledger is read to *decide*, never to write back; a reader discards a torn
+final line instead of treating it as the unreadable-ledger case, since every complete line before
+the tear is still the ledger; and if this ever moves into the binary, .NET's `FileMode.Append` is
+seek-then-write rather than POSIX `O_APPEND` and is not sufficient. §12.6.5's compare-and-swap
+deliberately does not reach here — for two concurrent ledger writes the correct outcome is that
+*both* entries land.
+
+Timing was the deciding factor. `~/.claude/claude-tui-line/backups/` does not exist on this machine;
+no ledger has ever been written, so there is nothing to migrate and no `origin` at risk. Converting
+later would mean rewriting the file whole — the exact operation the section forbids — on the one
+file whose oldest entry cannot be regenerated. Landed the doc and command changes in the same commit
+rather than leaving `docs/backup-ledger.md` describing an array the spec had already replaced.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

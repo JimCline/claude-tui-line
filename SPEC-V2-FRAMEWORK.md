@@ -4962,7 +4962,8 @@ Shared by every command that writes. It lives at `~/.claude/claude-tui-line/back
 the user's Claude directory rather than plugin data, because a backup that a plugin reinstall
 can delete is not a backup.
 
-`ledger.json` is append-only. Each entry records the UTC timestamp, the previous
+`ledger.jsonl` is append-only in the strict sense ruled in §12.2.1 — one entry per line, added
+without rewriting any existing one. Each entry records the UTC timestamp, the previous
 `statusLine.command` verbatim, a copy of any script that command referenced, **a copy of
 `claude-tui-line.json` whenever one exists**, the SHA-256 of each captured artifact, and a `kind`:
 
@@ -5026,6 +5027,71 @@ prompts actually read at runtime; this is the design, that is the procedure.
    the command that has not yet backed up.** `commands/migrate.md` step 8 says so at its own call
    site; it is a rule here so that the next command to write two files does not have to rediscover
    it.
+
+#### 12.2.1 A JSON array cannot be appended to
+
+"The ledger is append-only" is the sentence above, and `docs/backup-ledger.md` expanded it into a
+procedure that contradicts it: *"A JSON array, **append-only**. Read it, append one entry, write the
+whole array back."* An array cannot be appended to. Its closing bracket has to move, so adding an
+entry rewrites every prior byte of the file. "Append-only" there states a *semantic* — rule 1, never
+edit or remove an entry — while the operation it introduces is *rewrite everything*, and the
+semantic holds only if whoever performs the rewrite is careful.
+
+Who performs it is what turns this from untidy into dangerous. Nothing in `src/` writes the ledger
+and nothing is planned to; per §12.1 the commands are prompts, so every writer is a language model
+following `docs/backup-ledger.md`, and the file-writing tool it has replaces a file whole. Step 8 of
+that procedure — "Write `ledger.json` back" — is therefore *a model re-emitting every prior entry
+from context*. Each entry carries a `statusLine` recorded verbatim **including keys it does not
+recognise**, two or three SHA-256 digests, and a `configCopy`. That is precisely the content a model
+reproduces least reliably — opaque hashes, unfamiliar keys, absolute paths — and it grows with every
+invocation. Rule 1 forbids editing an entry, but under a whole-file rewrite that rule is not merely
+unenforced, it is uncheckable: a dropped entry and an entry never written leave the same file.
+
+The entry most exposed is the oldest, and the oldest is `origin`. Rule 4's condition writes `origin`
+if and only if none exists **and** the current `statusLine` does not already point at a
+claude-tui-line binary. Once the tool is installed the second clause is permanently false. So losing
+the `origin` line produces no error, no retry, and no gap the next command can notice — it produces
+a machine on which every later entry is a correctly-written `checkpoint`, forever, and the user's
+pre-installation state is gone. §12.5 rules that a missing, empty, or unreadable ledger stops the
+command and forbids reconstructing one, which is right, and which means nothing recovers from this.
+§12.2's own opening argument is that the naive design lets the escape hatch close quietly exactly as
+it becomes needed; it then specified a write path that reintroduces that same failure one layer
+down, through the file instead of through the policy.
+
+**The ledger is the root of the recovery tree.** `settings.json` has a backup and
+`claude-tui-line.json` has a backup, and both of those backups are the ledger. The ledger has none.
+It therefore needs a stronger durability rule than either artifact it protects, and it currently has
+a weaker one: rule 3 gives `settings.json` temp-file-then-rename atomicity, and step 8 gives the
+ledger a bare overwrite.
+
+So, ruled:
+
+1. **The ledger is JSON Lines — one entry per line — and the file is `ledger.jsonl`.** The
+   requirement behind the format is not stylistic. It is that adding an entry must not require
+   reproducing the bytes of an existing one. JSON Lines has that property; a JSON array
+   structurally cannot.
+2. **The append is a real append.** One line redirected onto the end of the file. Reading the ledger
+   in order to *decide* is required and unchanged — step 7 must still determine whether an `origin`
+   exists. Reading it in order to *write it back* is forbidden, and the whole-file write tool is
+   never pointed at the ledger.
+3. **A reader skips a trailing partial line rather than failing on it.** One short line appended to
+   a local file is very nearly all-or-nothing, and "very nearly" is the case the format exists to
+   survive: a torn append costs the newest entry and leaves every earlier one byte-identical. That
+   is only worth anything if the reader tolerates it. §12.5's fatal stop is for a ledger that cannot
+   be read at all, not for one whose last line is short — every complete line before the tear is
+   still the ledger.
+4. **If this ever moves into the binary, `FileMode.Append` is not enough.** .NET's append mode is
+   seek-then-write rather than POSIX `O_APPEND`, so two concurrent writers can resolve the same
+   offset and one silently overwrites the other. Open with real `O_APPEND`, or serialize. §12.6.5's
+   compare-and-swap governs `settings.json` and the config and deliberately does not reach here: the
+   correct outcome for two concurrent ledger writes is that **both entries land**, not that the
+   second one wins.
+
+Decide it now, because it is free exactly once. `~/.claude/claude-tui-line/backups/` does not exist
+on any machine yet — no ledger has ever been written, so there is nothing to migrate and no `origin`
+at risk. That stops being true the first time `setup` runs for real, and a format migration would
+have to rewrite the file whole: the operation this section exists to forbid, performed on the one
+file whose oldest entry can never be recreated.
 
 ### 12.3 `/claude-tui-line:migrate`
 

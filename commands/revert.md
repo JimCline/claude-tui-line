@@ -11,7 +11,7 @@ Requested checkpoint, if any: **$ARGUMENTS**
 ## 1. Read the ledger
 
 Read `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md` for the format, then read
-`~/.claude/claude-tui-line/backups/ledger.json`.
+`~/.claude/claude-tui-line/backups/ledger.jsonl` — one entry per line, so parse it line by line.
 
 **Missing, empty, or unreadable** → say so plainly and stop. Do not reconstruct a statusline from
 memory, from this repo, or from anything in the conversation — a fabricated statusline the user
