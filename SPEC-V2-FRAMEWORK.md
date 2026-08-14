@@ -1966,13 +1966,45 @@ occupy, the column is a shared edge and §2.10.1 rule 4's tie-break decides its 
 over the rows only the taller box occupies, the line is still drawn as that pane's own right edge,
 uncontended; at the row where the shorter box closes, its `bottom` run terminates against the
 vertical, and that cell accumulates `N`+`S` from the vertical and `W` (or `E`) from the horizontal,
-giving `┤` (or `├`) straight out of the table. Disjoint runs are legal and must not be healed: two
-`content`-height neighbours with `valign: "top"` and `valign: "bottom"` leave a band of rows that
-neither box occupies, no line is drawn there, and the shared column emerges as two disjoint
-vertical segments with a gap. This is correct — §2.8.3 rules that band rows a shrink-wrapped box
-does not occupy are surface background, outside any border. Filling the gap to make the column
-continuous would draw border around nothing — a box side with no box behind it. An implementation
-must not "repair" a discontinuous column.
+giving `┤` (or `├`) straight out of the table. **Interior gaps are filled; the ends are not extended.** Two `content`-height neighbours with
+opposing `valign` leave a band of rows that neither box occupies. The shared column is drawn
+continuously across that gap: the vertical run in a shared column spans from the first row any
+contributing box occupies to the last, with interior holes filled. The rule stated as one line:
+**the run is the convex hull of its contributors' extents.** Fill holes, never extend ends.
+
+**What the line means over a row where no box exists.** §2.10's first sentence already answers it:
+*"A border is not a property of a pane. It is a property of the boundary."* Under `collapse: true`
+the shared column is not either neighbour's edge — §2.10's sizing rule charges it once to the
+split, never to the two panes, precisely because it belongs to the boundary. A boundary separates
+two panes' allocated regions, and those regions span the band whether or not the boxes inside them
+are full height. So at a gap row the line is the boundary doing exactly what it does at every other
+row: separating the region on its left from the region on its right. Nothing about that lapses
+because a box happened to close early.
+
+**Why the ends are still not extended.** A border segment must be anchored at both ends by a
+corner or a junction. Filling an interior hole keeps both ends anchored — there is a box above it
+and a box below it. Extending past the outermost contributor produces a line terminating in open
+space with no glyph to close it, which reads as a rendering artifact rather than as structure.
+Concretely: two `content` panes both occupying rows 1–3 of a 7-row band share a column over rows
+1–3 and not over rows 4–7, because there is no second anchor down there. This is the case that
+distinguishes the convex hull from "the boundary spans the split," and the hull is the rule.
+
+**This does not contradict §2.8.3.** That section rules that band rows a shrink-wrapped box does
+not occupy are "surface background, outside any border" — a statement about the pane's own box,
+governing its interior and its own four edges. A shared boundary is not the pane's border, so
+§2.8.3 does not reach it. The unoccupied rows remain background inside each pane's region; the
+boundary between the regions is the compositor's, and it is continuous.
+
+**Colour and style over a filled gap.** §4.1 below resolves a shared cell's colour by first
+requester among the arms present at that cell. At a filled gap row no arm is present, so that
+tie-break has no input and would be undefined. Ruling: a filled span takes the colour and style of
+the first requester in tree declaration order among the boundary's contributors — resolved once
+per boundary from the contributor set, not per cell from the arms. A filled gap therefore never
+introduces a colour change of its own; it continues whichever contributor the boundary already
+resolved to.
+
+**A filled gap is not a conflict.** `collapsed-edge-conflict` reports disagreement between panes
+that both asked for a line. No pane asked for the gap row, so filling it reports nothing.
 
 **4. Two things §2.10 assumes without stating.**
 
@@ -2036,6 +2068,36 @@ of §2.3's allocation; `collapse: false`'s boundary cost stays `gutter × (N −
 edges in its own `reserve(p)`; the golden parity gate does not move across #8a or #8b for the
 all-edges single-pane config; §2.11 pane collapse is untouched — `PaneCollapse.cs` keeps its
 current meaning and name.
+
+##### Verification
+
+1. **Per-cell grid.** A config with two `collapse: true` siblings, left pane `height: "content"`
+   with two rows, right pane three rows — assert the shared column carries a vertical glyph on all
+   three rows and a `┤` at the row where the left box closes.
+2. **Junction moves with `valign`.** Same config with the shorter pane `valign: "bottom"` — assert
+   the `├`/`┤` junction appears at the shorter box's top row instead, and the glyph above it is the
+   taller pane's plain vertical.
+3. **Interior gap is filled.** Left pane `content`/`valign: "top"` occupying rows 1–3, right pane
+   `content`/`valign: "bottom"` occupying rows 5–7, in a 7-row band under `collapse: true`. Assert
+   the shared column carries a vertical glyph on all seven rows including row 4, that row 4's glyph
+   is the plain vertical for the resolved style, and that row 4 carries the same colour as rows
+   1–3.
+4. **Ends are not extended.** Both panes `content`/`valign: "top"` occupying rows 1–3 of a 7-row
+   band. Assert the shared column carries glyphs on rows 1–3 only, and that rows 4–7 of that column
+   are blank. This is the case that fails if the boundary is implemented as spanning the split's
+   full inner height rather than as the convex hull of its contributors.
+5. **Mask coverage.** A unit test that feeds all 16 masks to each of the five style tables and
+   asserts a non-empty glyph for the fifteen non-zero masks and a space for `0b0000`.
+6. **Corner derivation.** A lone bordered pane's four corner cells resolve to masks `0b0110` /
+   `0b0011` / `0b1100` / `0b1001` and render the same four glyphs the current `PaneBorderRenderer`
+   emits for that style.
+7. **Diagnostic granularity.** Two `collapse: true` panes disagreeing on a shared edge's colour over
+   three rows produce exactly one `collapsed-edge-conflict`.
+8. **`collapse-not-surface-level`.** `collapse` on a pane rather than on `surface` is an error, not
+   a warning and not a silent ignore.
+9. **#8a acceptance.** Golden parity output is byte-identical before and after the reserve
+   decomposition.
+10. **Naming.** No type or method named bare `Collapse` is introduced outside `PaneCollapse.cs`.
 
 ### 2.11 An empty pane collapses — but only the kind of empty that is knowable before sizing
 
