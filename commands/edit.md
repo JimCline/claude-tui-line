@@ -54,11 +54,14 @@ Read the whole file. You need the tree in front of you to navigate to "the first
 ## 3. Capture the "before"
 
 ```bash
-<binary> --preview --columns $(tput cols)
+<binary> --preview --columns $(tput cols) 2>/tmp/edit-before-notes
+cat /tmp/edit-before-notes
 ```
 
-Keep the output. This is the only moment it exists, and it is half of what you show the user at the
-end.
+Keep **both** streams. The render is half of what you show the user at the end; the notes on stderr
+are how you tell an effect of your change from one that was already there. A pane that was being
+dropped before you touched anything will still be dropped after, and without a "before" note to
+compare against you will report it as something you did.
 
 If it already errors or prints nothing, say so **now**, before editing. Otherwise your change gets
 blamed for a fault that predates it.
@@ -123,13 +126,26 @@ because the change looks obviously fine — that is exactly when a silent config
 ## 7. Preview, at three widths
 
 ```bash
-<binary> --preview --columns $(tput cols)
-<binary> --preview --columns 80
-<binary> --preview --columns 60
+<binary> --preview --columns $(tput cols) 2>/tmp/edit-after-notes
+<binary> --preview --columns 80 2>>/tmp/edit-after-notes
+<binary> --preview --columns 60 2>>/tmp/edit-after-notes
+cat /tmp/edit-after-notes
 ```
 
 `--check` passing is not evidence the result looks right. Most layout mistakes only appear when
 something has to wrap, which is why the narrow widths are not optional.
+
+**Diff these notes against the ones from step 3.** That comparison is the only thing that separates
+"my edit dropped a pane" from "a pane was already being dropped at 60 columns and still is" — and
+those call for opposite responses. A note present in both is context for the user; a note that is
+new is your change, and `--check` will never tell you about either, because neither is a config
+error (§9.8.1).
+
+The 80- and 60-column runs append rather than overwrite, so one file holds all three. Read it
+knowing the two kinds of note behave differently in it: a width-drop note carries its own width in
+its message, so it stays unambiguous, while a `maxLines` cap note does not — the cap is
+width-independent, so it fires identically at all three widths and appears three times. Three
+copies of a cap note is one finding, not three.
 
 Then verify three things and report each honestly:
 

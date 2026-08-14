@@ -137,8 +137,31 @@ Run both against the same stdin payload:
 ```bash
 payload='{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}'
 echo "$payload" | COLUMNS=$(tput cols) <original command>
-echo "$payload" | COLUMNS=$(tput cols) <binary> --preview --columns $(tput cols) --config <temp path>
+echo "$payload" | COLUMNS=$(tput cols) <binary> --preview --columns $(tput cols) --config <temp path> 2>/tmp/preview-notes
+cat /tmp/preview-notes
 ```
+
+**Read that stderr file. It is not noise, and it is the half of the answer stdout cannot give.**
+Render notes go to stderr in the human form (§9.8.1) precisely so stdout stays byte-comparable for
+the diff you are about to do — which means a command that captures stdout alone throws away every
+explanation of what it just did. Do not merge the streams with `2>&1`: that corrupts the very
+comparability the split exists to protect.
+
+A note tells you *why* the render is short, and that changes the fix completely:
+
+- `pane N dropped: no width remained at C columns` — the mapping is fine; the layout does not fit
+  at that width. Report it to the user, do not re-map anything.
+- `item 'X' emitted N lines; M kept (maxLines)` — a tier-2 command item wrapping their script is
+  being cut to 4 lines by default (§7). The original ran under no such cap. Raise `maxLines`, or
+  say so in your report.
+
+Without the notes, both of these reach you as nothing but a token missing from the diff, and the
+obvious response — re-map the element — is wrong for each. This is the same class as the timeout in
+step 4: a faithful port losing an element to a budget the original never ran under, with no symptom
+that names the budget.
+
+If you want them structured instead of read by eye, `--preview --json` carries the same notes in
+`notes[]`. Use whichever you will actually check.
 
 This is **not** a byte-parity check — the layout differs by design, that is the point. It is a
 *content* check: strip escape sequences from both, and every visible token the original produced
@@ -146,7 +169,9 @@ must either appear in the new render or be on the tier-3 list. Anything else is 
 wearing a success message.
 
 Also preview at `--columns 80` and `--columns 60`. Most layout mistakes only appear when something
-has to wrap.
+has to wrap. Capture stderr on those runs too — they are the widths where `pane N dropped` actually
+fires, and a narrow preview that silently renders short is the failure this whole step exists to
+catch.
 
 If the original script errors on this synthetic payload, say so rather than treating its empty
 output as a match. Two blank lines are not parity.
@@ -157,7 +182,10 @@ output as a match. Two blank lines are not parity.
 
 1. the proposed config
 2. the side-by-side render from step 6
-3. the tier-3 list — and if it is empty, say "everything mapped" rather than omitting the section;
+3. **every render note step 6 produced**, at each width you previewed — these are the differences
+   the side-by-side cannot show, because a dropped pane looks identical to an element you never
+   mapped
+4. the tier-3 list — and if it is empty, say "everything mapped" rather than omitting the section;
    an absent section reads as an oversight
 
 Then ask. If they say no, you have written nothing outside the backup directory and there is
