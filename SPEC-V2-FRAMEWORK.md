@@ -1417,6 +1417,12 @@ correctness argument (§2.11's convergence reasoning) depends on having no speci
 it never qualifies for collapse, and no exemption is needed anywhere. The bug and the feature are
 the same edit.
 
+That argument rests on the reason pane always having something in it, which **§9.2.2** is what
+makes true: its degradation ladder bottoms out at "as much of `claude-tui-line` as fits" rather than
+at nothing, so no width drives the row to zero content. Structural emptiness is in any case a
+question about whether the item exists, not about how many cells it renders — §2.11.2 already
+settles that direction — but the two arguments should agree, and this notes that they do.
+
 **Ordering, and it is a hard constraint.** §9.2.1 (task #17) must land with or before §2.11
 (task #4). If §2.11 lands first, it ships with a temporary guard holding the fallback pane open,
 deleted when §9.2.1 arrives — because the window between them is one in which **every** config

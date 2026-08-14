@@ -2984,6 +2984,29 @@ belongs to a config that has neighbours, whether or not they have anything to sa
 also makes `allowFallback` a config-load fact, which is what §2.5.2 needs — a flag recomputed per
 render from a tree that changes per render is the leaf asking about its position with an extra step.
 
+## The red gate closed itself
+
+`check-notes` went red on `PaneRenderer.cs:33`, the finding named the file, the line and the
+required text, and the implementor's next commit made it green. No round trip, no restating the
+rule, no one taking my word for what §9.8.1 says. That is the whole argument for mechanising a
+rule instead of writing it down harder — this same rule had already decayed once, and the way it
+decayed was me asserting it had been discharged when it had not.
+
+`check-docs` is green on all three checks.
+
+## §2.11.3 and §9.2.2 agree, and now say so
+
+§2.11.3 argues that Defect 12 is safe to implement once §9.2.1 gives the config-error fallback pane
+content, because a pane carrying a reason is not structurally empty and so never collapses. That
+argument rests on the reason pane always having something in it — which §9.2.2, written later this
+session, is what actually guarantees: its ladder bottoms out at "as much of `claude-tui-line` as
+fits" rather than at nothing.
+
+The two were written two sections and several commits apart and happened to compose. Made the
+dependency an explicit citation rather than a coincidence, so `check-citations` holds it. Task #4
+now records §2.11.3's ordering constraint as a real `blockedBy` on #17 instead of a sentence in a
+document nobody re-reads before starting work.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
