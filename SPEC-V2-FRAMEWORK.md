@@ -1409,6 +1409,51 @@ there is no cached value at all, the item is suppressed. The next tick retries.
 **Never block the render.** A pathological command cannot exceed its timeout, and the render
 proceeds with whatever is available. Exit code is always 0 and stdout is always valid.
 
+### 5.1 Built-in probes are cached in the same store, not a second one
+
+`remote-url` shells out to git. `ItemContext` makes the probe lazy so it only costs a subprocess
+when something actually references it — but *referencing* it is the normal case for anyone using
+`{remote-url}` in a link, and then it costs a subprocess **every second, forever**, for a value
+that changes approximately never.
+
+**It uses `ItemCache`.** Not a parallel cache for built-ins: the store already does file-per-key,
+atomic temp-and-rename, silent-on-failure, shared across every session on the machine. A second
+cache with its own eviction and its own bugs is the §1 violation this project keeps paying for
+elsewhere, and there is nothing about a built-in probe that a `command` item's cache does not
+already handle.
+
+Four rulings, of which the second is the one that bites:
+
+- **Key on `cwd`, not the repository root.** Two directories in one repo get two entries holding
+  the same URL, which looks wasteful and is correct: finding the repo root costs the subprocess
+  this exists to avoid, so paying it to deduplicate the cache would spend the saving to achieve
+  the saving.
+
+- **A probe that finds nothing is a cached result, not a cache miss.** Outside a git repo, or in
+  a repo with no remote, `Probe` returns null — and null is the *answer*, cached like any other.
+  Treating absent-value as not-yet-probed re-spawns git on every render in exactly the case where
+  the spawn can never return anything, which is the pathological case wearing the costume of the
+  normal one. This mirrors §5's existing rule that a clean run with empty output is a legitimate
+  value.
+
+- **A fixed TTL of 300 seconds, with no config key.** `PaneItem.TtlSeconds` exists and is
+  tempting, but `remote-url` is frequently referenced *only* from a link template, where there is
+  no pane entry to carry it — and if it is referenced from a pane entry and a link at once, two
+  TTLs contend for one cache entry with no principled winner. A fixed default has no such
+  ambiguity. Five minutes bounds how long a click can go to a stale repository after `git remote
+  set-url`, against 300× fewer subprocesses; widening this to a config key later is easy, and
+  withdrawing one after configs depend on it is not.
+
+- **No lock, and no stampede mitigation.** Several sessions can miss together and each spawn git.
+  At a 300-second TTL that is N spawns per five minutes rather than N per second, and the fix for
+  it — a lock file in the render path — adds a failure mode strictly worse than the cost it
+  removes.
+
+The laziness stays exactly where it is. The cache goes *inside* the `Lazy`, so an unreferenced
+`remote-url` still touches neither git nor the filesystem: referenced → `Lazy` fires → cache read
+→ hit returns, miss probes and writes. Reversing those two would make every render pay a file
+read for a value nobody asked for.
+
 ## 6. Coloring
 
 Anywhere this spec accepts a colour — an item's `color`, a border's `color` (§2.10) — the value
