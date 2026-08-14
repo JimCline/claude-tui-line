@@ -22,7 +22,14 @@ public static class PaneBorderRenderer
     /// resolved outer width stays correct) but draws blank chrome instead of glyphs — one code
     /// path for both cases, not a separate borderless layout.
     /// </param>
-    public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<PaneRow> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false)
+    /// <param name="omitEdges">
+    /// SPEC-V2-FRAMEWORK.md §2.8.2: the height-axis twin of <paramref name="suppressed"/>. A
+    /// bordered pane whose row budget falls under 3 cannot close its box, so it drops the top and
+    /// bottom edge rows entirely (reclaiming both for content) rather than drawing blank chrome in
+    /// their place — unlike <paramref name="suppressed"/>, this changes row count, not just glyphs.
+    /// Left/right verticals still wrap each content row, independently suppressed or not.
+    /// </param>
+    public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<PaneRow> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false, bool omitEdges = false)
     {
         if (border.Style is null)
         {
@@ -38,10 +45,16 @@ public static class PaneBorderRenderer
         string Colored(string glyphs) =>
             suppressed ? Markup.Escape(glyphs) : $"[{colorMarkup}]{Markup.Escape(glyphs)}[/]";
 
-        var top = Colored(Part(BoxBorderPart.TopLeft) + Repeat(Part(BoxBorderPart.Top), width + 2) + Part(BoxBorderPart.TopRight));
-        var bottom = Colored(Part(BoxBorderPart.BottomLeft) + Repeat(Part(BoxBorderPart.Bottom), width + 2) + Part(BoxBorderPart.BottomRight));
         var left = Colored(Part(BoxBorderPart.Left));
         var right = Colored(Part(BoxBorderPart.Right));
+
+        if (omitEdges)
+        {
+            return contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + BorderReserve)).ToList();
+        }
+
+        var top = Colored(Part(BoxBorderPart.TopLeft) + Repeat(Part(BoxBorderPart.Top), width + 2) + Part(BoxBorderPart.TopRight));
+        var bottom = Colored(Part(BoxBorderPart.BottomLeft) + Repeat(Part(BoxBorderPart.Bottom), width + 2) + Part(BoxBorderPart.BottomRight));
 
         var rows = new List<PaneRow>(contentRows.Count + 2) { new(top, outerWidth) };
         rows.AddRange(contentRows.Select(row => new PaneRow(left + " " + row.Markup + " " + right, row.Width + BorderReserve)));

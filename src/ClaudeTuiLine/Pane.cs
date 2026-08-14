@@ -233,6 +233,8 @@ public sealed record PaneItem(
 /// a split) and is resolved by the renderer, not the parser. <see cref="MinSize"/>/
 /// <see cref="MaxSize"/> bound a <c>content</c>-sized pane (§2.3); <see cref="Gutter"/> is the
 /// blank-cell spacing this pane inserts between its own direct children.
+/// <see cref="ClipRows"/> is never set by config parsing — it is a §2.8.1 degrade-ladder-internal,
+/// per-attempt row budget the ladder assigns to a leaf pane while searching for a fit.
 /// </summary>
 public sealed record Pane(
     PaneSplit Split,
@@ -249,4 +251,5 @@ public sealed record Pane(
     PaneValign Valign = PaneValign.Top,
     PaneAlign Align = PaneAlign.Left,
     PaneDistribute Distribute = PaneDistribute.Greedy,
-    PaneHeight Height = PaneHeight.Fill);
+    PaneHeight Height = PaneHeight.Fill,
+    int? ClipRows = null);

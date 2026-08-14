@@ -18,17 +18,39 @@ public static class PaneTreeRenderer
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
         RenderNoteCollector notes,
-        int? targetOuterHeight = null)
+        int? targetOuterHeight = null,
+        IDictionary<Pane, int>? rowCounts = null)
     {
         var pane = node.Source;
         var borderReserve = pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
         var suppressed = SizeResolver.ShouldSuppressBorder(pane, node.OuterWidth);
 
+        // §2.8.1/§2.8.2: pane.ClipRows, when set, is the degrade ladder's authoritative row
+        // budget for this (always leaf) pane. Height suppression is decided directly from that
+        // budget here, rather than from the row count the cap produces, to avoid a circular
+        // dependency between "how much content to keep" and "will the border be suppressed". A
+        // pane whose own declared maxRows is under 3 is an author choice (keeps its border, loses
+        // content) and is never suppressed by this mechanism.
+        var bordered = pane.Border.Style is not null;
+        var ownDeclaredTiny = pane.MaxRows is int declaredMax && declaredMax < 3;
+        bool heightSuppressed;
+        int? maxContentRows;
+        if (pane.ClipRows is int budget)
+        {
+            heightSuppressed = bordered && budget < 3 && !ownDeclaredTiny;
+            maxContentRows = (heightSuppressed || !bordered) ? Math.Max(0, budget) : Math.Max(0, budget - 2);
+        }
+        else
+        {
+            maxContentRows = null;
+            heightSuppressed = false; // decided below, from the natural post-render row count.
+        }
+
         IReadOnlyList<PaneRow> contentRows;
         if (node.Children.Count == 0)
         {
-            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes);
+            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes, maxContentRows);
         }
         else if (pane.Split == PaneSplit.Vertical)
         {
@@ -37,7 +59,7 @@ public static class PaneTreeRenderer
             // tallest sibling's height as its own target before this loop composes them side by
             // side, rather than being padded around afterward (which would pad outside its border
             // instead of growing the border to match).
-            var natural = node.Children.Select(c => Render(c, ctx, values, tokens, notes)).ToList();
+            var natural = node.Children.Select(c => Render(c, ctx, values, tokens, notes, rowCounts: rowCounts)).ToList();
             var childHeight = natural.Count == 0 ? 0 : natural.Max(c => c.Buffer.Rows.Count);
 
             var contributions = new List<Compositor.PaneContribution>();
@@ -53,7 +75,7 @@ public static class PaneTreeRenderer
                 // padding (below) then places that shorter box within the band, unbordered.
                 var childIsContentHeight = node.Children[i].Source.Height == PaneHeight.Content;
                 var contribution = natural[i].Buffer.Rows.Count < childHeight && !childIsContentHeight
-                    ? Render(node.Children[i], ctx, values, tokens, notes, childHeight)
+                    ? Render(node.Children[i], ctx, values, tokens, notes, childHeight, rowCounts)
                     : natural[i];
                 contributions.Add(contribution);
             }
@@ -65,7 +87,7 @@ public static class PaneTreeRenderer
             var rows = new List<PaneRow>();
             foreach (var child in node.Children)
             {
-                var contribution = Render(child, ctx, values, tokens, notes);
+                var contribution = Render(child, ctx, values, tokens, notes, rowCounts: rowCounts);
                 rows.AddRange(contribution.Buffer.Rows);
             }
 
@@ -78,8 +100,19 @@ public static class PaneTreeRenderer
             contentRows = PadHeight(contentRows, targetInnerHeight, innerWidth, pane.Valign);
         }
 
+        if (pane.ClipRows is null)
+        {
+            var naturalTotal = contentRows.Count + (bordered ? 2 : 0);
+            heightSuppressed = bordered && naturalTotal < 3 && !ownDeclaredTiny;
+        }
+
         var borderColorMarkup = ColorResolution.Resolve(pane.Border.Color, values, tokens) ?? "grey";
-        var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, pane.Border, borderColorMarkup, suppressed);
+        var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, pane.Border, borderColorMarkup, suppressed, heightSuppressed);
+        if (rowCounts is not null)
+        {
+            rowCounts[pane] = borderedRows.Count;
+        }
+
         return new Compositor.PaneContribution(new PaneBuffer(borderedRows), node.OuterWidth, HasBackground: false, pane.Valign);
     }
 

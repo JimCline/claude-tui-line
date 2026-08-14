@@ -16,13 +16,36 @@ public static class PaneAssembler
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
-        RenderNoteCollector notes)
+        RenderNoteCollector notes,
+        int? maxContentRows = null)
     {
         var rawRows = pane.Items.Count == 0
             ? RenderDefaultRows(pane, innerWidth, ctx, notes)
             : RenderItemRows(pane, innerWidth, ctx, values, tokens, notes);
 
+        if (maxContentRows is int cap && rawRows.Count > cap)
+        {
+            rawRows = ClipRows(rawRows, cap, pane.Ellipsis);
+        }
+
         return rawRows.Select(row => AlignRow(row, innerWidth, pane.Align)).ToList();
+    }
+
+    // §2.8.1 rung 4 / §2.8.2: drops rows past cap, replacing the last survivor with a plain
+    // ellipsis marker row. A full-row replacement rather than a partial trailing-cell splice like
+    // PaneRenderer's width-axis TruncateSegment, because row-axis clipping runs after rows are
+    // already composed into opaque PaneRow markup, with no markup-safe splice point at this layer.
+    private static IReadOnlyList<PaneRow> ClipRows(IReadOnlyList<PaneRow> rows, int cap, string ellipsis)
+    {
+        if (cap <= 0)
+        {
+            return Array.Empty<PaneRow>();
+        }
+
+        var kept = rows.Take(cap - 1).ToList();
+        var escaped = Spectre.Console.Markup.Escape(ellipsis);
+        kept.Add(new PaneRow(escaped, ellipsis.Length));
+        return kept;
     }
 
     private static IReadOnlyList<PaneRow> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx, RenderNoteCollector notes)
