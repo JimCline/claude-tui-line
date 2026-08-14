@@ -671,6 +671,46 @@ child of a split in a 200-column one.** If those two outputs differ, something b
 compositor is still reading the surface width, and that is the defect the rule exists to
 prevent.
 
+#### 2.5.2 The purity property is right; the tuple it is stated over is wrong
+
+§2.5.1 ends by handing §10 a test: "the same leaf pane at the same inner width renders identically
+whether it is the root pane of an 80-column terminal or the third child of a split in a 200-column
+one." The intent behind it is correct and is the whole point of the section — nothing below the
+compositor may read the surface width. The sentence stating it is false, and §2.6 is what makes it
+false.
+
+§2.6 rules that a pane under `MinUsableWidth` takes the single-line fallback when the surface has
+exactly one pane and never takes it when the surface has more, and it gives a root pane the
+`overflow` default while a pane inside a split defaults to `truncate`. Both are deliberate, both
+are right, and both are stated as functions of where the pane sits. So the two positions §2.5.1
+names as an identity test are precisely the two positions §2.6 distinguishes: at an inner width
+below 20 the root pane emits one deliberately over-wide row and the third child of a split wraps or
+truncates, from the same items at the same inner width. The test as written asserts that these
+agree. They must not.
+
+The implementation already knows this. `PaneRenderer.RenderLeaf` takes
+`(items, innerWidth, overflow, ellipsis, notes, allowFallback)` — the two inputs §2.5.1 names, plus
+the two that §2.6 varies by position, plus the collector. The signature is right and the sentence
+is a summary of it written by someone who was thinking about `COLUMNS`.
+
+Ruled: **leaf rendering is a pure function of its full input tuple — `items`, `innerWidth`,
+`overflow`, `ellipsis`, and `allowFallback` — and §10's test fixes all of them, not two of them.**
+Same tuple, same bytes, at any position in any surface at any terminal width. That is a real
+property, it is the one §2.5.1 wanted, and unlike the version it wrote down it can actually hold.
+
+**`allowFallback` is a surface fact, computed at the root and passed down.** This is the part worth
+enforcing rather than recording. It is derived from the surface's pane count, so a leaf that
+computes it for itself has to ask a question about the surface — which is the defect §2.5.1's
+enforcement paragraph forbids, wearing different clothes. `COLUMNS` is the obvious way to reach
+around the compositor and this is the quiet one: no leaf may consult the pane count, the tree, or
+its own position. It receives the flag or it does not render.
+
+A note on why this survived: the false version of the test passes. Every fixture at an inner width
+of 20 or more, with `overflow` given explicitly rather than defaulted, renders identically in both
+positions — so a suite that never sizes a leaf below `MinUsableWidth` and never leans on the
+default confirms a property the spec does not have. §10.1's blank-surface controls exist for the
+same class of green.
+
 ### 2.6 Overflow — wrap or truncate, chosen per pane
 
 Content that does not fit its pane is a routine condition, not an error, and how it resolves is
@@ -757,6 +797,39 @@ pane width is the bug this rule exists to prevent.
 2. **Style is re-emitted on every continuation row.** A hard-broken segment must carry its
    color onto each row it occupies. A style that opens on row 1 and is never reopened leaves
    rows 2+ unstyled — or worse, bleeds into the pane beside it.
+
+#### 2.6.1 "The surface has exactly one pane" is a fact about the config, not about this render
+
+§2.6 conditions two rules on how many panes the surface has: the single-line fallback applies with
+exactly one pane and never with more, and the `overflow` default is `overflow` for a single root
+pane and `truncate` for a pane inside a split. Both are right. Neither says when the count is taken,
+and the count is not stable.
+
+A split that collapses under §2.11 reduces — §2.2 says so directly, "if it reduces to a single
+child, that child takes the full" extent, and §2.11 is careful that a collapsed child means `N − 1`
+rather than `N` with one blank. So a two-pane surface whose second pane goes empty *is* a surface
+with exactly one pane, by the only reading §2.6 offers. Take the count at render time and the
+survivor's `overflow` default flips from `truncate` to `overflow` and its fallback eligibility flips
+from off to on, because a sibling had nothing to say.
+
+At `refreshInterval: 1` that is not a corner case, it is a flicker. A pane whose neighbour holds a
+value that comes and goes — a git branch outside a repo, a command that returns empty on a cache
+miss — switches overflow behaviour once a second. The visible symptom is a statusline that
+alternates between a tidy truncated row and a row running past the surface into nothing, with no
+config change and nothing to report. Worse, the over-wide row is legal only under the v1 parity
+argument, and that argument is about a config that declares one pane; it says nothing about a config
+that declares two and got one.
+
+Ruled: **the pane count that decides both rules is the count the config declares, fixed when the
+config is loaded, and collapse never changes it.** A surface that collapses to a single pane keeps
+`truncate` and keeps the fallback disabled. Both rules keep the reason they were written for —
+parity belongs to a config that asks for one pane, and "never corrupt a neighbour" belongs to a
+config that has neighbours, whether or not they have anything to say this second.
+
+This makes `allowFallback` and the resolved `overflow` mode config-load facts rather than render
+facts, which is what §2.5.2 needs to be true for `allowFallback` to be a value passed down from the
+root. A flag recomputed per render from a tree that changes per render is not a surface fact; it is
+the leaf asking about its own position with an extra step.
 
 ### 2.7 Iteration 1 — one pane filling the statusline
 
