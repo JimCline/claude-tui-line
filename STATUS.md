@@ -2016,6 +2016,39 @@ check. That is precisely the class `check-citations.sh` and `check-counts.sh` ca
 being closed-world. Third mechanical check, real target, and the case for it is three failures in
 one session rather than a hypothetical.
 
+### The third check exists, and its first run was a false positive
+
+`tools/check-examples.sh` is built and wired into CI. It is the first check here that runs the
+code: `--items --json`, then two exact rules over tracked markdown — a fenced `"example": "…"` must
+be a value some item renders, and a row inside a block that reproduces `--items` plain output must
+carry that item's live example. The block has to identify itself by its own `Item kinds:` pointer
+line rather than by resembling a table, because elsewhere the document legitimately shows items with
+a `format` or `extract` applied and those are *not* the default render. §4.3's
+`worktree:api(feature/ABC-123)` is the case that would otherwise have been reported as a defect on
+day one.
+
+Proven to fail before being trusted: against a fixture carrying a stale `⎇ main`, a stale
+`~/code/acme-web`, and an Engram string missing its verb glyph, it reports all three and exits 1.
+With no binary, or with an empty item list, it exits 2 — never a clean report it did not earn.
+
+**Its first run against the real tree flagged this file, and the flag was wrong.** The passage above
+recording that `"example": "⎇ main"` had been removed is a sentence *about* a retired value, not a
+claim that it renders. Correct by the letter, wrong by the point — and a check that forbids a
+retrospective from quoting the value it is retiring makes the project unable to describe its own
+defects, which is how a check gets switched off. The distinction that survived is that **a fenced
+block asserts and prose discusses**, so rule 1 is fenced-only. The original defect lived in a fenced
+shape, so the narrowing gave up nothing.
+
+That the first execution produced a false positive rather than a finding is the more useful outcome.
+The three real instances had already been fixed by hand; what was untested was whether the guard
+could sit in CI without crying wolf. It could not, until it was narrowed. **The bar for a check is
+not "finds things" but "is worth reading every time"** — `check-counts.sh` says so in its own header,
+and this is the second check to have to earn it.
+
+Closes task #30. All three doc checks are now in CI, and the closed-world gap named in §13.3 is
+closed for the sixteen builtins' default renders — and only for those. Every other worked example in
+the specification remains an unverified assertion about the implementation.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

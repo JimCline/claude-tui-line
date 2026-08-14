@@ -38,3 +38,12 @@ jobs:
 
       - name: Test
         run: dotnet test tests/ClaudeTuiLine.Tests/ClaudeTuiLine.Tests.csproj -c Release
+
+      # The third doc check, and the only one that is not closed-world: it runs the binary
+      # and compares its rendered examples against what the documentation claims they are.
+      # It lives here rather than in the `spec` job because it needs the toolchain — which
+      # is the whole point of it, and the reason the other two cannot catch what it catches
+      # (§9.6.2.2, §13.3). It runs after the tests so a red suite is reported as a red
+      # suite, not as documentation drift.
+      - name: Documented examples match the binary
+        run: ./tools/check-examples.sh

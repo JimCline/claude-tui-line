@@ -3410,6 +3410,12 @@ specific behaviour is an assertion about the implementation and ages exactly lik
 the argument for keeping worked examples few, real, and re-checked whenever the section is
 reopened.
 
+`tools/check-examples.sh` now catches precisely this instance — it runs `--items --json` and
+compares. It is scoped to the sixteen builtins' default renders (§9.6.2.2), so it retires the
+specific trap this glyph fell into without retiring the general warning above: every example
+outside that scope is still an unverified assertion, and this paragraph is still the reason to
+treat it as one.
+
 **Why `kinds` is a section and not a column.** The accepted keys do not vary by item id. Every
 builtin takes `format`, `color`, `overflow`, and `link`, and nothing else; what varies is *how the
 item is written* — §4.1's `command`, §4.3's `from`/`extract`/`case`, §3.3's `parts`. Putting a key
@@ -3504,10 +3510,34 @@ assertion about the implementation that no document-versus-document check can ve
 closes exactly that gap for the sixteen builtins: its `example` field is `BuildDefaultSegment` run
 against §9.3.1's fixture, so a check that runs `--items --json` and greps this document for
 example values that disagree is a document-versus-*code* check, which is the class §13.3's two
-checks cannot reach. It is worth building as the third one, and it is worth building *because* the
-alternative already failed three times in a single session (see STATUS.md) — the last two of them
-inside the edit that documented the failure. Writing an illustrative value is frictionless;
-verifying it means reading a builder. Nothing but a machine closes that gap.
+checks cannot reach. It is worth building *because* the alternative already failed three times in a
+single session (see STATUS.md) — the last two of them inside the edit that documented the failure.
+Writing an illustrative value is frictionless; verifying it means reading a builder. Nothing but a
+machine closes that gap.
+
+**It exists: `tools/check-examples.sh`,** the third check, and the only one that runs the code. It
+enforces two rules, both exact, neither guessing at what a line "looks like":
+
+- a `"example": "…"` **inside a fenced block** must be a value some item renders;
+- inside a fenced block that reproduces `--items` plain output — identified by its own trailing
+  `Item kinds:` pointer line, not by resembling a table — a row whose first column is a known item
+  id must carry that item's live example in its second.
+
+Columns are split on runs of two-or-more spaces, so the padding widths in the illustration above
+are not load-bearing. Pinning them would freeze the half this section explicitly left free.
+
+**Rule 1 is fenced-only, and the first run is why.** It flagged STATUS.md's sentence recording that
+the `⎇ main` example had been *removed* — correct by the letter, wrong by the point. A retrospective
+that may not quote the value it is retiring cannot describe a defect at all, and a check that says
+so gets switched off within a week. The distinction that survives is that **a fenced block asserts
+and prose discusses**; the original defect was in a fenced shape, so nothing was given up. That the
+check's very first execution produced a false positive rather than a finding is the more useful
+result: the class it guards is narrow, and the cost of drawing it one notch too wide is the check
+itself.
+
+It cannot run in the `spec` CI job, which has no toolchain by design. It runs in `build`, after the
+tests, so a red suite reads as a red suite. If it cannot obtain a binary or the item list comes back
+empty it exits 2 and says so — never a clean report it did not earn.
 
 **`version` carries the same string `--version` prints**, read from the assembly through the one
 `AssemblyVersionInfo.InformationalVersion` accessor, never re-derived. §9.7 already makes the
