@@ -2765,6 +2765,61 @@ implemented by whoever is typing at the time.
 Verified the new count is actually checked rather than assumed: mutated "five rungs" to "six" and
 confirmed `check-counts` goes red naming `SPEC-V2-FRAMEWORK.md:3007`, then restored. Green again.
 
+## `9.4.2`: the derivation bullet had a wrong answer that passes every test
+
+Applied the same lens to `9.4.2` (unknown-key diagnostic, task #21) and it has the same shape as
+`9.2.1` — the contested half ruled well, the mechanism left to whoever implements it. Two of the
+three additions are worth stating outside the spec.
+
+The first is a live trap. `9.4.2` says the known-key set is "derived from the config types, not
+listed", and the obvious reading is reflection: `typeof(UserConfig).GetProperties()`. This binary is
+`PublishAot`, every config type binds through a source-generated `JsonSerializerContext`, and the
+test host is not AOT. So reflection compiles, passes the suite, and is exactly what the trimmer may
+drop from the published binary — the known-key set comes back short, and every valid config starts
+emitting unknown-key warnings, **for users only and never for us**. Ruled: the set comes from
+`ConfigJsonContext.Default.<Type>.Properties`, which is not merely AOT-safe but is the same metadata
+the deserializer binds with, so it cannot disagree with what actually parses.
+
+The second is that `[JsonExtensionData]` beats walking the JSON against a mirror of the config
+shape, because the mirror is the hand-maintained second registry the bullet forbids, reintroduced
+one level up. Letting the deserializer route unknown keys makes the per-object scoping fall out of
+binding instead of being reimplemented next to it.
+
+Case turned out to be already decided rather than open: every context sets
+`PropertyNameCaseInsensitive = false`, so `"Color"` genuinely does not bind and reporting it is
+correct. That also makes it the most valuable suggestion this diagnostic can produce.
+
+## `check-counts` was armed or disarmed by where a paragraph happened to wrap
+
+Wrote "There are two candidate rules, and a key is suggested when it satisfies either:" into
+`9.4.2`, then mutated the two to three to confirm the checker guarded it. It did not fire. The
+lead-in test was line-based, and "two" had landed on the line above the colon — so the count was
+unguarded for no reason other than the wrap point. **A check a reflow can silently switch off is the
+decay class the file exists to catch**, which makes this a defect in the checker rather than in the
+prose. Widened it to test the paragraph, trimmed to its final sentence.
+
+Widening it immediately surfaced three things the line-based version could not see, and only one of
+them was a real finding:
+
+- `SPEC:502` — "it applies at two levels ... so there are three cases:" above three items. A false
+  positive caused by taking the *first* count in the sentence. The file header always said the last
+  one was correct; the code had taken the first since it was written, and on a single line the two
+  almost never differed. Switched the code to agree with its own header.
+- `SPEC:4751` — "Four of §12.6's ten are conditions ...:" above four items. The `ten` belongs to a
+  list in another section. Fixed by requiring a content word after the numeral: a numeral followed
+  by `are`/`of`/`is` is referring to some other set, not promising this one. That lead-in is now
+  skipped rather than guessed at, which is the failure direction this checker is tuned for.
+- `SPEC:4771` — a genuine bug. `para` was never cleared when a pending list was flushed, so a
+  paragraph after a list inherited the text before it. Cleared it in `flush()`.
+
+Last fix was to the report itself, and it is the same lesson as the `check-citations` dot-escaping:
+it echoed the *line* the colon landed on, so the wrapped case printed "says 3" above a quoted
+sentence containing no 3, which reads as a broken check. It now echoes the sentence the count came
+from.
+
+Proved both directions: mutating the wrapped lead-in fires (`SPEC:3572`), mutating a single-line one
+still fires (`SPEC:3007`), and the unmutated tree is clean across all ten files.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

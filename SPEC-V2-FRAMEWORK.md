@@ -3532,6 +3532,56 @@ Two consequences that must not be left implicit:
   `unknown-key` is never intentionally doing so, and a gate that passes it writes a statusline
   that silently does not do what was asked. This is a requirement on §12, not a third severity.
 
+Both bullets say what must be true and neither says how, and the first one hides a mechanism
+choice with a wrong answer that passes every test.
+
+**"Derived from the config types" cannot mean reflection here.** This binary is `PublishAot`, and
+every config type is bound through a source-generated `JsonSerializerContext`
+(`ConfigJsonContext`). Walking `typeof(UserConfig).GetProperties()` compiles, works in the test
+host — which is not AOT — and is exactly the shape the trimmer is entitled to remove from the
+published binary. The failure is silent and it is in the shipped artifact only: the known-key set
+comes back short or empty, and a warning that fires on valid input is the outcome the bullet was
+written to prevent, now reachable only for users and never for us.
+
+**Ruled: the known-key set comes from the source-generated `JsonTypeInfo`** —
+`ConfigJsonContext.Default.<Type>.Properties`, each entry's `Name`. This is not merely the
+AOT-safe way to do it; it is the *same* metadata the deserializer binds with, so the set cannot
+disagree with what actually parses. Reflection would have been a second derivation of the same
+answer, and §9.3.4 already rules on what happens to those.
+
+**Ruled: unknown keys are captured with `[JsonExtensionData]`, not by walking the JSON against a
+mirror of the config shape.** A walk has to know which type each JSON node corresponds to, and
+that mapping is a hand-maintained mirror of the very structure the bullet forbids hand-maintaining
+— the second registry, reintroduced one level up. `[JsonExtensionData]` makes the deserializer do
+the routing, which means the per-object scoping the diagnostic needs (`'colour'` is unknown *on an
+item*, and must not be compared against pane keys) falls out of binding rather than being
+reimplemented beside it. The cost is one property per config type, and one thing to remember:
+extension data round-trips, so any path that re-emits a config must drop it rather than echo the
+user's typo back as though the tool had accepted it.
+
+**Case is already decided and the decision is load-bearing.** Every context sets
+`PropertyNameCaseInsensitive = false`, so `"Color"` genuinely does not bind and reporting it is
+correct rather than a false positive. The unknown-key comparison must therefore be case-sensitive
+too — matching the binder, not being independently strict about it — and a case-only mismatch is
+the single most valuable suggestion this diagnostic can make, because it is the one a user rereads
+their config five times without seeing.
+
+**The suggestion needs a threshold, because a confidently wrong suggestion is worse than none.**
+"The nearest known key" with no bound turns `{"zzzzzz": 1}` into *did you mean 'color'?*, which
+sends the user to change a key they never wrote. There are two candidate rules, and a key is
+suggested when it satisfies either:
+
+- Its edit distance from the unknown key is at most 2 **and** strictly less than half the unknown
+  key's length. This catches transposition and single-character slips and refuses to reach.
+- One of the two is a prefix of the other. This is what catches the abbreviation class —
+  `ttl` for `ttlSeconds` — which is a different mistake from a typo and which no distance bound
+  small enough to be safe will ever reach.
+
+When more than one key qualifies, the smaller edit distance wins. **When none qualifies, the
+message names no key at all.** `unknown key 'zzzzzz' on an item` is a complete and useful
+diagnostic on its own; it is the code and the path doing their job, and there is no obligation to
+guess on top of it.
+
 #### 9.4.3 Why none of §9.4.1 was implementable as the code was shaped
 
 > **Resolved, and pinned to a revision.** The code quoted below is `Pane.cs` at **`8306620`**, which
