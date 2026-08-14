@@ -147,6 +147,7 @@ Pane keys:
 | `valign` | `"top"` (default), `"middle"`, `"bottom"` |
 | `overflow` | `"wrap"`, `"truncate"`, `"overflow"` |
 | `ellipsis` | the marker used when truncating |
+| `height` | `"content"` or `"fill"` (default) — sizes the pane to its own content or lets it fill, same vocabulary as `size` on the width axis |
 | `maxRows` | integer — cap on rows this pane may occupy |
 | `border` | `enabled`, `style`, `color` |
 | `border.style` | `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or `"none"` |
@@ -298,6 +299,40 @@ Items can carry an OSC 8 hyperlink, which terminals that support it render as cl
 
 `{}` is this item's own value; `{other-id}` is another item's — and the referenced item does not
 need to be displayed anywhere. Terminals without OSC 8 support just show the text.
+
+### CLI
+
+`--check` validates a config without rendering it, and exits 0 either way — problems are reported
+as `diagnostics`, not failures:
+
+```bash
+claude-tui-line --check --config path/to/config.json
+```
+
+```
+warning /surface/pane/distribute: "distribute" has no effect on a horizontal split; it divides extent among side-by-side children [key-not-applicable]
+```
+
+Add `--json` for a machine-readable shape:
+
+```json
+{"ok":true,"diagnostics":[{"path":"/surface/pane/distribute","severity":"warning","code":"key-not-applicable","message":"\"distribute\" has no effect on a horizontal split; it divides extent among side-by-side children"}]}
+```
+
+`--accepted --json` reports the complete accepted-value registry for every closed-set key — the
+same registry `--check` diagnoses against, and the same source [tools/check-doc-tokens.sh](tools/check-doc-tokens.sh)
+checks this README's own pane-keys table against, so that table can't quietly drift from what the
+binary actually accepts:
+
+```json
+{"version":"0.1.0","keys":[{"key":"split","accepted":["none","horizontal","vertical"],"alsoAccepted":null}, ...]}
+```
+
+A key with no closed set — `size` is the current example — reports `"accepted":null` and its
+possible forms in `alsoAccepted` instead.
+
+`--items` and `--preview` are also part of the CLI; see the blockquote near the top of this README,
+under Install, for their current status.
 
 ## Layout, briefly
 
