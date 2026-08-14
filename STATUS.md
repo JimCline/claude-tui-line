@@ -3359,6 +3359,29 @@ naming the mode that was actually selected is better than naming the one that wa
 
 check-docs green at 108 cited sections.
 
+### The deploy check §14 needs does not exist, and #18 is not it (§14.2.2)
+
+§14.2.1 named `--version` as the provenance mechanism and I treated task #18 as discharging it. It
+does not. §9.7's drift test compares the assembly version against `plugin.json` — two files in the
+source tree, read by the same test run. It proves internal consistency and cannot observe
+`publish/`.
+
+The missing check is a separate step: run the deployed binary, compare what it answers to what the
+tree declares. It cannot be a unit test, because a test interrogates what the test run just built
+and the artifact in question was deployed earlier. Beside §14.2's hash, doing the half the hash
+cannot — the hash names the file, `--version` dates it.
+
+The scenario, with every current check green: bump, rebuild, deploy the previous binary. Drift test
+passes, hash is self-consistent, §14.3's single-command rule unviolated, statusline is last week's.
+
+Sent to the implementor as an insert after #18, so it lands next to the same material. Sequencing is
+now **#18 → §14.2.2 deploy check → §9.2.2 protected-region fix → #37 → #21 → #36.**
+
+**Open, delegated rather than dropped:** §14.3's "reproduces a hash" needs two AOT publishes to
+different `-o` scratch directories compared byte-for-byte. Asked the implementor to run it at a
+natural stopping point rather than racing their build over a shared `obj/`. Neither directory may be
+`publish/`.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
