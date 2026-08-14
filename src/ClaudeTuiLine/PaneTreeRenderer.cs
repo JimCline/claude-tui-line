@@ -19,10 +19,26 @@ public static class PaneTreeRenderer
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
         RenderNoteCollector notes,
         int? targetOuterHeight = null,
-        IDictionary<Pane, int>? rowCounts = null)
+        IDictionary<Pane, int>? rowCounts = null,
+        bool collapse = false,
+        bool excludeLeft = false,
+        bool excludeRight = false,
+        int rowStart = 0,
+        int colStart = 0,
+        BorderGrid.Grid? grid = null)
     {
         var pane = node.Source;
-        var borderReserve = SizeResolver.OwnBorderReserve(pane);
+
+        // §2.10.2: under collapse:true, a side charged to a shared boundary (excludeLeft/
+        // excludeRight) is never drawn as part of THIS pane's own box — it contributes zero width
+        // here and its glyph comes entirely from the boundary-column contribution the parent
+        // vertical split inserts instead (below). Every other edge renders exactly as it always
+        // has, since an uncontested edge's grid-resolved glyph is identical to its own.
+        var edges = pane.Border.Edges;
+        var effectiveBorder = collapse
+            ? pane.Border with { Edges = new PaneBorderEdges(edges.Top, edges.Right && !excludeRight, edges.Bottom, edges.Left && !excludeLeft) }
+            : pane.Border;
+        var borderReserve = SizeResolver.OwnBorderReserve(effectiveBorder);
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
         var suppressed = SizeResolver.ShouldSuppressBorder(pane, node.OuterWidth);
 
@@ -60,23 +76,55 @@ public static class PaneTreeRenderer
             // tallest sibling's height as its own target before this loop composes them side by
             // side, rather than being padded around afterward (which would pad outside its border
             // instead of growing the border to match).
-            var natural = node.Children.Select(c => Render(c, ctx, values, tokens, notes, rowCounts: rowCounts)).ToList();
+            //
+            // §2.10.2: under collapse:true every interior boundary charges exactly one column
+            // (never two), and that column's glyph is a synthetic contribution owned by the split,
+            // not by either neighbour — computed via BorderGrid.Build ahead of this render and
+            // spliced in here as a 1-column strip in place of the ordinary blank gutter.
+            var innerRow0 = rowStart + (bordered && edges.Top ? 1 : 0);
+            var boundaryStep = collapse ? 1 : pane.Gutter;
+            var childColStarts = new int[node.Children.Count];
+            var runningCol = colStart + (bordered && edges.Left && !excludeLeft ? 1 : 0);
+            for (var i = 0; i < node.Children.Count; i++)
+            {
+                childColStarts[i] = runningCol;
+                runningCol += node.Children[i].OuterWidth + (i < node.Children.Count - 1 ? boundaryStep : 0);
+            }
+
+            var natural = node.Children.Select((c, i) =>
+            {
+                var childExcludeLeft = collapse && i > 0;
+                var childExcludeRight = collapse && i < node.Children.Count - 1;
+                return Render(c, ctx, values, tokens, notes, rowCounts: rowCounts, collapse: collapse,
+                    excludeLeft: childExcludeLeft, excludeRight: childExcludeRight,
+                    rowStart: innerRow0, colStart: childColStarts[i], grid: grid);
+            }).ToList();
             var childHeight = natural.Count == 0 ? 0 : natural.Max(c => c.Buffer.Rows.Count);
 
             var contributions = new List<Compositor.PaneContribution>();
             for (var i = 0; i < node.Children.Count; i++)
             {
-                if (i > 0 && pane.Gutter > 0)
+                if (i > 0)
                 {
-                    contributions.Add(new Compositor.PaneContribution(new PaneBuffer(Array.Empty<PaneRow>()), pane.Gutter, HasBackground: false));
+                    if (collapse)
+                    {
+                        contributions.Add(BoundaryColumn(grid, innerRow0, childHeight, childColStarts[i] - 1));
+                    }
+                    else if (pane.Gutter > 0)
+                    {
+                        contributions.Add(new Compositor.PaneContribution(new PaneBuffer(Array.Empty<PaneRow>()), pane.Gutter, HasBackground: false));
+                    }
                 }
 
                 // §2.8.3: a "content"-height child keeps its own natural border box instead of
                 // being re-rendered to the band height — Compositor.ComposeRoot's own Valign-based
                 // padding (below) then places that shorter box within the band, unbordered.
                 var childIsContentHeight = node.Children[i].Source.Height == PaneHeight.Content;
+                var childExcludeLeft = collapse && i > 0;
+                var childExcludeRight = collapse && i < node.Children.Count - 1;
                 var contribution = natural[i].Buffer.Rows.Count < childHeight && !childIsContentHeight
-                    ? Render(node.Children[i], ctx, values, tokens, notes, childHeight, rowCounts)
+                    ? Render(node.Children[i], ctx, values, tokens, notes, childHeight, rowCounts, collapse,
+                        childExcludeLeft, childExcludeRight, innerRow0, childColStarts[i], grid)
                     : natural[i];
                 contributions.Add(contribution);
             }
@@ -85,11 +133,15 @@ public static class PaneTreeRenderer
         }
         else
         {
+            var innerCol0 = colStart + (bordered && edges.Left && !excludeLeft ? 1 : 0);
+            var cursorRow = rowStart + (bordered && edges.Top ? 1 : 0);
             var rows = new List<PaneRow>();
             foreach (var child in node.Children)
             {
-                var contribution = Render(child, ctx, values, tokens, notes, rowCounts: rowCounts);
+                var contribution = Render(child, ctx, values, tokens, notes, rowCounts: rowCounts, collapse: collapse,
+                    rowStart: cursorRow, colStart: innerCol0, grid: grid);
                 rows.AddRange(contribution.Buffer.Rows);
+                cursorRow += contribution.Buffer.Rows.Count;
             }
 
             contentRows = PadToWidth(rows, innerWidth);
@@ -108,13 +160,34 @@ public static class PaneTreeRenderer
         }
 
         var borderColorMarkup = ColorResolution.Resolve(pane.Border.Color, values, tokens) ?? "grey";
-        var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, pane.Border, borderColorMarkup, suppressed, heightSuppressed);
+        var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, effectiveBorder, borderColorMarkup, suppressed, heightSuppressed);
         if (rowCounts is not null)
         {
             rowCounts[pane] = borderedRows.Count;
         }
 
         return new Compositor.PaneContribution(new PaneBuffer(borderedRows), node.OuterWidth, HasBackground: false, pane.Valign);
+    }
+
+    // §2.10.2: the 1-column strip a vertical split inserts in place of a shared boundary's blank
+    // gutter — every row's glyph/colour comes from the grid built once ahead of this render, never
+    // from either neighbour's own Wrap call, since a shared column has no single owner.
+    private static Compositor.PaneContribution BoundaryColumn(BorderGrid.Grid? grid, int rowStart, int height, int col)
+    {
+        var rows = new List<PaneRow>(height);
+        for (var r = 0; r < height; r++)
+        {
+            if (grid is not null && grid.TryGet(rowStart + r, col, out var cell))
+            {
+                rows.Add(new PaneRow($"[{cell.ColorMarkup}]{BorderGrid.Glyph(cell.Style, cell.Mask)}[/]", 1));
+            }
+            else
+            {
+                rows.Add(new PaneRow(" ", 1));
+            }
+        }
+
+        return new Compositor.PaneContribution(new PaneBuffer(rows), 1, HasBackground: false);
     }
 
     // Pads this pane's OWN inner content (before its border is drawn around it) up to

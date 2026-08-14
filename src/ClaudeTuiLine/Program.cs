@@ -110,7 +110,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // ComputeRows, shared with RunPreview below, so the real render and a preview capture
         // can't compute that decision two different ways.
         var (rows, renderingPanel, boxBorder, borderColor) =
-            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, widthsDir, unavailableIds, topLevel.SurfaceMaxRows);
+            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
         DrawRows(console, rows, renderingPanel, boxBorder, borderColor, surfaceWidth);
 
         return 0;
@@ -161,7 +161,8 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
     string? cwd,
     string widthsDir,
     IReadOnlyCollection<string> unavailableIds,
-    int surfaceMaxRows)
+    int surfaceMaxRows,
+    bool collapseBorders = false)
 {
     var useSplitPipeline = surfaceWidth is int
         && (pane.Items.Count > 0 || (pane.Split != PaneSplit.None && pane.Children.Count > 0));
@@ -181,7 +182,7 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
         // SPEC-V2-FRAMEWORK.md §2.8.1: surfaceMaxRows and every pane's own maxRows are enforced
         // by the degrade ladder, which resolves both the sized tree and its rendered contribution
         // in one pass so a rejected intermediate attempt's width resolution never leaks out.
-        var (resolvedRoot, rootContribution) = HeightLadder.Resolve(collapsedPane, surfaceWidth!.Value, surfaceMaxRows, ctx, values, tokens, notes);
+        var (resolvedRoot, rootContribution) = HeightLadder.Resolve(collapsedPane, surfaceWidth!.Value, surfaceMaxRows, ctx, values, tokens, notes, collapseBorders);
         // §5.0.1/§9.3.4: unconditional now that the widths store is keyed by resolved surface
         // width — a --preview at one width and a live render at another write distinct entries,
         // so stamping here can no longer corrupt a render at a different width.
@@ -389,7 +390,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
         // resolved surface width, so a preview at one width and a live render at another write
         // distinct entries and can't corrupt each other's stamped pane width.
         var (jsonRows, jsonRenderingPanel, jsonBoxBorder, jsonBorderColor) =
-            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows);
+            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
 
         // §9.3.4: a row is a line of the rendered surface, borders included — the same draw the
         // bare form produces, captured through the same console configuration rather than a second
@@ -449,7 +450,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     }
 
     var (bareRows, renderingPanel, boxBorder, borderColor) =
-        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows);
+        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
 
     // §9.3.2: bare --preview writes through the render path's own console configuration (forced
     // ANSI, not the auto-detecting instance --colors uses), captured first so the columns/notes

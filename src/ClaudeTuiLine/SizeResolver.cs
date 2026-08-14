@@ -25,8 +25,8 @@ public static class SizeResolver
     /// </summary>
     public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children, int? ClipRows = null, bool ItemsEmptied = false);
 
-    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes) =>
-        ResolveNode(root, outerWidth, ctx, values, measureOverride: null, notes);
+    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes, bool collapse = false) =>
+        ResolveNode(root, outerWidth, ctx, values, measureOverride: null, notes, collapse);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §10.6's three fixpoint tests need a "content" pane whose reported
@@ -37,7 +37,7 @@ public static class SizeResolver
     /// never pass it, so real rendering is unaffected.
     /// </summary>
     public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int> measureOverride, RenderNoteCollector notes) =>
-        ResolveNode(root, outerWidth, ctx, values, measureOverride, notes);
+        ResolveNode(root, outerWidth, ctx, values, measureOverride, notes, collapse: false);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.3: <see cref="RowLayout.MinUsableWidth"/> governs viability for
@@ -84,6 +84,29 @@ public static class SizeResolver
         : 2 + (border.Edges.Left ? 1 : 0) + (border.Edges.Right ? 1 : 0);
 
     /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.2: <c>reserve(p)</c> for a vertical-split child under
+    /// <c>collapse:true</c> — an edge facing an interior (shared) boundary is not this pane's own
+    /// column to charge; the boundary itself already reserves exactly one column for it (see
+    /// <see cref="BoundaryCost"/>). <paramref name="excludeLeft"/>/<paramref name="excludeRight"/>
+    /// are true only for a child whose Left/Right respectively faces such a boundary — never for an
+    /// outer edge (the split's first child's Left, or its last child's Right).
+    /// </summary>
+    internal static int OwnBorderReserve(Pane pane, bool excludeLeft, bool excludeRight) =>
+        OwnBorderReserve(pane.Border, excludeLeft, excludeRight);
+
+    internal static int OwnBorderReserve(PaneBorder border, bool excludeLeft, bool excludeRight)
+    {
+        if (border.Style is null)
+        {
+            return 0;
+        }
+
+        var left = !excludeLeft && border.Edges.Left;
+        var right = !excludeRight && border.Edges.Right;
+        return 2 + (left ? 1 : 0) + (right ? 1 : 0);
+    }
+
+    /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 5: <c>rowReserve(p)</c> — the row-count counterpart to
     /// <see cref="OwnBorderReserve(Pane)"/>, charged wherever a pane's row budget is computed. Only
     /// active horizontal edges (<see cref="PaneBorderEdges.Top"/>/<see cref="PaneBorderEdges.Bottom"/>)
@@ -103,7 +126,16 @@ public static class SizeResolver
     /// fit" check calls this exact function rather than holding a second copy that can drift from
     /// what the allocator below actually runs.
     /// </summary>
-    internal static int BoundaryCost(Pane split, int childCount) => OwnBorderReserve(split) + split.Gutter * Math.Max(0, childCount - 1);
+    internal static int BoundaryCost(Pane split, int childCount) => BoundaryCost(split, childCount, collapse: false);
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10.2: under <c>collapse:true</c>, every interior boundary is exactly
+    /// one shared column — <c>avail = splitInnerWidth − (N−1)</c> — regardless of the pane's own
+    /// declared <see cref="Pane.Gutter"/> value; <c>collapse:false</c>'s <c>gutter × (N−1)</c> is
+    /// unchanged.
+    /// </summary>
+    internal static int BoundaryCost(Pane split, int childCount, bool collapse) =>
+        OwnBorderReserve(split) + (collapse ? Math.Max(0, childCount - 1) : split.Gutter * Math.Max(0, childCount - 1));
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §9.8: a pane's own declared fixed-cell size, when its <see cref="Pane.Size"/>
@@ -113,7 +145,7 @@ public static class SizeResolver
     /// </summary>
     internal static int? FixedSize(Pane pane) => ClassifySize(pane.Size) is { Kind: SizeKind.Fixed } spec ? spec.FixedValue : null;
 
-    private static ResolvedPane ResolveNode(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes)
+    private static ResolvedPane ResolveNode(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes, bool collapse)
     {
         if (pane.Split == PaneSplit.None || pane.Children.Count == 0)
         {
@@ -123,21 +155,21 @@ public static class SizeResolver
         if (pane.Split == PaneSplit.Horizontal)
         {
             var horizontalChildren = pane.Children
-                .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride, notes))
+                .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride, notes, collapse))
                 .ToList();
             return new ResolvedPane(pane, outerWidth, horizontalChildren);
         }
 
         var alloc = pane.Distribute switch
         {
-            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values),
-            PaneDistribute.Even => ResolveVerticalEven(pane, outerWidth),
-            _ => ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes),
+            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, collapse),
+            PaneDistribute.Even => ResolveVerticalEven(pane, outerWidth, collapse),
+            _ => ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes, collapse),
         };
         var resolvedChildren = new List<ResolvedPane>(alloc.Children.Count);
         for (var i = 0; i < alloc.Children.Count; i++)
         {
-            resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride, notes));
+            resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride, notes, collapse));
         }
 
         return new ResolvedPane(pane, outerWidth, resolvedChildren);
@@ -145,16 +177,20 @@ public static class SizeResolver
 
     // ---- vertical axis: the graded fixpoint ----
 
-    private static AllocResult ResolveVertical(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes)
+    private static AllocResult ResolveVertical(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes, bool collapse)
     {
-        Func<Pane, int?, int> measure = measureOverride ?? ((c, w) => MeasureRequest(c, w, ctx, values));
+        // §2.10.2: a test-supplied measureOverride is position-blind by design (§10.6's fixpoint
+        // stubs); collapse's edge exclusion only applies to the real measurement path.
+        int Measure(Pane c, int? w, int index, int count) => measureOverride is not null
+            ? measureOverride(c, w)
+            : MeasureRequest(c, w, ctx, values, excludeLeft: collapse && index > 0, excludeRight: collapse && index < count - 1);
 
         var initialChildren = split.Children;
         var requests = initialChildren
-            .Select(c => measure(c, null))
+            .Select((c, i) => Measure(c, null, i, initialChildren.Count))
             .ToArray();
 
-        var result = AllocateWithDrop(split, initialChildren, splitOuterWidth, requests, notes);
+        var result = AllocateWithDrop(split, initialChildren, splitOuterWidth, requests, notes, collapse);
         requests = requests.Take(result.Children.Count).ToArray();
 
         for (var pass = 1; pass < MaxPasses; pass++)
@@ -171,7 +207,7 @@ public static class SizeResolver
                     continue;
                 }
 
-                var remeasured = measure(child, result.Grants[i]);
+                var remeasured = Measure(child, result.Grants[i], i, result.Children.Count);
                 var clamped = Math.Min(remeasured, requests[i]); // monotone: a request may never grow between passes.
                 nextRequests[i] = clamped;
                 changed |= clamped != requests[i];
@@ -183,7 +219,7 @@ public static class SizeResolver
             }
 
             requests = nextRequests;
-            result = AllocateWithDrop(split, result.Children, splitOuterWidth, requests, notes);
+            result = AllocateWithDrop(split, result.Children, splitOuterWidth, requests, notes, collapse);
             requests = requests.Take(result.Children.Count).ToArray();
         }
 
@@ -262,7 +298,13 @@ public static class SizeResolver
     // gutters. A horizontal split's children stack and each takes the full width, so its floor is
     // max(floor(children)) — untested in Phase 3 since no acceptance or required test nests a
     // horizontal split inside a vertical one.
-    private static int Floor(Pane p)
+    private static int Floor(Pane p) => Floor(p, collapse: false, excludeLeft: false, excludeRight: false);
+
+    // §2.10.2: collapse threads through so a nested vertical split's own boundary cost switches to
+    // the one-column-per-boundary formula, and excludeLeft/excludeRight (set by the caller only for
+    // a vertical split's own immediate children, never below) drop a shared edge's column from this
+    // pane's own floor — the boundary itself already reserves it.
+    private static int Floor(Pane p, bool collapse, bool excludeLeft, bool excludeRight)
     {
         if (p.MinSize is int min)
         {
@@ -273,11 +315,18 @@ public static class SizeResolver
         {
             if (p.Split == PaneSplit.Horizontal)
             {
-                return p.Children.Max(Floor);
+                return p.Children.Max(c => Floor(c, collapse, excludeLeft: false, excludeRight: false));
             }
 
-            var gutters = p.Gutter * Math.Max(0, p.Children.Count - 1);
-            return p.Children.Sum(Floor) + gutters;
+            var n = p.Children.Count;
+            var boundary = collapse ? Math.Max(0, n - 1) : p.Gutter * Math.Max(0, n - 1);
+            var sum = 0;
+            for (var i = 0; i < n; i++)
+            {
+                sum += Floor(p.Children[i], collapse, excludeLeft: collapse && i > 0, excludeRight: collapse && i < n - 1);
+            }
+
+            return sum + boundary;
         }
 
         var spec = ClassifySize(p.Size);
@@ -285,15 +334,15 @@ public static class SizeResolver
         {
             SizeKind.Fixed => spec.FixedValue,
             SizeKind.Content => 0,
-            _ => RowLayout.MinUsableWidth + OwnBorderReserve(p),
+            _ => RowLayout.MinUsableWidth + OwnBorderReserve(p, excludeLeft, excludeRight),
         };
     }
 
     // One run of the six-step allocation (§2.3), operating on whatever child list/request set the
     // caller currently has — a single pass, no fixpoint, no dropping.
-    private static AllocResult AllocateOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests)
+    private static AllocResult AllocateOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests, bool collapse)
     {
-        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count));
+        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count, collapse));
 
         var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
         var grants = new int[children.Count];
@@ -315,7 +364,7 @@ public static class SizeResolver
         {
             if (kinds[i].Kind is SizeKind.Percent or SizeKind.Fill)
             {
-                reserve += Floor(children[i]);
+                reserve += Floor(children[i], collapse, excludeLeft: collapse && i > 0, excludeRight: collapse && i < children.Count - 1);
             }
         }
 
@@ -386,14 +435,14 @@ public static class SizeResolver
     // §2.3's over-constrained handling: a non-fixed pane granted under 1 cell means the split
     // cannot honor everyone at once — drop the last child and recompute from step 1. Bounded: each
     // iteration strictly shrinks the child list, so this always terminates.
-    private static AllocResult AllocateWithDrop(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests, RenderNoteCollector notes)
+    private static AllocResult AllocateWithDrop(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests, RenderNoteCollector notes, bool collapse)
     {
         var current = children;
         var currentRequests = requests;
 
         while (true)
         {
-            var result = AllocateOnePass(split, current, splitOuterWidth, currentRequests);
+            var result = AllocateOnePass(split, current, splitOuterWidth, currentRequests, collapse);
 
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
@@ -441,13 +490,13 @@ public static class SizeResolver
     // allocate differently enough (AllocateWithDrop threads a per-child request array that
     // min-rows has no equivalent of) that forcing a shared implementation would risk the
     // unchanged greedy path for a small amount of duplication.
-    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, bool collapse)
     {
         var current = split.Children;
 
         while (true)
         {
-            var result = AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values);
+            var result = AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values, collapse);
 
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
@@ -472,9 +521,9 @@ public static class SizeResolver
     // first, mirroring AllocateOnePass's own step order and matching R's own prose definition —
     // "the extent remaining after fixed and percent panes and gutters have taken theirs" — then
     // every content/fill pane is a candidate for the row-count search.
-    private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, bool collapse)
     {
-        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count));
+        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count, collapse));
 
         var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
         var grants = new int[children.Count];
@@ -677,13 +726,13 @@ public static class SizeResolver
     // Structurally mirrors ResolveVerticalMinRows's drop-retry loop for the same reason: §2.3's
     // over-constrained handling ("no child may resolve below 1 cell ... dropped entirely") applies
     // regardless of which policy divides the remaining extent.
-    private static AllocResult ResolveVerticalEven(Pane split, int splitOuterWidth)
+    private static AllocResult ResolveVerticalEven(Pane split, int splitOuterWidth, bool collapse)
     {
         var current = split.Children;
 
         while (true)
         {
-            var result = AllocateEvenOnePass(split, current, splitOuterWidth);
+            var result = AllocateEvenOnePass(split, current, splitOuterWidth, collapse);
 
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
@@ -711,9 +760,9 @@ public static class SizeResolver
     // property that keeps the layout from moving as content changes. A content candidate still
     // degrades under its own §2.6 rules at whatever width it lands on; this only decides the width,
     // not what happens to it afterward.
-    private static AllocResult AllocateEvenOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth)
+    private static AllocResult AllocateEvenOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, bool collapse)
     {
-        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count));
+        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count, collapse));
 
         var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
         var grants = new int[children.Count];
@@ -764,9 +813,9 @@ public static class SizeResolver
 
     // ---- intrinsic measurement: the same fits-or-degrade decision the renderer uses (LeafContent) ----
 
-    private static int MeasureRequest(Pane pane, int? grantedOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    private static int MeasureRequest(Pane pane, int? grantedOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, bool excludeLeft = false, bool excludeRight = false)
     {
-        var borderReserve = OwnBorderReserve(pane);
+        var borderReserve = OwnBorderReserve(pane, excludeLeft, excludeRight);
         var innerCap = grantedOuterWidth is int g ? Math.Max(0, g - borderReserve) : (int?)null;
         return MeasureInnerContentWidth(pane, innerCap, ctx, values) + borderReserve;
     }

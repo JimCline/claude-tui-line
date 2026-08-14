@@ -70,7 +70,9 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckEnums(config));
         diagnostics.AddRange(CheckLeafOnlyKeysOnSplits(config));
         diagnostics.AddRange(CheckBorderInsideOnLeaf(config));
-        diagnostics.AddRange(CheckStructuralSizes(root, rootPath));
+        diagnostics.AddRange(CheckCollapseNotSurfaceLevel(config));
+        diagnostics.AddRange(CheckCollapsedEdgeConflicts(root, rootPath, topLevel.Collapse));
+        diagnostics.AddRange(CheckStructuralSizes(root, rootPath, topLevel.Collapse));
         diagnostics.AddRange(CheckOverflowPosition(root, rootPath));
         diagnostics.AddRange(CheckEmptyPanes(root, rootPath));
         return diagnostics;
@@ -522,6 +524,73 @@ public static class ConfigChecker
         }
     }
 
+    // ---- §2.10.1 rule 2: "collapse" is legal only at surface.border.collapse — declared on the
+    // top-level border or any per-pane border, it would be silently dropped by a converter that
+    // never binds it there, so this flags it as an Error rather than let it vanish unremarked ----
+
+    private static IEnumerable<Diagnostic> CheckCollapseNotSurfaceLevel(UserConfig? config)
+    {
+        if (config?.Border?.Collapse is not null)
+        {
+            yield return new Diagnostic("/border/collapse", DiagnosticSeverity.Error, "collapse-not-surface-level",
+                "\"collapse\" is only legal at surface.border.collapse, not the top-level border");
+        }
+
+        if (config?.Surface?.Pane is not { } surfacePane)
+        {
+            yield break;
+        }
+
+        foreach (var (pane, path) in WalkRawPanes(surfacePane, "/surface/pane"))
+        {
+            if (pane.Border?.Collapse is not null)
+            {
+                yield return new Diagnostic(path + "/border/collapse", DiagnosticSeverity.Error, "collapse-not-surface-level",
+                    "\"collapse\" is only legal at surface.border.collapse, not a pane's own border");
+            }
+        }
+    }
+
+    // ---- §2.10.1 rule 4/§9.6.1 item 7: under collapse:true, adjacent panes disagreeing on a
+    // shared boundary's style/color is reported once per boundary, not once per row — first
+    // requester in tree-declaration order wins, so the earlier child's path anchors the warning ----
+
+    private static IEnumerable<Diagnostic> CheckCollapsedEdgeConflicts(Pane root, string rootPath, bool collapse)
+    {
+        if (!collapse)
+        {
+            yield break;
+        }
+
+        foreach (var (pane, path) in WalkPanes(root, rootPath))
+        {
+            if (pane.Split is not (PaneSplit.Vertical or PaneSplit.Horizontal) || pane.Children.Count < 2)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < pane.Children.Count - 1; i++)
+            {
+                var a = pane.Children[i];
+                var b = pane.Children[i + 1];
+                var (edgeA, edgeB) = pane.Split == PaneSplit.Vertical
+                    ? (a.Border.Edges.Right, b.Border.Edges.Left)
+                    : (a.Border.Edges.Bottom, b.Border.Edges.Top);
+
+                if (!edgeA || !edgeB || a.Border.Style is null || b.Border.Style is null)
+                {
+                    continue;
+                }
+
+                if (!Equals(a.Border.Style, b.Border.Style) || !Equals(a.Border.Color, b.Border.Color))
+                {
+                    yield return new Diagnostic($"{path}/children/{i}", DiagnosticSeverity.Warning, "collapsed-edge-conflict",
+                        $"children {i} and {i + 1} declare different border style/color on their shared edge; the earlier child in tree order wins");
+                }
+            }
+        }
+    }
+
     private static IEnumerable<(PaneConfig Pane, string Path)> WalkRawPanes(PaneConfig pane, string path)
     {
         yield return (pane, path);
@@ -539,7 +608,7 @@ public static class ConfigChecker
 
     // ---- §9.8: structural size checks, width-independent, via SizeResolver's own arithmetic ----
 
-    private static IEnumerable<Diagnostic> CheckStructuralSizes(Pane root, string rootPath)
+    private static IEnumerable<Diagnostic> CheckStructuralSizes(Pane root, string rootPath, bool collapse)
     {
         foreach (var (pane, path) in WalkPanes(root, rootPath))
         {
@@ -560,7 +629,7 @@ public static class ConfigChecker
                 // itself doesn't divide width among a horizontal split's children, so summing their
                 // fixed/minSize against the parent would claim a contention that isn't there yet.
                 // Revisit this scoping once §2.8 lands.
-                foreach (var d in CheckSplitBounds(pane, path))
+                foreach (var d in CheckSplitBounds(pane, path, collapse))
                 {
                     yield return d;
                 }
@@ -575,9 +644,9 @@ public static class ConfigChecker
         }
     }
 
-    private static IEnumerable<Diagnostic> CheckSplitBounds(Pane split, string path)
+    private static IEnumerable<Diagnostic> CheckSplitBounds(Pane split, string path, bool collapse)
     {
-        var boundaryCost = SizeResolver.BoundaryCost(split, split.Children.Count);
+        var boundaryCost = SizeResolver.BoundaryCost(split, split.Children.Count, collapse);
 
         var parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize;
         if (parentBound is int bound)
