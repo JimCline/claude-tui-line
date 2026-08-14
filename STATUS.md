@@ -1472,6 +1472,63 @@ The rest of §3:
   mechanism. Now "for this render", with §5.1 named as the design and per-process memoization as
   the floor.
 
+### §2.3 walked — one defect wearing three keys, and a total function that eats diagnostics
+
+§2.3 and §2.3.1 were the last big unwalked sections. Four findings, and the fourth explains the
+other three.
+
+- **`distribute` has three values and two of them do not exist.** §2.3 declares
+  `greedy | min-rows | even`; §9.4.1's closed-set list said `distribute ("min-rows")`;
+  `PaneDistributeParsing.Parse` maps `"min-rows"` and sends everything else to greedy. Three
+  authorities, three answers. The sharp end is §2.4, which recommends `distribute: "even"` *by
+  name* to a user who wants a layout that holds still — and what they get for writing it is
+  greedy, the reflowing layout that sentence exists to steer them away from. The recommendation
+  and the failure are the same act. Once `unknown-enum-value` lands as specced, `even` also
+  becomes a `--check` **error on a value this document recommends**. Ruled all three into the
+  language; `even` divides the remaining extent equally and ignores intrinsic measurement
+  entirely, which is the point rather than a shortcut — content-independent widths are what makes
+  a layout stop moving. Tasks #22/#23.
+- **`min-rows` replaces the fixpoint; it does not run on top of it** — and the spec never said so,
+  presenting the fixpoint as unconditional and then presenting min-rows as though it slotted in
+  beside it. The code branches correctly on a fact this document did not contain. It has to be a
+  branch: `rows_i(w)` is already wrap-aware, so composing the fixpoint afterwards re-measures every
+  `content` pane at the width min-rows deliberately granted it, shrinks it to its longest wrapped
+  row, and the monotone clamp makes that permanent — **the surface comes out taller than the `T`
+  the search proved achievable**, with every pane still individually legal. Stated as the property:
+  exactly one width-resolution policy runs per split. Also found the seam gap this implies — §10.6's
+  three fixpoint tests reach the resolver through `measureOverride`, which the min-rows path does
+  not take, so none of them can run against it. Task #25, with `minWidth`'s missing upper bound
+  (it is `R`, never intrinsic — a `content` pane narrower than its content is exactly what the
+  search needs to consider).
+- **§2.3.2, keys that are valid, spelled right, and meaningless where they are written.**
+  `{"split": "horizontal", "distribute": "min-rows"}` is a legal value of a legal key that nothing
+  reads; the resolver returns before the branch. Same for `gutter` on a horizontal split. §9.4.1
+  can't see it (key known, value legal) and §9.4.2 can't either (key not unknown) — a third
+  silence, and the one with the best alibi, because the config reviews clean. Ruled
+  `key-not-applicable` (warning), message names where the key *does* apply, because an author who
+  wrote it there has the axis convention backwards. Declined the symmetric fix of giving `gutter`
+  a row meaning on horizontal splits: a gutter row is a permanent terminal row spent on nothing at
+  `refreshInterval: 1`. Task #24.
+
+- **§9.4.3 — why none of §9.4.1 is implementable as the code is shaped.** The best find of the
+  walk, and it came out of asking why a section that has been in the document for weeks reports
+  nothing. `PaneAlign.Parse`, `PaneValign.Parse` and `PaneDistributeParsing.Parse` are **total
+  functions into their enums**: a `_ =>` arm answers every input, so by the time any caller holds
+  the result, the fact that the input was not in the language has been *consumed* — by the one
+  function positioned to notice it. `--check` cannot report what it cannot be told, and no care
+  inside `--check` recovers it, because the information is gone before `--check` runs.
+
+  `OverflowMode.Parse` in the same codebase returns `OverflowMode?` and answers `null`. Both
+  shapes are already here, and **the three keys §9.4.1 singles out as failing silently are exactly
+  the three with the total shape.** That is the mechanism, not a coincidence — one defect with
+  three instances rather than three defects. Ruled: a closed-set parse reports the unrecognised
+  case and the *caller* chooses; the renderer's caller substitutes the default so §7 is untouched
+  and no output changes, `--check`'s caller reports the diagnostic. Explicitly rejected the
+  inverse — a total parse plus a validator that re-reads the raw strings — as the two-authorities
+  defect in its worst form, where you discover the drift via a `--check` that passes a config the
+  renderer ignores. Task #22, and it blocks #23: adding `even` to a switch fixes one key on one
+  day; changing the shape is what stops the next key arriving pre-broken.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

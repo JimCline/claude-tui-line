@@ -261,6 +261,40 @@ So a split may declare how it divides extent among its children:
   sometimes worth more than tightness; a status bar that reflows on every token count is
   harder to read than one that wastes a column.
 
+**Two of those three do not exist, and this document is the reason nobody noticed.** The parser
+recognises `min-rows` and nothing else; every other string — including both `greedy` and `even` —
+falls through to greedy. Three authorities currently give three different answers about what this
+key accepts:
+
+| authority | the language it states |
+|---|---|
+| this section | `greedy`, `min-rows`, `even` |
+| §9.4.1's closed-set list | `distribute ("min-rows")` |
+| `PaneDistributeParsing.Parse` | `min-rows`, else greedy |
+
+`even` is the expensive one. §2.4 offers it to a user who wants a layout that holds still —
+"a user who wants stability has both `fixed` and `distribute: "even"` to ask for it in the config
+rather than receiving it as an accident of the compositor" — and what they get for writing it is
+greedy sizing, which is the reflowing layout the sentence was written to steer them away from.
+The recommendation and the failure are the same act. Worse, once §9.4.1's `unknown-enum-value`
+lands as specced, `even` becomes a **`--check` error on a value this document recommends by name**.
+
+Ruled, all three in the language:
+
+- **`greedy` is accepted explicitly.** Naming the default is how an author records that they
+  considered the choice, and a language where the default is the one value you may not write is a
+  language that punishes being explicit.
+- **`even` is implemented**, and it is the cheap one: divide the extent left after fixed and
+  percent equally among the remaining candidates, ignoring both intrinsic measurement and the
+  content/`fill` distinction. That last part is the point rather than a simplification — `even`
+  means the widths do not depend on the content, which is exactly the property that makes the
+  layout stop moving.
+- **A `content` pane under `even` still degrades under §2.6** at whatever width it is handed. It
+  does not get to overrun its share; `even` fixes the extent, not the content.
+
+§9.4.1's list is corrected there rather than here, and the correction is the smaller half of that
+fix — see **§9.4.3**, which is why all three of these disagreed without anything reporting it.
+
 `min-rows` binds only the extent left over after the existing rules have had their say. Fixed and
 percent panes are *not* candidates — they were given an exact answer and the policy does not
 overrule it — and `minSize`/`maxSize` remain hard bounds on every candidate considered. The
@@ -305,6 +339,14 @@ the narrowest width at which pane `i` fits in `T` rows or fewer. Compute it by b
 `O(log w)` packings per pane per `T`, and it is what keeps the search over breakpoints rather
 than widths: the binary search *lands on* a breakpoint without ever enumerating the widths
 between them.
+
+**`maxSize` is optional, so that interval is half-open as written.** When a candidate declares no
+`maxSize` the upper bound is `R` — the extent actually remaining — and never the pane's intrinsic
+width. Intrinsic looks like the natural ceiling and is the wrong one: a pane narrower than its
+content is exactly the pane min-rows needs to consider, since a `content` pane that wraps to two
+rows may be what lets the whole surface fit in `T`. Bounding the search at intrinsic would make
+the algorithm unable to see the allocations the feature exists to find, and it would return a
+legal, suboptimal answer with no symptom.
 
 **Feasibility.** A vertical split places panes side by side, so the surface is as tall as its
 tallest pane. Therefore a surface of `T` rows is achievable exactly when every candidate can be
@@ -353,6 +395,30 @@ the two panes, exactly as §2.9 computes it.
 water-filled. Three packings-with-binary-search per pane per `T`, four values of `T`, two panes:
 tens of packer calls, which is the cost this section demanded.
 
+**`min-rows` replaces §2.3's fixpoint; it does not run on top of it.** The two are alternative
+answers to the same question, and the spec never said so — it presents the fixpoint as
+unconditional ("Sizing iterates to a fixpoint") and then presents this algorithm as though it
+slotted in beside it. The implementation branches between them, correctly, on a fact this document
+does not contain.
+
+It has to be a branch. `rows_i(w)` is already wrap-aware — that is the entire content of
+`minWidth(i, T)` — so min-rows has priced wrapping before it chooses. Running the fixpoint
+afterwards would re-measure every `content` pane at the width min-rows deliberately gave it, find
+a narrower longest-wrapped-row, and shrink it; the monotone clamp would then make that shrink
+permanent. The freed extent goes to a `fill` sibling that did not need it, and **the surface comes
+out taller than the `T` the search proved achievable.** The feature would defeat itself, on the
+configs it was written for, while every pane remained individually legal — §7.1's class at the
+level of two algorithms rather than one value.
+
+State it as the property rather than as the branch: **exactly one width-resolution policy runs per
+split.** A second policy applied to the first one's output is not a refinement of it.
+
+One consequence to fix rather than record: §10.6's three fixpoint tests reach the resolver through
+a `measureOverride` seam that the greedy path threads and the min-rows path does not take at all.
+So the pass-cap test, the monotone-clamp test, and the convergence test **cannot be run against
+`min-rows`**, and the paragraph above is the argument for why they would fail if they could be.
+The seam belongs on both paths.
+
 **Acceptance conditions**, both of which must be demonstrated rather than argued:
 
 1. **Optimality** — on a config small enough to brute-force, the allocation this returns must
@@ -361,6 +427,39 @@ tens of packer calls, which is the cost this section demanded.
    slow, obviously-correct one.
 2. **Latency** — p90 re-measured against the budget (§5) with `min-rows` active across widths
    100–240. A regression here fails the feature, per the paragraph above.
+
+#### 2.3.2 Keys that are valid, spelled right, and meaningless where they are written
+
+`distribute` divides extent among siblings that sit side by side. A **horizontal** split does not
+divide extent — its children each span the full width and stack downward — so there is nothing for
+the policy to choose. `{"split": "horizontal", "distribute": "min-rows"}` is read, is a legal value
+of a legal key, and does nothing whatsoever. The resolver never reaches the branch.
+
+`gutter` is the same shape: §2.3 defines it as blank **cells between siblings in a vertical split**,
+subtracted from the extent before children are sized. On a horizontal split there is no such extent
+and the key is inert.
+
+Neither is a typo, so §9.4.2 does not see them and neither does §9.4.1 — the key is known and the
+value is in the language. **This is a third silence, and it is the one with the most convincing
+alibi:** the author wrote a documented key with a documented value, and the config looks right in
+review. Only the render disagrees, by not differing at all.
+
+Ruled: **`key-not-applicable`, severity `warning`**, for a known key with a legal value in a
+position where nothing reads it. The message says where it *would* apply — `distribute has no
+effect on a horizontal split; it divides extent among side-by-side children`. That second clause is
+the whole value of the diagnostic, because an author who wrote `distribute` on a horizontal split
+has the axis convention backwards, and telling them only that the key is ignored leaves them to
+re-derive which way round it goes.
+
+The same code covers `items` on a pane that also declares `children`, `children` on a leaf,
+`gutter` on a horizontal split, and whatever the next one is. It is a predicate — *is this key read
+on this node?* — not a list, per §9.4.1's argument about enumerations.
+
+**`gutter` is not extended to mean blank rows on a horizontal split**, which is the symmetric
+reading and the tempting fix. A gutter row is a permanent terminal row spent on nothing, at
+`refreshInterval: 1`, and §2.4 already refuses that trade for an empty pane. Panes that need
+visual separation on the vertical axis have §2.10's borders, which cost the same row and carry
+information. A feature that costs a row should be asked for by name.
 
 ### 2.4 Compositing — the part that must not be improvised
 
@@ -2587,7 +2686,8 @@ error and we would be back at "does the renderer cope" under a new name.
 
   **The trigger is the predicate, not a list.** As written this section named six keys — `size`,
   `style`, `align`, `valign`, `overflow`, `case` — and the list was short by at least three:
-  `split` (`"vertical"` / `"horizontal"`), `distribute` (`"min-rows"`), and top-level
+  `split` (`"vertical"` / `"horizontal"`), `distribute` (§2.3 — and writing its members out here
+  is how this list was wrong about that key too, so it is cited rather than copied), and top-level
   `colorSystem` (`"standard"` / `"256"` / `"truecolor"`). Every one of those three fails silently
   and consequentially:
 
@@ -2741,6 +2841,49 @@ Two consequences that must not be left implicit:
   `unknown-key` is never intentionally doing so, and a gate that passes it writes a statusline
   that silently does not do what was asked. This is a requirement on §12, not a third severity.
 
+#### 9.4.3 Why none of §9.4.1 is implementable as the code is shaped
+
+§9.4.1 has been in this document for some time and reports nothing, and the reason is not that
+nobody got to it. It is one line, repeated:
+
+```csharp
+public static PaneDistribute Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+{
+    "min-rows" => PaneDistribute.MinRows,
+    _          => PaneDistribute.Greedy,     // <- the diagnostic dies here
+};
+```
+
+`PaneAlign.Parse`, `PaneValign.Parse`, and `PaneDistributeParsing.Parse` are all **total functions
+into the enum**. There is no value they cannot answer, so by the time any caller holds the result
+the fact that the input was not in the language has been destroyed — not lost in transit,
+*consumed*, by the one function positioned to notice it. `--check` cannot report what it cannot be
+told, and no amount of care in `--check` recovers it, because the information is gone before
+`--check`'s code runs.
+
+`OverflowMode.Parse` in the same codebase returns `OverflowMode?` and answers `null`. **Both shapes
+are already here, and the three keys §9.4.1 singles out as failing silently are exactly the three
+with the total shape.** That is not a coincidence to note; it is the mechanism, and it means these
+are one defect with three instances rather than three defects.
+
+So the rule, and it governs every closed set including ones added later:
+
+**A parse for a closed value set does not choose the fallback.** It reports the value as
+unrecognised — `null`, or a discriminated result — and the *caller* decides what to render. The
+renderer's caller still substitutes the default, so §7's "cope with everything" is untouched and
+nothing about the rendered output changes. `--check`'s caller reports `unknown-enum-value`. One
+function, two callers, two behaviours, which is the arrangement that makes both possible at once.
+
+The inverse arrangement — a total parse plus a separate validation pass that re-examines the raw
+strings to decide what was legal — is the two-authorities defect this document keeps finding, and
+here it would be the worst instance of it: the validator's idea of the language and the parser's
+idea of the language would be two lists, and the way you would discover they had drifted is a
+`--check` that passes a config the renderer then ignores.
+
+This is also the load-bearing half of §2.3's `distribute` correction. Adding `even` and `greedy` to
+that `switch` fixes one key on one day; changing the shape is what stops the next key from arriving
+pre-broken.
+
 ### 9.5 `--check` reuses `ReferenceExtractors`
 
 Every diagnostic about an id — an unknown item, a `from` naming nothing, a `link` placeholder
@@ -2844,6 +2987,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `placeholder-env-collision` | two ids mangling to one `CLAUDE_TUI_LINE_VAL_<ID>` under `shell: true` | error | 4.2 |
 | `placeholder-self-reference` | bare `{}` in a `command` item's argv — an item asking for its own not-yet-produced output | error | 4.2.1 |
 | `unknown-key` | a key no config object defines, silently dropped by the deserializer; message names the nearest known key | warning | 9.4.2 |
+| `key-not-applicable` | a known key with a legal value on a node that never reads it — `distribute` or `gutter` on a horizontal split, `items` alongside `children`; message says where the key *does* apply | warning | 2.3.2 |
 | `part-source-count` | a compound part with zero, or more than one, source | error | 3.3 |
 | `part-forbidden-key` | a compound part carrying `parts` or `link` | error | 3.3 |
 | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
