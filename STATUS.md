@@ -3952,6 +3952,37 @@ Full suite: 1252/1252 passed, independently verified via task-gopher after confl
 and again after the `HeightLadderTests.cs` fix. Landed as merge commit `5663b04` (branch tip
 `e616781`), pushed.
 
+### #23: distribute "even", accept "greedy" explicitly (§2.3)
+
+Problem: §2.3 declares three `distribute` values (`greedy | min-rows | even`), but the parser
+only recognized `min-rows` — every other token, including the spec's own recommended-by-name
+`even` (§2.4: the layout that "holds still"), silently fell through to the `greedy` default.
+`even` was therefore unimplemented in practice: it produced the same reflowing behavior it
+exists to avoid.
+
+Fix: `PaneDistribute` gains an `Even` case; `PaneDistributeParsing.Accepted` gains both
+`("greedy", Greedy)` and `("even", Even)` as real tokens instead of `greedy` being an unlisted
+fallthrough default. `SizeResolver` gets a genuine third arm — `ResolveVerticalEven`/
+`AllocateEvenOnePass` — dispatched in `ResolveNode`'s switch alongside greedy/min-rows, not
+bolted on: fixed/percent panes take their width first (same step order as the other two
+policies), then all content/fill candidates split what remains equally, ignoring intrinsic
+measurement and the content/fill distinction entirely — that's the point, not a simplification,
+since content-independent widths are what keeps the layout from moving. A content pane still
+degrades under §2.6 at whatever width it lands on.
+
+Judgment call (implementor-flagged): leftover remainder cells go to the leftmost candidate,
+matching the spec's own six-step algorithm and the existing `AllocateOnePass` step-6
+fill-distribution convention, rather than an apparently-superseded earlier §2.3 prose sentence
+that says the last child absorbs it. `minSize`/`maxSize` are deliberately not read by
+`AllocateEvenOnePass` at all — "even fixes the extent, not the content." The over-constrained
+drop-loop (no non-fixed child may resolve below 1 cell → drop last child, retry) applies to
+`even` too, mirroring `ResolveVerticalMinRows`'s structure, treated as split-wide per §2.3
+rather than gated to one distribute policy.
+
+Merged cleanly (git auto-merged `Pane.cs`/`SizeResolver.cs`, no conflicts), independently
+verified via task-gopher both pre-merge on the worktree and post-merge on `main`. Full suite:
+1256/1256 passed. Landed as merge commit `4e09333` (branch tip `894e4ea`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
