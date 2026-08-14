@@ -84,7 +84,7 @@ rather than careless.
 `ConfigCheck.cs:289–297` held nine hand-written token lists, one per kind, each a second copy of a
 set that already existed somewhere else as the cases of a `switch`. Task #38 closed eight of the
 nine, turning each kind's accepted set into a `static readonly` collection colocated with its
-parser; `ConfigCheck.cs:289–297` now holds only `size`'s list, exempted for the reason given below.
+parser; `ConfigCheck.cs:293` now holds only `size`'s list, exempted for the reason given below.
 The table records where each kind's set lives today:
 
 | Kind | Where the value is parsed | Where the accepted list is written |
@@ -197,7 +197,7 @@ not do this. **The README currently knows strictly more than the registry does.*
 
 `README.md:140` documents `size` as a column count, a percentage, `"content"`, or `"fill"` — and
 then says `"auto"` is a **deprecated alias for `"fill"`**, and that it does *not* mean `"content"`.
-`SizeValues` at `ConfigCheck.cs:290` carries none of that: no deprecation, no aliasing, and no
+`SizeValues` at `ConfigCheck.cs:293` carries none of that: no deprecation, no aliasing, and no
 warning about the wrong guess a reader is actually likely to make. Generating that row from the
 registry would delete three facts to gain a consistency the row did not lack.
 
@@ -243,7 +243,7 @@ Forcing them in makes the table more complete and less useful. The asymmetry als
 machinery is needed.
 
 **2. The authority on the full accepted set is `--check`, not the prose.** `ConfigCheck`'s
-`UnknownEnumValue` and `FormatAccepted` (`ConfigCheck.cs:401–410`) already emit the complete list —
+`UnknownEnumValue` and `FormatAccepted` (`ConfigCheck.cs:397–406`) already emit the complete list —
 *"'ellipsis' is not a overflow — expected wrap, truncate, or overflow"* — at the one moment a reader
 needs it, having just typed something wrong. That is a better delivery mechanism than a table read
 weeks earlier, and it is already built. The docs' job is to be a guide that points at the authority,
@@ -358,6 +358,293 @@ implementation, so measure before building:
 5. The check passes against the docs as they stand, with the omissions in item 2 intact — confirming
    subset semantics rather than equality.
 6. `tools/check-docs.sh` still runs to completion on a machine with no .NET toolchain.
+
+#### 1.1.3 The external door — one command that reports what the binary accepts
+
+##### 1. The surface: a new mode command, `--accepted`
+
+###### New command, not folded
+
+`--items` and `--colors` are already separate mode commands with their own files
+(`src/ClaudeTuiLine/ItemsCommand.cs`, `src/ClaudeTuiLine/ColorsCommand.cs`), each with its own
+`*ResultJson` record. Folding into either is wrong on meaning: `--items` enumerates statusline
+items, `--colors` enumerates colours. Neither noun covers "config keys with constrained
+values." A third sibling is both correct and consistent with what is already there.
+
+###### The name is `--accepted`
+
+| Candidate | Verdict |
+|---|---|
+| **`--accepted`** | **Chosen.** One bare word, matching `--check` / `--version` / `--items` / `--colors` / `--preview`. It is the codebase's own noun: `Accepted`, `AcceptedTokens`, `FormatAccepted`, and `ColorsCommand`'s `alsoAccepted` field. |
+| `--tokens` | **Rejected.** "Token" already means a colour token here — `@name`, the `colors` table, `ColorTokenExtractors`, `ColorTokenReference`. On this binary `--tokens` reads as "dump my colour tokens," which is a different command. |
+| `--enums` | **Rejected.** `size` is in this surface and is not an enum; a name that excludes one of its own rows by definition is a name that will be argued with later. |
+| `--schema` | **Rejected.** Promises a full config schema — types, nesting, required-ness — that this does not deliver. Over-promising a public surface name is worse than a longer one. |
+| `--accepted-values` | **Runner-up.** Accurate, but the five existing modes are all single bare words and there is no reason to be the first exception. |
+
+###### `--accepted` requires `--json`
+
+`--accepted --json` emits JSON. **Bare `--accepted` is a usage error** naming the correct form.
+
+This is deliberate. `--items` defaults to plain text and puts JSON behind `--json`
+(`Program.cs:624` vs `:628`). If `--accepted` emitted JSON bare, adding a plain-text form later
+would either break every existing caller or strand JSON as the bare default forever. Requiring
+`--json` now — while the surface has no users at all — makes the plain-text form purely
+additive whenever someone wants it, and makes the call site in tooling read identically to its
+sibling: `tools/check-examples.sh:119` already runs `"$CLAUDE_TUI_LINE_BIN" --items --json`.
+
+The cost is one extra flag on a machine-read command. The alternative is a breaking change
+scheduled for an unknown future date.
+
+##### 2. Output shape
+
+House style, matching `ItemsCommand` and `ColorsCommand`: a `record` with
+`[property: JsonPropertyName(...)]`, version first, serialized through a source-generated
+`JsonSerializerContext`.
+
+```csharp
+public sealed record AcceptedKeyJson(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("accepted")] IReadOnlyList<string>? Accepted,
+    [property: JsonPropertyName("alsoAccepted")] string? AlsoAccepted);
+
+public sealed record AcceptedResultJson(
+    /* version — use the SAME JsonPropertyName ItemsResultJson uses for its first field.
+       Match it exactly; do not invent a second spelling. */
+    string Version,
+    [property: JsonPropertyName("keys")] IReadOnlyList<AcceptedKeyJson> Keys);
+```
+
+Sample output:
+
+```json
+{
+  "version": "…",
+  "keys": [
+    { "key": "border.style", "accepted": ["rounded","square","heavy","double","ascii","none"], "alsoAccepted": null },
+    { "key": "valign",       "accepted": ["top","middle","bottom"], "alsoAccepted": null },
+    { "key": "size",         "accepted": null, "alsoAccepted": "an integer, a percentage, content, fill, or auto" }
+  ]
+}
+```
+
+###### Three fields, and no more
+
+`pointer`/`pointers` (the JSON-Pointer locations each key may appear at) was considered and
+**deliberately omitted**. #43 matches documentation rows to registry rows by key name; pointers
+are not load-bearing for it, and every field on a public surface is a commitment. Recorded here
+so that adding one later is a decision rather than a drift.
+
+###### The invariant
+
+**For every row, at least one of `accepted` (a non-empty list) or `alsoAccepted` (a non-empty
+string) must be present.** A row with neither is a bug and the command must fail rather than
+emit it.
+
+This is what makes the surface fail-closed. It is the same shape as §9.5.1's `PendingForm`
+ruling: a gap must be *stated*, because silence cannot be distinguished from an omission.
+
+###### The eight sources
+
+Each row reads its tokens from the registry #38 colocated with the parser. **The command must
+read these properties directly and must not hold a copy of any token list.**
+
+| Key | Source | At |
+|---|---|---|
+| `border.style` | `BorderStyleParsing.AcceptedTokens` | `Config.cs:670` |
+| `colorSystem` | `ConfigLoader.ColorSystemAcceptedTokens` | `Config.cs:390` |
+| `split` | `ConfigLoader.SplitAcceptedTokens` | `Config.cs:481` |
+| `valign` | `PaneValignParsing.AcceptedTokens` | `Pane.cs:37` |
+| `align` | `PaneAlignParsing.AcceptedTokens` | `Pane.cs:80` |
+| `distribute` | `PaneDistributeParsing.AcceptedTokens` | `Pane.cs:126` |
+| `overflow` | `OverflowModeParsing.AcceptedTokens` | `OverflowMode.cs:29` |
+| `case` | `ItemValueResolver.CaseAcceptedTokens` | `ItemValueResolver.cs:359` |
+| `size` | *none* — see §3 | — |
+
+##### 3. `size` is listed, and declares no closed set
+
+`size` appears as a row with `accepted: null` and a prose `alsoAccepted`.
+
+**It is listed rather than omitted** because absence must mean something falsifiable. If `size`
+were simply missing, #43 could not distinguish "deliberately exempt, skip it" from "fell out of
+the registry and nobody noticed" — and it would resolve that ambiguity by skipping, which is
+fail-open in precisely the direction the check exists to close. With every constrained key
+listed, **a key absent from `--accepted` means the binary does not know that key at all**, and
+#43 gains a third check for free: documentation describing a config key that does not exist.
+
+**It declares no closed set** because it has none, and because `ConfigCheck.cs:293`'s
+`SizeValues` is not a registry. Its only consumer is `UnknownEnumValue` (`ConfigCheck.cs:397`),
+which passes it to `FormatAccepted` (`ConfigCheck.cs:400–406`) to build the human sentence
+*"'foo' is not a size — expected an integer, a percentage, content, fill, or auto."* It is a
+**message-formatting array**, shaped for prose. Publishing it as a machine-readable `accepted`
+list would be a category error, and would tell #43 that `"an integer"` is a literal token a user
+may type.
+
+The `alsoAccepted` string should be sourced from `SizeValues` via `FormatAccepted` rather than
+hand-written, so the prose cannot drift from the diagnostic. That is the one place the
+formatting helper is reused outside diagnostics; it may need its visibility widened, which is a
+smaller change than a second copy of the sentence.
+
+###### `size` stays undecomposed — ruled, not left open
+
+`SizeValues` is `{ "an integer", "a percentage", "content", "fill", "auto" }` — three literal
+tokens a user actually types, and two descriptions of a form. A strictly better-looking surface
+would split them: `accepted: ["content","fill","auto"]` plus `alsoAccepted: "an integer, or a
+percentage"`, the idiom `ColorsCommand` already uses (`recommended` alongside `alsoAccepted`,
+`ColorsCommand.cs:12`/`:35`). It would let #43 check three real tokens instead of skipping the
+key.
+
+**Ruled: not taken.** §1.1.2's *What must not change* states outright that *"`size` gains no
+registry entry and no completeness check, here or downstream,"* and §1.1.1 exempted it first —
+#38 shipped honouring that exemption. Reopening a ruling two spec sections and a merged commit
+rest on is not something this section should do as a side effect of building the CLI door onto
+it. The alternative is recorded, not lost: tracked as its own task, to be picked up only if the
+exemption itself is deliberately reconsidered — and if it is, §1.1.1, §1.1.2, and this section
+all need amending together in the same change.
+
+##### 4. Files to touch
+
+| File | Change |
+|---|---|
+| `src/ClaudeTuiLine/AcceptedCommand.cs` | **New.** `AcceptedResultJson`, `AcceptedKeyJson`, the key table, and `Build()`. Mirror `ItemsCommand.cs`'s structure. |
+| `src/ClaudeTuiLine/Program.cs` | Add `case "--accepted":` alongside `:458–483`'s other mode cases. |
+| `src/ClaudeTuiLine/Program.cs:501` | Add `--accepted` to the mutual-exclusion comment and the mode set. |
+| `src/ClaudeTuiLine/Program.cs:508` | Add `--accepted` to the mutual-exclusion error message. |
+| `src/ClaudeTuiLine/Program.cs:517–518` | Add the `("--accepted", new[] { "json" })` row to the allowed-arguments table. |
+| `src/ClaudeTuiLine/Program.cs` | Emit via `Console.Out.WriteLine(JsonSerializer.Serialize(result, AcceptedJsonContext.Default.AcceptedResultJson))`, matching `:624` and `:645`. |
+| `tools/check-all.sh` | **Append after line 43**, not between 42 and 43 — see §6. |
+
+###### Visibility
+
+Four of the eight `AcceptedTokens` properties are `public`
+(`PaneValignParsing`, `PaneAlignParsing`, `PaneDistributeParsing`, `OverflowModeParsing`); four
+are `internal` (`BorderStyleParsing`, `ColorSystemAcceptedTokens`, `SplitAcceptedTokens`,
+`CaseAcceptedTokens`). `AcceptedCommand` lives in the same assembly, so this blocks nothing.
+
+**Ruling: leave the split alone in #42.** It is pre-existing, it is invisible from outside, and
+widening four properties to `public` to satisfy an aesthetic would enlarge the library's public
+API for a command that does not need it. Note it, do not fix it here.
+
+##### 5. What #43 can read — the contract this establishes
+
+Stated explicitly, because it determines #43's shape.
+
+For each key `K` documented with accepted values, and each documented value `v`:
+
+1. `K` absent from `--accepted --json`'s `keys` → **error.** The documentation describes a key
+   the binary does not know.
+2. `v ∈ K.accepted` → **pass.**
+3. `v ∉ K.accepted` and `K.alsoAccepted` is null → **error.** Documentation promises a value the
+   binary rejects. This is the case §1.1.2 was written to catch.
+4. `v ∉ K.accepted` and `K.alsoAccepted` is non-null → **unverifiable**, reported by name, not
+   an error. The key has an open form the checker cannot parse; a human reads the list.
+
+Case 4 exists so that an open-formed key produces a *visible* list of unchecked values rather
+than a silent skip. Today only `size` reaches it.
+
+**The reverse direction is never checked.** A token in `accepted` that no document mentions is
+not a finding — that is §1.1.2's ruling and it is not reopened here.
+
+##### 6. Citations to re-point
+
+Verified by direct read at `7a30bfb`, not inferred:
+
+1. **`tools/check-all.sh:42–43` is correct as cited today** (`:42` is `check-docs.sh`, `:43` is
+   `check-examples.sh`). Wiring in a third check **appends after line 43**, making that block
+   42–44. §1.1.2's citation at its *"wire it into `tools/check-all.sh:42–43`"* line must become
+   **42–44** in the same change. Appending rather than inserting is what keeps `:42` and `:43`
+   pointing at the same two lines they always did.
+2. `check-all.sh:15–19` (the fold ruling) and `check-all.sh:4–10` (the never-ran story) are both
+   **accurate and unaffected**.
+
+##### 7. A second-order duplication, named and scoped out
+
+`ConfigCheck.CheckEnums` enumerates the nine kinds as nine hand-written call sites
+(`ConfigCheck.cs:299, 304, 333, 344, 349, 354, 359, 364, 369, 388, 393`). `AcceptedCommand` will
+enumerate them again as a key table. **That is two lists of the nine kinds** — the §1.1 failure
+mode, one level up from the one #38 just fixed.
+
+It is genuinely smaller than #38's: each entry is a key name and a property reference, not a
+copied token list, so the two cannot disagree about *what a kind accepts* — only about *which
+kinds exist*. And unifying them properly is harder than it looks, because the call sites read
+their value from three different walk contexts (top-level config, pane, item), so a single table
+row would need a context-dependent accessor.
+
+**Scoped out of #42 deliberately.** Tracked as its own follow-up task: make `AcceptedCommand`'s
+table the single registry of kinds and have `CheckEnums` iterate it. Named here so that #42 does
+not ship a silent second list.
+
+##### What must not change
+
+1. **`ConfigCheck.cs:293`'s `SizeValues` stays exactly as it is** — mixed literals and forms,
+   local to `ConfigCheck`. It is a message-formatting array for `FormatAccepted`, not a
+   registry, and §1.1.1's exemption still governs.
+2. **No token list is copied into `AcceptedCommand`.** Every one of the eight rows reads its
+   parser-colocated `AcceptedTokens` property. A hand-written array in the new file reintroduces
+   precisely what #38 removed.
+3. **`check-docs.sh` does not learn about `--accepted`** and gains no skip branch. This surface
+   needs a built binary, so its consumer belongs beside `check-examples.sh`, per
+   `check-all.sh:15–19`.
+4. **The reverse-direction check is not added.** Registry tokens absent from documentation are
+   not findings.
+5. **§1.1.2's two documented drifts stay.** `README.md:138` still omits `none`, `:142` still
+   omits `greedy` — they are ruling-3 evidence, not defects.
+6. **Line citations in this section** are invalidated by construction if the cited code moves.
+   Any task restructuring `Program.cs`, `ConfigCheck.cs`, or the parser files must include
+   re-pointing them.
+
+##### Verification
+
+1. `--accepted --json` exits 0 and emits JSON with a `version` field and a `keys` array of
+   exactly **nine** rows: the eight enumerable kinds plus `size`.
+2. Bare `--accepted` exits non-zero with a usage error naming `--accepted --json`.
+3. `--accepted` combined with any of `--check`, `--version`, `--items`, `--colors`, `--preview`
+   produces the mutual-exclusion error from `Program.cs:508`.
+4. Every row satisfies the invariant: `accepted` non-empty, or `alsoAccepted` non-empty, or
+   both. **Demonstrate the failure path** — temporarily null both on one row and confirm the
+   command fails rather than emitting it.
+5. `size`'s row has `accepted: null` and an `alsoAccepted` string, and that string is
+   byte-identical to what `FormatAccepted(SizeValues)` produces. Changing `SizeValues` changes
+   the emitted prose without any edit to `AcceptedCommand`.
+6. Adding a token to any one of the eight parser registries changes that key's `accepted` array
+   with no edit to `AcceptedCommand`. **Demonstrate on at least one kind**; asserting it would
+   reproduce the defect `check-all.sh:4–10` exists to prevent.
+7. `grep` finds no string literal in `AcceptedCommand.cs` matching any accepted token of the
+   eight enumerable kinds — the mechanical form of *what must not change* item 2.
+8. §1.1.2's `tools/check-all.sh:42–43` citation now reads `42–44`, and `check-all.sh:42` and
+   `:43` still name `check-docs.sh` and `check-examples.sh` respectively.
+9. `tools/check-all.sh` green.
+10. `tools/check-docs.sh` still completes on a machine with no .NET toolchain.
+
+##### NEEDS-EVIDENCE
+
+Empirical, resolved by whoever builds this rather than asserted in advance:
+
+- **(a) What `JsonPropertyName` does `ItemsResultJson` use for its version field?**
+  Read `ItemsCommand.cs:23–33`. `AcceptedResultJson` must use the identical spelling. If the
+  siblings disagree with each other, report that rather than picking — a third spelling is worse
+  than either.
+- **(b) Is `FormatAccepted` reachable from `AcceptedCommand` as written?** It is
+  `private static` at `ConfigCheck.cs:400`. If widening it to `internal` is more disruptive than
+  expected, the fallback is for `AcceptedCommand` to hold the sentence and for a test to assert
+  it equals `FormatAccepted(SizeValues)` — a check instead of a shared call. Prefer the shared
+  call; take the fallback only if the widening drags other things with it.
+- **(c) Does `--items`' plain-text path establish an expectation that every mode command has
+  one?** `--colors` appears to be JSON-only (`Program.cs:645` with no `RenderPlainText`
+  counterpart), which would settle it as "no." Confirm; if `--colors` does have a plain form,
+  reconsider whether `--accepted` should ship one too.
+
+##### Open questions for the user
+
+1. ~~Should `size` be decomposed into three literal tokens plus a prose form?~~ **Ruled above:
+   not now.** It would be a strict improvement to #43's coverage, and it reopens §1.1.1's and
+   §1.1.2's exemption — tracked as its own follow-up task rather than decided as a side effect of
+   #42.
+2. **Is `--accepted` a supported public interface or internal tooling?** This section assumes
+   *public and documented*, on the grounds that a hidden flag a checked-in tool depends on is a
+   private API with extra steps that someone will eventually delete. This is genuinely open —
+   flagged for Jim, not decided here. #42's implementation is unaffected either way; #43 (which
+   builds on this surface as a dependency) is held until it's answered, since that is the point
+   past which changing the answer costs more.
 
 ## 2. The render surface and panes
 
