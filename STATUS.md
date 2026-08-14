@@ -3803,6 +3803,31 @@ diagnostic code matters to a future `--check --json` consumer.
 Non-fast-forward merge (main had moved with #7 in the meantime; auto-merged cleanly, no conflicts). Full
 suite: 1216/1216 passed. Landed as merge commit `f555b57` (branch tip `723e203`), pushed.
 
+### #8a: border reserve decomposition (§2.10 / §2.10.1 rule 5 prereq)
+
+Replaced the flat `PaneBorderRenderer.BorderReserve = 4` constant with named
+`SizeResolver.OwnBorderReserve(p)` / `OwnRowReserve(p)` functions, backed by new
+`BorderWidthReserve = 4` / `BorderRowReserve = 2` consts in `SizeResolver.cs`. No new config, no
+behavior change — this is pure decomposition ahead of §2.10's per-edge config (#8b) and border
+grid (#8c). Five call sites updated (`PaneBorderRenderer.cs:16`, `PaneTreeRenderer.cs:24`,
+`Program.cs:199,759`, plus `SizeResolver.cs` itself); `ConfigCheck.cs:549`'s `BoundaryCost` call
+site was left untouched as required — it picks up the new arithmetic transitively rather than
+gaining a second copy.
+
+One implementor judgment call, accepted: `PaneTreeRenderer.cs:79` had its own inline row-border
+arithmetic (`targetHeight - (pane.Border.Style is not null ? 2 : 0)`), not in the original 5-site
+list but squarely §2.10.1 rule 5's "no transcription" target — folded into `OwnRowReserve(pane)`,
+same value, no behavior change.
+
+Golden parity gate did not move (this was the acceptance bar, per §2.10's "a move here is a defect
+in the decomposition, not an expected consequence" — confirmed unmoved, so no escalation needed).
+Independently re-verified via task-gopher off the worktree at the implementor's commit before
+merging: build exit 0, full suite **1216/1216 passed**, 0 failed.
+
+Non-fast-forward merge (main had moved with the §2.10.2 amendment/fix spec commits in the
+meantime; auto-merged cleanly, no conflicts — spec-only vs. src/tests-only diffs). Landed as merge
+commit `421f6bc` (branch tip `d19e7fa`), pushed. Unblocks #8b (task #52).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
