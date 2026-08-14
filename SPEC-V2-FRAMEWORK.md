@@ -2882,6 +2882,50 @@ A note on what this fixture is *not* for: it is not a test fixture. Tests keep c
 inputs they need. This one is user-facing output, which is why it is specified in prose rather than
 left to whoever writes it first.
 
+#### 9.3.2 `--preview` does not degrade under a pipe, and the rule that says so is §9.6.3.1's
+
+§9.6.3.1 rules that bare `--colors` writes through the ordinary auto-detecting console and loses its
+colour under a pipe. Read as a precedent, that answer propagates to `--preview` and is wrong there.
+Read as what it is — the output of a test — it gives `--preview` the opposite answer, which is the
+correct one. **Bare `--preview` writes through the same console configuration the render path uses.**
+
+The test §9.6.3.1 applies without naming: **a form may degrade only while some other form still
+carries the whole payload.**
+
+- For `--colors`, `--json` carries the names, the names are the entire payload, and a reader who
+  pipes the bare form loses a convenience they can recover one flag away.
+- For `--preview`, §9.8.1 pins `rows[]` as `{ "text": …, "width": … }`. That shape holds no styling
+  and is not going to grow any — `text` is deliberately the diffable form. So if the bare form
+  degrades as well, **no form of `--preview` carries styling to a caller that is not a terminal.**
+
+Which is every caller that matters. §12.3 and §12.4 both capture this output through a harness
+rather than a TTY, and §12.6's tools will too. "Colour it by value" is among the most common things
+the authoring surface is asked for; a preview that cannot render colour cannot answer it, and
+`/edit`'s closing before-and-after — the deliverable that command exists to produce — degrades to two
+blocks of grey without anything reporting that it did.
+
+**Use the render path's console configuration itself rather than constructing a matching one.** This
+is §1's rule: one implementation per behaviour. `--preview` exists to show what the render path
+produces, so the single behaviour it must never hold its own opinion about is how that output gets
+styled. Stating the configuration here in flags would create the second authority, and this document
+already knows what two authorities cost.
+
+That also disposes of `NO_COLOR` and every variable like it, without this section needing to know
+what any of them do: whatever the statusline does, the preview does. Showing a user something their
+real statusline will not do is the failure being avoided — not the honouring or the overriding of
+any particular convention.
+
+That this was already load-bearing is visible in §12.3, which instructs the migrator to strip escape
+sequences from both renders before comparing them. That step has assumed `--preview` emits escapes
+since it was written. A command prompt depending on behaviour no section states is the same tell
+that produced §9.6.2.2 and §9.6.3.1, and this is its third instance in §9 — which is the argument
+for reading the bare form of every remaining command as unspecified until someone rules on it,
+rather than waiting to be surprised a fourth time.
+
+Unchanged by any of this: notes go to stderr in the human form and to `notes[]` in the JSON form
+(§9.8.1), `rows[].text` stays plain and stays the form built for diffing, and `--preview --json` is
+unstyled like every other JSON output (§9).
+
 ### 9.4 Exit codes and severities
 
 | exit | meaning |
@@ -3610,7 +3654,7 @@ on a TTY. Read next to each other those two rulings contradict; read for what ea
 *for*, they do not. An item's example is a string, and colour is decoration applied to it — a
 reader loses nothing when it is stripped, and a pipe gains a clean value. A colour swatch has no
 payload except the colour: strip the ANSI from `--colors` and every row reads `olive`, `teal`,
-`fuchsia`, which is precisely the guessing §2's bullet says the command exists to end. So `--colors`
+`fuchsia`, which is precisely the guessing §9's bullet says the command exists to end. So `--colors`
 renders each name in its own colour, through the user's terminal, because a swatch in documentation
 shows the author's theme and not the reader's.
 
@@ -3622,7 +3666,7 @@ the resolution is always the same: find the principle that makes both follow, ra
 one claim an exception. The principle here is *is the styling the value, or a coat of paint on the
 value?*
 
-`--colors --json` stays unstyled, per §2 — a program consuming the list wants names.
+`--colors --json` stays unstyled, per §9's own bullet — a program consuming the list wants names.
 
 **"Through the user's terminal" means that terminal's real capability, and not the forced-ANSI
 console the renderer uses.** Bare `--colors` writes through the ordinary auto-detecting
@@ -4884,7 +4928,15 @@ judgement and no reading of the section body. The citation that survives that ch
 wrong, but it can no longer be wrong in the way both of these were, which is the common way: not a
 subtly misread section, but an entirely unrelated one whose number was close to hand.
 
-The instructive part is that the sentence was fixed by **deleting the citation** rather than
+**The habit found two more on its first use, and neither was newly written.** §9.6.3.1 cited `§2`
+twice — for `--colors --json` being unstyled, and for the bullet saying the command exists to end
+guessing. Both belong to **§9**, whose bullet list says both things in as many words; §2 is the
+render surface and mentions neither. They resolved, so the check passed, and they had been read
+past every time the section was revised. Being cheap is the whole property: reading a heading title
+costs nothing, which is why it gets done on a citation nobody suspects — and an unsuspected
+citation is the only kind this defect ever hides in.
+
+The instructive part is that the first sentence was fixed by **deleting the citation** rather than
 repointing it. There is no section stating that rule; the sentence never needed a pointer, and the
 citation was there for the authority it borrowed rather than for anything a reader would follow. A
 citation that cannot be checked in five seconds and that the sentence does not need is not neutral
