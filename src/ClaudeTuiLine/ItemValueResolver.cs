@@ -161,9 +161,11 @@ public static class ItemValueResolver
             .Where(from => from is { Length: > 0 })!,
 
         // A `colors`-table token's `from` (§6.3) — required on every token, so this widens id
-        // collection regardless of whether the token is ever referenced via `@name`.
-        ctx => (ctx.Tokens?.Values
-            .Select(rule => rule.From)
+        // collection regardless of whether the token is ever referenced via `@name`. Iterated as
+        // key/value pairs rather than .Values so the token's own name (the key) is available for
+        // §9.5.1's JSON Pointer once this extractor starts yielding provenance instead of a bare id.
+        ctx => (ctx.Tokens?
+            .Select(kv => kv.Value.From)
             .Where(from => from is { Length: > 0 })
             ?? Enumerable.Empty<string>())!,
     };
