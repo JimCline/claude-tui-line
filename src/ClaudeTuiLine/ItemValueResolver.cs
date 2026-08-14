@@ -103,7 +103,7 @@ public static class ItemValueResolver
     // pair Walk always tracked — production ignores Path (every call site here passes "" as the
     // root and never reads it back), but it lets ScanReferences below reuse this exact walk instead
     // of a second traversal of the config tree.
-    private readonly record struct ScanEntry(PaneItem Item, bool Eligible, string Path);
+    internal readonly record struct ScanEntry(PaneItem Item, bool Eligible, string Path);
 
     private static void Walk(Pane pane, string path, List<ScanEntry> items, List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs)
     {
@@ -127,47 +127,51 @@ public static class ItemValueResolver
         }
     }
 
-    private readonly record struct ScanContext(
+    internal readonly record struct ScanContext(
         List<ScanEntry> Items,
         List<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? Tokens);
 
-    // §5's reference forms, one extractor per form. Each returns the ids that form's config keys
-    // name; CollectIds just unions every extractor's output. Adding a form (§4.2's argv
-    // placeholders, §3.3's compound-item parts) means appending here, not editing CollectIds.
-    private static readonly IReadOnlyList<Func<ScanContext, IEnumerable<string>>> ReferenceExtractors = new Func<ScanContext, IEnumerable<string>>[]
+    // §5's reference forms, one extractor per form. Each yields every id-occurrence that form's
+    // config keys produce, self-tagged as a declaration or a reference (§9.5.1's IdCandidate) —
+    // CollectIds below reads only the id and discards the rest; ScanReferences reads all of it.
+    // Adding a form (§4.2's argv placeholders, §3.3's compound-item parts) means appending here,
+    // not editing either consumer.
+    internal static readonly IReadOnlyList<Func<ScanContext, IEnumerable<IdCandidate>>> ReferenceExtractors = new Func<ScanContext, IEnumerable<IdCandidate>>[]
     {
-        // A placed item's own id.
-        ctx => ctx.Items
-            .Select(entry => entry.Item.Id ?? entry.Item.Item)
-            .Where(id => id is { Length: > 0 })!,
+        // A placed entry either declares its own id or names another one via an `item` selector —
+        // §3 makes the two mutually exclusive, so this yields exactly one candidate or none.
+        ctx => ctx.Items.SelectMany(entry =>
+            entry.Item.Id is { Length: > 0 } ownId
+                ? new[] { new IdCandidate(ownId, entry.Path + "/id", ReferenceKind.Declaration, null) }
+                : entry.Item.Item is { Length: > 0 } selector
+                    ? new[] { new IdCandidate(selector, entry.Path + "/item", ReferenceKind.Reference, ReferenceForm.ItemSelector) }
+                    : Array.Empty<IdCandidate>()),
 
         // A derived item's `from` (§8).
         ctx => ctx.Items
-            .Select(entry => entry.Item.From)
-            .Where(from => from is { Length: > 0 })!,
+            .Where(entry => entry.Item.From is { Length: > 0 })
+            .Select(entry => new IdCandidate(entry.Item.From!, entry.Path + "/from", ReferenceKind.Reference, ReferenceForm.DerivedFrom)),
 
         // A link template's `{other-id}` placeholders (§3.2); `{}` is the item's own value, not a
         // reference, and is already excluded by LeafContent.LinkPlaceholderIds.
         ctx => ctx.Items
             .Where(entry => entry.Item.Link is { Length: > 0 })
-            .SelectMany(entry => LeafContent.LinkPlaceholderIds(entry.Item.Link!)),
+            .SelectMany(entry => LeafContent.LinkPlaceholderIds(entry.Item.Link!)
+                .Select(id => new IdCandidate(id, entry.Path + "/link", ReferenceKind.Reference, ReferenceForm.LinkPlaceholder))),
 
         // An inline colour rule's explicit `from` (§6.4).
         ctx => ctx.ColorExprs
-            .Select(t => t.Expr)
-            .OfType<ColorResolution.ColorExpr.Inline>()
-            .Select(inline => inline.Rule.From)
-            .Where(from => from is { Length: > 0 })!,
+            .Select(t => (t.Path, Inline: t.Expr as ColorResolution.ColorExpr.Inline))
+            .Where(t => t.Inline?.Rule.From is { Length: > 0 })
+            .Select(t => new IdCandidate(t.Inline!.Rule.From!, t.Path + "/from", ReferenceKind.Reference, ReferenceForm.ColorFrom)),
 
         // A `colors`-table token's `from` (§6.3) — required on every token, so this widens id
-        // collection regardless of whether the token is ever referenced via `@name`. Iterated as
-        // key/value pairs rather than .Values so the token's own name (the key) is available for
-        // §9.5.1's JSON Pointer once this extractor starts yielding provenance instead of a bare id.
+        // collection regardless of whether the token is ever referenced via `@name`.
         ctx => (ctx.Tokens?
-            .Select(kv => kv.Value.From)
-            .Where(from => from is { Length: > 0 })
-            ?? Enumerable.Empty<string>())!,
+            .Where(kv => kv.Value.From is { Length: > 0 })
+            .Select(kv => new IdCandidate(kv.Value.From!, $"/colors/{kv.Key}/from", ReferenceKind.Reference, ReferenceForm.ColorFrom))
+            ?? Enumerable.Empty<IdCandidate>()),
     };
 
     private static IReadOnlyList<string> CollectIds(
@@ -180,9 +184,9 @@ public static class ItemValueResolver
 
         foreach (var extractor in ReferenceExtractors)
         {
-            foreach (var id in extractor(ctx))
+            foreach (var candidate in extractor(ctx))
             {
-                ids.Add(id);
+                ids.Add(candidate.Id);
             }
         }
 
@@ -375,6 +379,54 @@ internal enum ReferenceForm
     DerivedFrom,
     LinkPlaceholder,
     ColorFrom,
+}
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §9.5.1: which of the two things an <see cref="IdCandidate"/> is — the
+/// record's own discriminator rather than a nullable <see cref="ReferenceForm"/>, so a consumer
+/// must branch on it explicitly instead of a null check quietly standing in for "this declares an
+/// id rather than referencing one."
+/// </summary>
+internal enum ReferenceKind
+{
+    Declaration,
+    Reference,
+}
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §9.5.1: one id occurrence yielded by
+/// <see cref="ItemValueResolver.ReferenceExtractors"/> — either a placed entry declaring
+/// <see cref="Id"/> as its own, or some construct naming <see cref="Id"/> as a reference to
+/// something else, tagged with the JSON Pointer to where it was found. Value resolution
+/// (<see cref="ItemValueResolver.Resolve"/>/<see cref="ItemValueResolver.ResolveAsync"/>) reads
+/// only <see cref="Id"/> and discards the rest — a declaration and a reference both name an id that
+/// needs a resolved value, so resolution doesn't care which. <c>--check</c> (§9.4) is the consumer
+/// that does: a declaration is never itself invalid, while a reference needs validating and, when
+/// dangling, needs <see cref="Form"/> to pick a severity (§9.4.1). <see cref="Form"/> is non-null
+/// exactly when <see cref="Kind"/> is <see cref="ReferenceKind.Reference"/>, enforced in the
+/// constructor rather than left to callers to keep straight.
+/// </summary>
+internal readonly record struct IdCandidate
+{
+    public string Id { get; }
+    public string Path { get; }
+    public ReferenceKind Kind { get; }
+    public ReferenceForm? Form { get; }
+
+    public IdCandidate(string id, string path, ReferenceKind kind, ReferenceForm? form)
+    {
+        if ((kind == ReferenceKind.Reference) != (form is not null))
+        {
+            throw new ArgumentException(
+                $"{nameof(form)} must be non-null exactly when {nameof(kind)} is {nameof(ReferenceKind.Reference)}.",
+                nameof(form));
+        }
+
+        Id = id;
+        Path = path;
+        Kind = kind;
+        Form = form;
+    }
 }
 
 /// <summary>
