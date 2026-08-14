@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace ClaudeTuiLine;
 
 /// <summary>
@@ -19,8 +17,6 @@ public static class LeafContent
     /// </param>
     public readonly record struct ItemDecision(string Text, string Markup);
 
-    private static readonly Regex LinkPlaceholder = new(@"\{([^{}]*)\}", RegexOptions.Compiled);
-
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §5: the id names a <c>link</c> template's <c>{other-id}</c>
     /// placeholders reference, so <see cref="ItemValueResolver"/> can add them to its up-front
@@ -28,9 +24,9 @@ public static class LeafContent
     /// second parser. <c>{}</c> (the item's own value) is not a reference and is excluded.
     /// </summary>
     internal static IEnumerable<string> LinkPlaceholderIds(string template) =>
-        LinkPlaceholder.Matches(template)
-            .Select(match => match.Groups[1].Value)
-            .Where(name => name.Length > 0);
+        PlaceholderTemplate.Tokenize(template)
+            .Where(token => token.IsPlaceholder && token.Text.Length > 0)
+            .Select(token => token.Text);
 
     public static ItemDecision Decide(LeafItems.ResolvedItem resolved, IReadOnlyDictionary<string, string?> values)
     {
@@ -76,20 +72,26 @@ public static class LeafContent
     private static bool TryBuildLink(string template, string ownValue, IReadOnlyDictionary<string, string?> values, out string url)
     {
         var missing = false;
-        var built = LinkPlaceholder.Replace(template, match =>
+        var built = new System.Text.StringBuilder();
+        foreach (var token in PlaceholderTemplate.Tokenize(template))
         {
-            var name = match.Groups[1].Value;
-            var raw = name.Length == 0 ? ownValue : values.GetValueOrDefault(name);
+            if (!token.IsPlaceholder)
+            {
+                built.Append(token.Text);
+                continue;
+            }
+
+            var raw = token.Text.Length == 0 ? ownValue : values.GetValueOrDefault(token.Text);
             if (raw is null)
             {
                 missing = true;
-                return string.Empty;
+                continue;
             }
 
-            return AnsiStrip.Strip(raw);
-        });
+            built.Append(AnsiStrip.Strip(raw));
+        }
 
-        url = missing ? string.Empty : built;
+        url = missing ? string.Empty : built.ToString();
         return !missing;
     }
 }

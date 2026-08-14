@@ -35,7 +35,6 @@ public class ReferenceExtractorCoverageTests
             [Member<PaneItem>(nameof(PaneItem.Format))] = (ExemptionKind.NeverAReference, "literal {}-substitution only (LeafItems.cs), not a reference form"),
             [Member<PaneItem>(nameof(PaneItem.Extract))] = (ExemptionKind.NeverAReference, "a regex applied to the item's own resolved value"),
             [Member<PaneItem>(nameof(PaneItem.Case))] = (ExemptionKind.NeverAReference, "a closed case-transform token set (\"upper\"/\"lower\")"),
-            [Member<PaneItem>(nameof(PaneItem.Command))] = (ExemptionKind.PendingForm, "§4.2: argv placeholders are not implemented yet"),
             [Member<ColorResolution.ColorRule>(nameof(ColorResolution.ColorRule.Default))] = (ExemptionKind.NeverAReference, "a literal colour spec (ColorResolution.cs), never re-parsed"),
             [Member<ColorResolution.ColorExpr.Literal>(nameof(ColorResolution.ColorExpr.Literal.Spec))] = (ExemptionKind.NeverAReference, "a literal colour spec (ColorResolution.cs), never re-parsed"),
             [Member<ColorResolution.MatchRule>(nameof(ColorResolution.MatchRule.Color))] = (ExemptionKind.NeverAReference, "a literal colour spec, same species as ColorRule.Default"),
@@ -77,15 +76,6 @@ public class ReferenceExtractorCoverageTests
             candidates.Count == 19,
             $"Expected 19 candidates from the 7 reflection roots, found {candidates.Count}: "
                 + string.Join(", ", candidates.Select(Describe).OrderBy(s => s, StringComparer.Ordinal)));
-    }
-
-    [Fact]
-    public void CommandIsPendingFormNotNeverAReference()
-    {
-        var (kind, reason) = Exemptions[Member<PaneItem>(nameof(PaneItem.Command))];
-
-        Assert.Equal(ExemptionKind.PendingForm, kind);
-        Assert.Contains("§4.2", reason, StringComparison.Ordinal);
     }
 
     private static List<MemberInfo> CollectCandidates()

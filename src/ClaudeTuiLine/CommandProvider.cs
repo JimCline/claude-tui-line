@@ -31,7 +31,8 @@ public static class CommandProvider
     public readonly record struct CommandResolution(string? Value, bool Unavailable);
 
     public static async Task<CommandResolution> ResolveAsync(
-        PaneItem item, string? rawStdinJson, string? cwd, string cacheDir, bool paneWidthEligible)
+        PaneItem item, string? rawStdinJson, string? cwd, string cacheDir, bool paneWidthEligible,
+        IReadOnlyDictionary<string, string?> values, IReadOnlyCollection<string> unavailableIds)
     {
         if (item.Id is not { Length: > 0 } id || item.Command is not { Count: > 0 } command)
         {
@@ -40,35 +41,50 @@ public static class CommandProvider
 
         var ttl = TimeSpan.FromSeconds(item.TtlSeconds is > 0 ? item.TtlSeconds.Value : DefaultTtlSeconds);
         var timeout = TimeSpan.FromMilliseconds(item.TimeoutMs is > 0 ? item.TimeoutMs.Value : DefaultTimeoutMs);
-        var key = ItemCache.KeyFor(id, command, cwd);
 
-        var cached = ItemCache.TryRead(cacheDir, key);
+        // §4.2.3: the item's placement identity (unsubstituted argv + cwd), used only to look up
+        // the width the item's pane last resolved to — see ItemCache.KeyFor's doc comment.
+        var widthTrackingKey = ItemCache.KeyFor(id, command, cwd);
+        var previousPaneWidth = paneWidthEligible ? ItemCache.TryRead(cacheDir, widthTrackingKey)?.PaneWidth : null;
+
+        var expansion = ArgvPlaceholders.Expand(command, item.Shell, values);
+        var valueKey = ItemCache.KeyFor(id, expansion.Argv, cwd, previousPaneWidth, expansion.ExportedEnv);
+
+        var cached = ItemCache.TryRead(cacheDir, valueKey);
         if (cached is { } fresh && DateTimeOffset.UtcNow - fresh.CapturedAt < ttl)
         {
             return new CommandResolution(fresh.Value, Unavailable: false);
         }
 
-        var previousPaneWidth = paneWidthEligible ? cached?.PaneWidth : null;
-        var spawned = await RunAsync(item, command, rawStdinJson, cwd, timeout, previousPaneWidth).ConfigureAwait(false);
+        // §4.2.2: a placeholder naming a source that did not answer this render makes the whole
+        // item unavailable rather than substituting "" for "we don't know" — same stale-on-failure
+        // fallback as any other spawn failure, and it declines to pay for a subprocess whose input
+        // is already known to be wrong.
+        if (expansion.ReferencedIds.Any(unavailableIds.Contains))
+        {
+            return new CommandResolution(cached?.Value, Unavailable: cached?.Value is null);
+        }
+
+        var spawned = await RunAsync(item, expansion, rawStdinJson, cwd, timeout, previousPaneWidth).ConfigureAwait(false);
         if (spawned is not { } result)
         {
             return new CommandResolution(cached?.Value, Unavailable: cached?.Value is null);
         }
 
-        ItemCache.Write(cacheDir, key, new CacheEntry(result.Value, DateTimeOffset.UtcNow, result.ExitCode, cached?.PaneWidth));
+        ItemCache.Write(cacheDir, valueKey, new CacheEntry(result.Value, DateTimeOffset.UtcNow, result.ExitCode, PaneWidth: null));
         return new CommandResolution(result.Value, Unavailable: false);
     }
 
     private readonly record struct SpawnResult(string? Value, int ExitCode);
 
     private static async Task<SpawnResult?> RunAsync(
-        PaneItem item, IReadOnlyList<string> command, string? rawStdinJson, string? cwd, TimeSpan timeout, int? previousPaneWidth)
+        PaneItem item, ArgvPlaceholders.Expansion expansion, string? rawStdinJson, string? cwd, TimeSpan timeout, int? previousPaneWidth)
     {
-        // §4.1: shell:true only ever forwards command[0] to `sh -c` — an argv of more than one
+        // §4.1: shell:true only ever forwards argv[0] to `sh -c` — an argv of more than one
         // element under shell:true would silently discard every element after the first and run
         // the wrong command with no signal at all. Suppress instead, the same as any other
         // command that cannot produce a value, so §7/--check can explain why.
-        if (item.Shell && command.Count > 1)
+        if (item.Shell && expansion.Argv.Count > 1)
         {
             return null;
         }
@@ -90,12 +106,12 @@ public static class CommandProvider
         {
             psi.FileName = "sh";
             psi.ArgumentList.Add("-c");
-            psi.ArgumentList.Add(command[0]);
+            psi.ArgumentList.Add(expansion.Argv[0]);
         }
         else
         {
-            psi.FileName = command[0];
-            foreach (var arg in command.Skip(1))
+            psi.FileName = expansion.Argv[0];
+            foreach (var arg in expansion.Argv.Skip(1))
             {
                 psi.ArgumentList.Add(arg);
             }
@@ -105,6 +121,11 @@ public static class CommandProvider
         if (previousPaneWidth is { } width)
         {
             psi.Environment["CLAUDE_TUI_LINE_PANE_WIDTH"] = width.ToString(CultureInfo.InvariantCulture);
+        }
+
+        foreach (var (name, value) in expansion.ExportedEnv)
+        {
+            psi.Environment[name] = value;
         }
 
         Process process;

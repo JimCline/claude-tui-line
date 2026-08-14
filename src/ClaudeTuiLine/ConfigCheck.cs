@@ -66,6 +66,7 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckReferences(scan, topLevel.Colors));
         diagnostics.AddRange(CheckColorLiterals(scan, topLevel.Colors, topLevel.ColorSystem));
         diagnostics.AddRange(CheckCommandShape(root, rootPath));
+        diagnostics.AddRange(CheckArgvPlaceholders(root, rootPath));
         diagnostics.AddRange(CheckEnums(config));
         diagnostics.AddRange(CheckLeafOnlyKeysOnSplits(config));
         diagnostics.AddRange(CheckStructuralSizes(root, rootPath));
@@ -89,6 +90,7 @@ public static class ConfigChecker
                     ReferenceForm.DerivedFrom => (DiagnosticSeverity.Error, "unknown-item-id"),
                     ReferenceForm.LinkPlaceholder => (DiagnosticSeverity.Warning, "unknown-link-target"),
                     ReferenceForm.ColorFrom => (DiagnosticSeverity.Warning, "unknown-color-source"),
+                    ReferenceForm.ArgvPlaceholder => (DiagnosticSeverity.Error, "unknown-item-id"),
                     _ => (DiagnosticSeverity.Error, "unknown-item-id"),
                 };
                 yield return new Diagnostic(reference.Path, severity, code, $"no item named '{reference.Id}'");
@@ -97,6 +99,16 @@ public static class ConfigChecker
             {
                 yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "from-derived-source",
                     $"'{reference.Id}' is itself a derived item; a derived item cannot source from another derived item");
+            }
+            else if (reference.Form == ReferenceForm.ArgvPlaceholder && scan.DerivedItemIds.Contains(reference.Id))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-derived-source",
+                    $"'{reference.Id}' is a derived item; an argv placeholder may not name a derived item");
+            }
+            else if (reference.Form == ReferenceForm.ArgvPlaceholder && scan.CommandItemIds.Contains(reference.Id))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-command-source",
+                    $"'{reference.Id}' is a command item; a command item's argv placeholder may not name another command item");
             }
         }
 
@@ -280,6 +292,45 @@ public static class ConfigChecker
             {
                 yield return new Diagnostic(path + "/command", DiagnosticSeverity.Error, "command-shape",
                     $"'{command[0]}' contains whitespace but shell is not true; it will run as a single binary name, not split into arguments");
+            }
+        }
+    }
+
+    // ---- §4.2.1/§4.2: argv-placeholder declaration faults not covered by the generic id-reference
+    // pipeline above — self-reference has no id to validate, and env-collision is a relationship
+    // between two references rather than a property of either one alone ----
+
+    private static IEnumerable<Diagnostic> CheckArgvPlaceholders(Pane root, string rootPath)
+    {
+        foreach (var (item, path) in ItemValueResolver.WalkItems(root, rootPath))
+        {
+            if (item.Command is not { Count: > 0 } command)
+            {
+                continue;
+            }
+
+            if (ArgvPlaceholders.HasSelfReference(command))
+            {
+                yield return new Diagnostic(path + "/command", DiagnosticSeverity.Error, "placeholder-self-reference",
+                    "'{}' names this command item's own output, which does not exist until it has run");
+            }
+
+            // §4.2: only shell:true exports referenced values into the environment, where two ids
+            // mangling to the same CLAUDE_TUI_LINE_VAL_<ID> name would silently overwrite each other.
+            if (!item.Shell)
+            {
+                continue;
+            }
+
+            var collisions = ArgvPlaceholders.ReferencedIds(command)
+                .GroupBy(ArgvPlaceholders.EnvVarNameFor, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1);
+
+            foreach (var group in collisions)
+            {
+                var ids = string.Join(", ", group.Select(id => $"'{id}'"));
+                yield return new Diagnostic(path + "/command", DiagnosticSeverity.Error, "placeholder-env-collision",
+                    $"{ids} all mangle to the environment variable {group.Key}; the script would only ever see one of them");
             }
         }
     }

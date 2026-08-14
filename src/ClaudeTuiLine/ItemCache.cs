@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -58,13 +59,37 @@ public static class ItemCache
             Environment.GetEnvironmentVariable("HOME"));
 
     /// <summary>
-    /// §5: <c>id</c> + hash of the resolved argv + <c>cwd</c>. <c>cwd</c> is part of the key
-    /// because a command like <c>git status --short</c> means different things in different
-    /// sessions, and this cache is shared by every session on the machine.
+    /// §4.2.3's width-tracking key: <c>id</c> + hash of the item's declared (unsubstituted) argv +
+    /// <c>cwd</c>, independent of pane width or any exported env var. This is the key
+    /// <see cref="StampPaneWidth"/> targets and Program.cs's post-sizing pass recomputes — the
+    /// item's placement identity, not the value cache — so a render can look up "what width did
+    /// this item's pane last resolve to" before that width is itself known, without the two
+    /// depending on each other. <c>cwd</c> is part of the key because a command like
+    /// <c>git status --short</c> means different things in different sessions, and this cache is
+    /// shared by every session on the machine.
     /// </summary>
-    public static string KeyFor(string id, IReadOnlyList<string> argv, string? cwd)
+    public static string KeyFor(string id, IReadOnlyList<string> argv, string? cwd) =>
+        KeyFor(id, string.Join('', argv) + '' + (cwd ?? ""));
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §4.2.3: the resolved-value cache key, covering every input the child
+    /// process can see — the resolved argv (placeholders already substituted), <c>cwd</c>,
+    /// <paramref name="paneWidth"/> (<see cref="CommandProvider"/>'s
+    /// <c>CLAUDE_TUI_LINE_PANE_WIDTH</c>), and every exported <c>CLAUDE_TUI_LINE_VAL_*</c>
+    /// (<paramref name="env"/>, shell-mode only) — stated as a property, not a channel list, so a
+    /// future input is covered by construction rather than needing to be remembered. Distinct from
+    /// the width-tracking overload above: this key changes whenever anything the spawned process
+    /// could observe changes, which is deliberately not true of the width-tracking key.
+    /// </summary>
+    public static string KeyFor(string id, IReadOnlyList<string> resolvedArgv, string? cwd, int? paneWidth, IReadOnlyDictionary<string, string> env)
     {
-        var joined = string.Join('', argv) + '' + (cwd ?? "");
+        var envJoined = string.Join('', env.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"));
+        var joined = string.Join('', resolvedArgv) + '' + (cwd ?? "") + '' + (paneWidth?.ToString(CultureInfo.InvariantCulture) ?? "") + '' + envJoined;
+        return KeyFor(id, joined);
+    }
+
+    private static string KeyFor(string id, string joined)
+    {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(joined)));
         return $"{SanitizeId(id)}-{hash[..16]}";
     }

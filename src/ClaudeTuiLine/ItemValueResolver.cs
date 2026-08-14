@@ -73,7 +73,7 @@ public static class ItemValueResolver
         Walk(root, "", items, colorExprs);
 
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        var commandTasks = new List<(string Id, Task<CommandProvider.CommandResolution> Task)>();
+        var pendingCommands = new List<ScanEntry>();
 
         foreach (var id in CollectIds(items, colorExprs, tokens))
         {
@@ -86,9 +86,19 @@ public static class ItemValueResolver
             var placed = items.FirstOrDefault(e => e.Item.Id == id && e.Item.Command is { Count: > 0 });
             if (placed.Item is not null)
             {
-                commandTasks.Add((id, CommandProvider.ResolveAsync(placed.Item, rawStdinJson, ctx.Input.Cwd, cacheDir, placed.Eligible)));
+                pendingCommands.Add(placed);
             }
         }
+
+        // §4.2: an argv placeholder may only name a registry id, never another `command` item, so
+        // every id a command's placeholders can legally reference is already settled in `values`
+        // above, before any command spawns — one snapshot, handed to every command task alike,
+        // rather than the mutating dictionary those spawns would otherwise race against.
+        var placeholderValues = new Dictionary<string, string?>(values, StringComparer.Ordinal);
+        var commandTasks = pendingCommands
+            .Select(placed => (Id: placed.Item.Id!, Task: CommandProvider.ResolveAsync(
+                placed.Item, rawStdinJson, ctx.Input.Cwd, cacheDir, placed.Eligible, placeholderValues, Array.Empty<string>())))
+            .ToList();
 
         await Task.WhenAll(commandTasks.Select(t => t.Task)).ConfigureAwait(false);
         var unavailableIds = new HashSet<string>(StringComparer.Ordinal);
@@ -207,6 +217,16 @@ public static class ItemValueResolver
                 .Where(kv => kv.Value.From is { Length: > 0 })
                 .Select(kv => new IdCandidate(kv.Value.From!, $"/colors/{kv.Key}/from", ReferenceKind.Reference, ReferenceForm.ColorFrom))
                 ?? Enumerable.Empty<IdCandidate>())),
+
+        // A `command` item's argv `{other-id}` placeholders (§4.2), sharing LinkPlaceholder's
+        // vocabulary via ArgvPlaceholders.ReferencedIds. `{}` (self-reference) is excluded the same
+        // way a link template's own-value placeholder is.
+        new ReferenceExtractor(
+            new[] { typeof(PaneItem).GetProperty(nameof(PaneItem.Command))! },
+            ctx => ctx.Items
+                .Where(entry => entry.Item.Command is { Count: > 0 })
+                .SelectMany(entry => ArgvPlaceholders.ReferencedIds(entry.Item.Command!)
+                    .Select(id => new IdCandidate(id, entry.Path + "/command", ReferenceKind.Reference, ReferenceForm.ArgvPlaceholder)))),
     };
 
     // An `@name` colour reference (§6.3) validates against the `colors` table's own keys, not
@@ -293,11 +313,22 @@ public static class ItemValueResolver
         }
 
         var derivedItemIds = new HashSet<string>(StringComparer.Ordinal);
+        var commandItemIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in items)
         {
-            if (entry.Item.Id is { Length: > 0 } ownId && entry.Item.From is { Length: > 0 })
+            if (entry.Item.Id is not { Length: > 0 } ownId)
+            {
+                continue;
+            }
+
+            if (entry.Item.From is { Length: > 0 })
             {
                 derivedItemIds.Add(ownId);
+            }
+
+            if (entry.Item.Command is { Count: > 0 })
+            {
+                commandItemIds.Add(ownId);
             }
         }
 
@@ -307,7 +338,7 @@ public static class ItemValueResolver
             colorTokenReferences.AddRange(extractor.Extract(ctx));
         }
 
-        return new ReferenceScan(references, selfDeclared, derivedItemIds, colorTokenReferences, colorExprs);
+        return new ReferenceScan(references, selfDeclared, derivedItemIds, commandItemIds, colorTokenReferences, colorExprs);
     }
 
     /// <summary>
@@ -410,9 +441,12 @@ public static class ItemValueResolver
 /// <see cref="ItemSelector"/> and <see cref="DerivedFrom"/> delete the item outright (error,
 /// <c>unknown-item-id</c>); <see cref="LinkPlaceholder"/> and <see cref="ColorFrom"/> (an inline
 /// rule's or a <c>colors</c>-table token's <c>from</c> alike) degrade to plain text or a fallback
-/// colour (warning). An <c>@name</c> colour reference is a distinct namespace — a <c>colors</c>-table
-/// key, not an item id — and is therefore not a <see cref="ReferenceForm"/>/<see cref="IdReference"/>
-/// at all; see <see cref="ColorTokenReference"/>.
+/// colour (warning). <see cref="ArgvPlaceholder"/> (§4.2) is data handed to another process with no
+/// defined meaning when unmet, so it errors like <see cref="ItemSelector"/>/<see cref="DerivedFrom"/>
+/// despite sharing its syntax with <see cref="LinkPlaceholder"/> — same walk, different severity
+/// (§4.2's own ruling on why). An <c>@name</c> colour reference is a distinct namespace — a
+/// <c>colors</c>-table key, not an item id — and is therefore not a
+/// <see cref="ReferenceForm"/>/<see cref="IdReference"/> at all; see <see cref="ColorTokenReference"/>.
 /// </summary>
 internal enum ReferenceForm
 {
@@ -420,6 +454,7 @@ internal enum ReferenceForm
     DerivedFrom,
     LinkPlaceholder,
     ColorFrom,
+    ArgvPlaceholder,
 }
 
 /// <summary>
@@ -498,7 +533,9 @@ internal readonly record struct ColorTokenReference(string Name, string Path);
 /// invalid); which of those self-declared ids belong to a <em>derived</em> item specifically, so a
 /// <see cref="ReferenceForm.DerivedFrom"/> reference landing on one of them is
 /// <c>from-derived-source</c> (§9.4.1) rather than <c>unknown-item-id</c> — the id isn't unknown,
-/// §3.2.1 just forbids naming it as a source; and the raw, path-tagged colour expressions the same
+/// §3.2.1 just forbids naming it as a source; <see cref="CommandItemIds"/>, the same idea for a
+/// <see cref="ReferenceForm.ArgvPlaceholder"/> landing on a <c>command</c> item
+/// (<c>placeholder-command-source</c>, §4.2); and the raw, path-tagged colour expressions the same
 /// walk collected — <c>--check</c>'s colour-literal diagnostics reuse <see cref="ColorExprs"/>
 /// rather than re-walking.
 /// </summary>
@@ -506,5 +543,6 @@ internal readonly record struct ReferenceScan(
     IReadOnlyList<IdReference> References,
     IReadOnlyCollection<string> SelfDeclaredIds,
     IReadOnlyCollection<string> DerivedItemIds,
+    IReadOnlyCollection<string> CommandItemIds,
     IReadOnlyList<ColorTokenReference> ColorTokenReferences,
     IReadOnlyList<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs);

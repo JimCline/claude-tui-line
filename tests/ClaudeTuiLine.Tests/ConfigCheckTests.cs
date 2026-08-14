@@ -1050,4 +1050,118 @@ public class ConfigCheckTests
 
         Assert.DoesNotContain(diagnostics, d => d.Code == "fixed-sizes-exceed-parent");
     }
+
+    // ---- SPEC-V2-FRAMEWORK.md §4.2.1: argv-placeholder declaration faults ----
+
+    [Fact]
+    public void ArgvPlaceholderNamingUnknownId_ReportsUnknownItemId()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig> { new() { Id = "cmd", Command = new List<string> { "tool", "{not-a-real-id}" } } },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-item-id" && d.Path == "/items/0/command" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ArgvPlaceholderNamingDerivedItem_ReportsPlaceholderDerivedSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Id = "a", From = "directory" },
+                new() { Id = "cmd", Command = new List<string> { "tool", "{a}" } },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "placeholder-derived-source" && d.Path == "/items/1/command" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ArgvPlaceholderNamingAnotherCommandItem_ReportsPlaceholderCommandSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Id = "other-cmd", Command = new List<string> { "echo", "hi" } },
+                new() { Id = "cmd", Command = new List<string> { "tool", "{other-cmd}" } },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "placeholder-command-source" && d.Path == "/items/1/command" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ArgvPlaceholderBareSelfReference_ReportsPlaceholderSelfReference()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig> { new() { Id = "cmd", Command = new List<string> { "tool", "{}" } } },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "placeholder-self-reference" && d.Path == "/items/0/command" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ShellTrueWithTwoIdsManglingToSameEnvVar_ReportsPlaceholderEnvCollision()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Id = "agent-short", From = "directory" },
+                new() { Id = "agent.short", From = "directory" },
+                new() { Id = "cmd", Shell = true, Command = new List<string> { "echo \"$CLAUDE_TUI_LINE_VAL_AGENT_SHORT {agent-short} {agent.short}\"" } },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "placeholder-env-collision" && d.Path == "/items/2/command" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void NonShellCommandWithTwoIdsManglingToSameEnvVar_ProducesNoEnvCollisionDiagnostic()
+    {
+        // §4.2: the env-collision check is scoped to shell:true — non-shell substitutes directly
+        // into argv and has no shared environment namespace for two ids to collide in.
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Id = "agent-short", From = "directory" },
+                new() { Id = "agent.short", From = "directory" },
+                new() { Id = "cmd", Command = new List<string> { "tool", "{agent-short}", "{agent.short}" } },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "placeholder-env-collision");
+    }
+
+    [Fact]
+    public void ArgvPlaceholderNamingKnownBuiltin_ProducesNoArgvPlaceholderDiagnostic()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig> { new() { Id = "cmd", Command = new List<string> { "tool", "{directory}" } } },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code is "unknown-item-id" or "placeholder-derived-source" or
+            "placeholder-command-source" or "placeholder-self-reference" or "placeholder-env-collision");
+    }
 }
