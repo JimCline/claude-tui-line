@@ -4106,6 +4106,47 @@ Merged cleanly (git auto-merged `AcceptedCommand.cs`/`AcceptedCommandTests.cs`, 
 independently verified via task-gopher pre-merge on the worktree and post-merge on `main`. Full
 suite: 1258/1258 passed. Landed as merge commit `dc25b42` (branch tip `b739fad`), pushed.
 
+### #8c: collapse:true compositor border grid (§2.10/§2.10.2)
+
+Problem: with `collapse:true`, adjacent panes sharing a boundary must draw one shared border —
+tee/cross junctions where three or four panes meet, not each pane independently drawing its own
+overlapping box (the `collapse:false` behaviour already shipped in #8b).
+
+Fix: new `BorderGrid.cs` (335 lines) builds a per-cell 4-bit NESW mask grid once per render via
+its own top-down tree walk, derives the correct junction glyph per border style from a 16-entry
+table keyed by the mask, and resolves each interior boundary as a 0-2-contributor convex hull of
+row-spans — ties broken by first-requester-in-tree-declaration-order. `PaneTreeRenderer.cs`
+changed so every pane draws its own uncontested edges through the ordinary `PaneBorderRenderer.Wrap`
+path, using an "effective" border with excludeLeft/excludeRight falsified for whichever side is
+charged to a shared boundary instead; every shared vertical-split boundary becomes a synthetic
+1-column contribution spliced into the split's children list via absolute (row,col) grid lookups,
+with `rowStart`/`colStart` threaded top-down through the walk. `HeightLadder.cs`/`Program.cs`:
+`collapse` is threaded through only to the final render call, not through the ladder's row-count
+measurement passes (those don't care about junction glyphs). `Program.cs`'s new parameter is named
+`collapseBorders` specifically to avoid colliding with the pre-existing `PaneCollapse.Collapse`
+name (§2.11 empty-pane pruning) — same word, unrelated concept.
+
+`SizeResolver.cs`/`Config.cs`/`ConfigCheck.cs` needed no *new* changes for #8c itself: their
+collapse-aware `BoundaryCost`/`Floor` overloads, `BorderConfig.Collapse`/`ResolvedConfig.Collapse`,
+and collapsed-edge-conflict diagnostics were written earlier for #8a/#8b but were sitting
+uncommitted in the worktree. Since collapse cannot function without them and they were squarely
+in scope, the implementor committed them alongside #8c rather than leaving them stranded.
+
+Disclosed scope cuts (implementor-flagged, none silently dropped): only vertical-split interior
+boundaries are collapsed — horizontal-split/row boundaries and the outer surface edge are out of
+scope for this pass; `gutter>1` centering and boundary-level degrade under collapse are not
+implemented; when sibling panes have different resolved heights (e.g. one `fill`, one shorter
+`content`-sized), their borders don't land on the same rows so the bottom boundary isn't a clean
+tee in that row — known gap, not fixed, not tested, and deliberately avoided in the implementor's
+own test config (which uses two `fill` children to sidestep it).
+
+Merge note: `task-8c` had branched before #49/#54/#50/#45 landed (12 commits behind
+`origin/main` at merge time), yet `git merge --no-ff` auto-merged cleanly — `ConfigCheck.cs` and
+`Program.cs` were touched by both sides but with no overlapping hunks, no conflict markers.
+Independently verified via task-gopher both pre-merge on the worktree (1263/1263, against its
+own older base) and post-merge on `main` (1265/1265, build 0 warnings/0 errors). Landed as merge
+commit `070cc7c` (branch tip `ac4b634`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
