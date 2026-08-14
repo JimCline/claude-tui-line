@@ -54,9 +54,14 @@ Read the whole file. You need the tree in front of you to navigate to "the first
 ## 3. Capture the "before"
 
 ```bash
-<binary> --preview --columns $(tput cols) 2>/tmp/edit-before-notes
+<binary> --preview --columns 80 2>/tmp/edit-before-notes
+<binary> --preview --columns 60 2>>/tmp/edit-before-notes
 cat /tmp/edit-before-notes
 ```
+
+Both widths, and both written out rather than measured (§12.1.1) — you have no terminal, so
+`tput cols` would return terminfo's static 80 while looking like it adapted. The before and after
+captures must cover the *same* widths or the diff in step 7 compares different things.
 
 Keep **both** streams. The render is half of what you show the user at the end; the notes on stderr
 are how you tell an effect of your change from one that was already there. A pane that was being
@@ -123,17 +128,16 @@ does not, take the obvious reading, do it, and say which reading you took.
 `--check` names the offending key by JSON Pointer. Fix and re-check until clean. Do not skip this
 because the change looks obviously fine — that is exactly when a silent config error survives.
 
-## 7. Preview, at three widths
+## 7. Preview, at both widths
 
 ```bash
-<binary> --preview --columns $(tput cols) 2>/tmp/edit-after-notes
-<binary> --preview --columns 80 2>>/tmp/edit-after-notes
+<binary> --preview --columns 80 2>/tmp/edit-after-notes
 <binary> --preview --columns 60 2>>/tmp/edit-after-notes
 cat /tmp/edit-after-notes
 ```
 
 `--check` passing is not evidence the result looks right. Most layout mistakes only appear when
-something has to wrap, which is why the narrow widths are not optional.
+something has to wrap, which is why the narrow width is not optional.
 
 **Diff these notes against the ones from step 3.** That comparison is the only thing that separates
 "my edit dropped a pane" from "a pane was already being dropped at 60 columns and still is" — and
@@ -141,11 +145,11 @@ those call for opposite responses. A note present in both is context for the use
 new is your change, and `--check` will never tell you about either, because neither is a config
 error (§9.8.1).
 
-The 80- and 60-column runs append rather than overwrite, so one file holds all three. Read it
-knowing the two kinds of note behave differently in it: a width-drop note carries its own width in
-its message, so it stays unambiguous, while a `maxLines` cap note does not — the cap is
-width-independent, so it fires identically at all three widths and appears three times. Three
-copies of a cap note is one finding, not three.
+The 60-column run appends rather than overwrites, so one file holds both. Read it knowing the two
+kinds of note behave differently in it: a width-drop note carries its own width in its message, so
+it stays unambiguous, while a `maxLines` cap note does not — the cap is width-independent, so it
+fires identically at both widths and appears twice. Two copies of a cap note is one finding, not
+two.
 
 Then verify three things and report each honestly:
 

@@ -110,12 +110,25 @@ deserves to see exactly what they got back — then render it:
 
 ```bash
 echo '{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}' \
-  | COLUMNS=$(tput cols) <the restored command>
+  | COLUMNS=80 <the restored command>
 ```
 
-If it produces nothing, or errors, **say so**. That is a real finding about the backup and the user
-needs it now rather than next session. Do not report a revert as successful on the strength of
-having written the file.
+80 is written out rather than measured, and must stay that way (§12.1.1): you have no terminal, so
+`tput cols` returns terminfo's static 80 while looking like it adapted to the user's window.
+
+**Errors and empty output are not the same finding, and this is where that matters most.**
+
+- **A nonzero exit, or anything on stderr** → a real finding about the backup. Say it plainly and
+  now, not next session.
+- **Empty stdout, exit 0** → *inconclusive*, and reporting it as damage is its own harm. Two
+  ordinary causes have nothing to do with the backup: this renders at 80 columns rather than the
+  user's width, and the payload above is minimal — real payloads carry workspace, session and usage
+  fields, so a script reading them renders absent here and will fill in once it is live.
+
+  Say it produced no output, say both reasons, and hand them the check rather than performing it:
+  the one-liner above, run in their own terminal, where the real width exists. Do not chase it.
+
+Either way, do not report a revert as successful on the strength of having written the file.
 
 Then, briefly: what was restored, which ledger entry it came from, where the new checkpoint went,
 and that `claude-tui-line.json` is untouched.

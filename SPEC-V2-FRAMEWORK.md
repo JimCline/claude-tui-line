@@ -4355,13 +4355,58 @@ just wrote is right*. Both come from the binary (§9), never from prose:
   documentation, where nothing type-checks the copy.
 - **Whether it is valid** — `--check --json`, which names the offending key by JSON Pointer. A
   model that has just written a config needs to know *which* key it got wrong.
-- **What it looks like** — `--preview --columns N`, at the user's real width and at a narrow
-  one, because most layout mistakes only appear when something has to wrap.
+- **What it looks like** — `--preview --columns N`, at **80 and 60** (§12.1.1), because most
+  layout mistakes only appear when something has to wrap. This bullet read "at the user's real
+  width" until §12.1.1, which is a width no command can obtain.
 
 The loop is therefore fixed and the same for every authoring command: **query, edit, check,
 preview, show the user.** A model writing config from memory and declaring success is the
 failure mode this structure exists to prevent — §7 makes a bad config silent, so an unverified
 edit produces a wrong statusline with no error anywhere.
+
+#### 12.1.1 The commands have no terminal either — §12.6.3's rule, one layer up
+
+§12.6.3 ruled that the MCP server must be given its width because "the server has no terminal", and
+that a preview at an inferred width "is a faithful preview of a layout the user will never see,
+which is worse than no preview, because it will be believed." The slash commands run under exactly
+the same condition and were never given the rule. §12.1's bullet above said "at the user's real
+width" — and no command has ever been able to obtain one.
+
+**Measured, not reasoned.** A model executing these commands runs them through a tool harness with
+no controlling terminal: `tty` reports "not a tty", `stty size < /dev/tty` fails with *device not
+configured*, and `COLUMNS` is `0`. In that environment `tput cols` returns `80` — identical to
+`tput -T xterm cols`, the static terminfo `cols` capability — because there is no window to ask.
+
+So `COLUMNS=$(tput cols)`, which §12.3, §12.5 and §12.7 all wrote, is **the literal constant 80
+wearing the costume of an adaptive width.** That is worse than writing `80` would have been: a
+reader reviewing the prompt sees a command that adapts, and no output ever contradicts them.
+
+**Ruling: the commands render at explicit, named widths, and never call `tput`.** 80 and 60 — the
+pair §12.6.3 already gives the server. Every report names the width it rendered at. The narrow run
+is not decoration; it is the one that catches wrapping, which is the class of mistake this whole
+loop exists to surface.
+
+**The duplicate this had already produced.** §12.4 asked for the terminal's width *and* 80 *and* 60,
+so `/claude-tui-line:edit` ran three previews at two distinct widths — 80, 80, 60. §12.6.3 had said
+"pair" all along; the prompt drifted to three and nothing compared them. The cost was not the wasted
+run: the prompt then reasoned *from* the count, telling its reader that a width-independent
+`maxLines` note "fires identically at all three widths and appears three times." It appears twice.
+A reader applying that rule to a note seen twice concludes it is width-dependent, which is the
+opposite of what the passage exists to teach — and the step-3 "before" capture used the single
+inferred width, so the before/after note diff the whole method rests on was comparing one width
+against three runs.
+
+**What this changes about reading an empty render.** §12.5 step 7 tells the reader that output of
+nothing is "a real finding about the backup" — but at a width that is not the user's, with the
+minimal stdin payload these commands use, empty output is *inconclusive*. §12.7 step 5 already says
+this about the same evidence, warning that "a correct install reads as a half-broken one" and that
+the user's first act is then to debug something that works. Two commands drawing opposite
+conclusions from one observation is what §12.7 itself calls worse than either being wrong alone.
+
+The distinction that actually holds: **a nonzero exit or anything on stderr is a real finding; empty
+stdout alone is not.** Report the second as inconclusive, name both reasons it can happen, and give
+the user the one-line command to run in their own terminal — which is the only place the real width
+exists, and which is a thing to hand over rather than to simulate.
 
 ### 12.2 The backup ledger
 
@@ -4533,8 +4578,9 @@ a config they did not have when the command started, and "no config, defaults ap
 reachable at all.
 
 **A passing `--check` is not evidence the result looks right.** An edit is verified by previewing
-at the terminal's width *and* at 80 and 60 columns, because most layout mistakes only appear when
-something has to wrap. Three things are then reported honestly: whether the intended change
+at 80 and 60 columns, because most layout mistakes only appear when something has to wrap. This
+read "at the terminal's width *and* at 80 and 60" until §12.1.1, which is where that third width
+turned out to be 80 again. Three things are then reported honestly: whether the intended change
 appeared (an item resolving to empty renders invisible, and invisible reads as absent), whether
 anything else moved (adding an item rewraps its neighbours — correct behaviour, but the user
 should hear it here rather than discover it later), and whether it still degrades rather than

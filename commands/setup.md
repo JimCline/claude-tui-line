@@ -99,8 +99,11 @@ verbatim**:
 
 ```bash
 echo '{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}' \
-  | COLUMNS=$(tput cols) <the exact command string now in settings.json>
+  | COLUMNS=80 <the exact command string now in settings.json>
 ```
+
+80 is written out rather than measured, and must stay that way (§12.1.1): you have no terminal, so
+`tput cols` returns terminfo's static 80 while looking like it adapted. Report "at 80 columns".
 
 **Not `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`.** That path was already proven in step 2 and is
 not what is in doubt. The one untested thing after step 4 is *the expansion* — whether the absolute

@@ -136,10 +136,15 @@ Run both against the same stdin payload:
 
 ```bash
 payload='{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}'
-echo "$payload" | COLUMNS=$(tput cols) <original command>
-echo "$payload" | COLUMNS=$(tput cols) <binary> --preview --columns $(tput cols) --config <temp path> 2>/tmp/preview-notes
+echo "$payload" | COLUMNS=80 <original command>
+echo "$payload" | COLUMNS=80 <binary> --preview --columns 80 --config <temp path> 2>/tmp/preview-notes
 cat /tmp/preview-notes
 ```
+
+**80 is written out, not measured, and you must not replace it with `tput cols`** (§12.1.1). You
+have no terminal — `tty` says "not a tty" and `COLUMNS` is `0` — so `tput cols` returns terminfo's
+static default, which is 80 anyway. The difference is only that the command would *look* like it
+adapted. Say "at 80 columns" in your report, never "at your terminal width".
 
 **Read that stderr file. It is not noise, and it is the half of the answer stdout cannot give.**
 Render notes go to stderr in the human form (§9.8.1) precisely so stdout stays byte-comparable for

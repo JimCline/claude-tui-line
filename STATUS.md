@@ -2411,6 +2411,54 @@ earlier this session. Rewritten to §4.0.1 with the no-default rule stated.
 `commands/edit.md`'s mention needed no change: it says a cap note is width-independent and appears
 at all three widths, which stays true whenever a cap is configured and claims no default.
 
+### `tput cols` is a constant in every environment these commands run in (§12.1.1)
+
+Came out of auditing the prompts' spec citations by heading title — the habit that caught §12.4/§12.5
+earlier and §7 an hour ago. The citations were all fine. The **commands around them** were not.
+
+`COLUMNS=$(tput cols)` appeared in migrate, revert, setup, and edit. Measured in the environment an
+LLM actually executes these in:
+
+```
+tty                     → not a tty
+stty size < /dev/tty    → device not configured
+COLUMNS                 → 0
+tput cols               → 80
+tput -T xterm cols      → 80      # identical: the static terminfo capability
+```
+
+There is no controlling terminal, so there is no window to ask, and `tput` falls back to terminfo's
+`cols`. **It is the literal constant 80 wearing the costume of an adaptive width** — which is worse
+than having written `80`, because a reviewer reading the prompt sees a command that adapts and no
+output ever contradicts them.
+
+§12.6.3 had already ruled exactly this one layer down — *"the server has no terminal… a preview at
+an inferred width is a faithful preview of a layout the user will never see, which is worse than no
+preview, because it will be believed."* The slash commands share the condition and never got the
+rule. Same shape as §12.6.10 (`preview` has no `notes`, "§9.8.1's defect one layer up"): **this
+project's recurring failure is a rule made in one layer and not propagated to the layer above it.**
+Worth naming, because that is now three.
+
+**The duplicate it had already caused.** §12.4 asked for the terminal's width *and* 80 *and* 60, so
+`edit` ran three previews at two widths: 80, 80, 60. §12.6.3 said "pair" the whole time. The waste
+was not the point — the prompt *reasoned from the count*, telling its reader a width-independent
+`maxLines` note "fires identically at all three widths and appears three times." It appears twice,
+so a reader following that rule concludes the note is width-dependent, the exact inverse of the
+lesson. And step 3's "before" capture used the single inferred width, so the before/after note diff
+the method rests on compared one width against three runs.
+
+**The escape hatch had a false-alarm instruction.** `revert` step 7 said output of nothing is "a
+real finding about the backup" — at a width that is not the user's, with a deliberately minimal
+payload. `setup` step 5 already says the opposite about the same evidence, warning that "a correct
+install reads as a half-broken one" and the user's first act is debugging something that works.
+Two commands drawing opposite conclusions from one observation is what `setup` itself calls worse
+than either being wrong alone. Split: **nonzero exit or anything on stderr is a real finding; empty
+stdout alone is inconclusive** — name both ordinary causes and hand the user the one-liner for their
+own terminal, which is the only place the real width exists.
+
+Fixed in all four prompts and in §12.1 and §12.4, which both instructed the impossible width. No
+`$(tput` remains anywhere in `commands/` or `docs/`.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
