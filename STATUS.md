@@ -3774,6 +3774,35 @@ moves the box to the band's bottom. Plus 2 `ConfigCheckTests.cs` cases for the n
 Fast-forward merge (main hadn't moved), clean build, full suite escalated (justified — touches the shared
 split-rendering path): 1184/1184 passed. Landed as `2f69047`, pushed.
 
+### #5: §4.2 argv placeholders for custom command items
+
+`{item-id}` placeholders in a `command` item's `argv` reuse §3.2's `{}`/`{other-id}` vocabulary via a new
+shared `PlaceholderTemplate.cs` tokenizer (id charset `^[A-Za-z0-9_.\-]*$`, `{{`/`}}` escaping), retrofitted
+under `LeafContent.cs`'s existing link-template regex too rather than living beside it. New
+`ArgvPlaceholders.cs` does the actual expansion: non-shell mode substitutes resolved values directly into
+`ProcessStartInfo.ArgumentList` (no shell, no injection risk); `shell:true` mode substitutes nothing into
+the command string and instead exports only the referenced values as `CLAUDE_TUI_LINE_VAL_<ID>` env vars —
+the security boundary against command injection the spec calls for.
+
+`--check` now errors (not warns) on five new diagnostics: unknown-item-id, placeholder-derived-source,
+placeholder-command-source, bare-`{}` self-reference, and placeholder-env-collision. The value-cache key
+(`ItemCache.cs`) was widened to a 5-argument form covering resolved argv, cwd, pane width, and exported env
+together — closing the gap flagged in dispatch (§5's up-front resolution set needed the same treatment as
+defect 11, and `CLAUDE_TUI_LINE_PANE_WIDTH` needed to be in the key, not just argv). `PaneItem.Command` is
+now a real covered row in §9.5.1's `ReferenceExtractors` table, not a `PendingForm` exemption.
+
+Three implementor judgment calls, none blocking: (1) the cache-key split (3-arg width-tracking vs. new
+5-arg value key) is plumbing not dictated by spec text — chosen to hit the coverage requirement with zero
+`Program.cs` changes; (2) argv-substituted/env-exported values are not ANSI-stripped, unlike link templates
+— reasoned correct since these go to subprocess argv/env, not rendered terminal text, but the spec doesn't
+explicitly rule on it; (3) a *named* self-reference (an item's own id used as `{own-id}`, vs. bare `{}`)
+falls through to the generic placeholder-command-source diagnostic rather than the self-reference one —
+functionally still an error, just a different code. Not fixed now; flagged as backlog #50 in case the
+diagnostic code matters to a future `--check --json` consumer.
+
+Non-fast-forward merge (main had moved with #7 in the meantime; auto-merged cleanly, no conflicts). Full
+suite: 1216/1216 passed. Landed as merge commit `f555b57` (branch tip `723e203`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
