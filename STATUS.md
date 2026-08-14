@@ -4426,6 +4426,31 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 and post-merge on `main` (1319/1319, build 0 warnings/0 errors, `check-all.sh` all five checks
 green, 20 doc tokens checked). Landed as merge commit `d18226c` (branch tip `f361860`), pushed.
 
+### #60/#61: §9.4.1 misspelled-split erratum location, README `--check` blockquote staleness
+
+**#60** was briefed against §9.4.2, but the erratum text it was meant to fix ("misspelled `split`
+turns a container into something that is not a container... half the statusline disappears") is
+actually in **§9.4.1**, lines 4551-4552 — a bullet in the "unknown keys" silent-failure example
+list. Fixed at its real location, not the briefed one. New phrasing: "A misspelled `split` reverts
+to the default vertical axis; the pane stays a container with all its children intact, and the
+difference is a silently wrong axis rather than a vanished one" — matches the sibling bullets'
+"reverts to X... difference is A rather than B" convention. Added a pinning test,
+`PaneTests.cs::UnrecognizedSplitWithChildren_StaysAContainerOnTheDefaultAxis` (split:"diagonal" +
+2 children → asserts `Split == PaneSplit.Vertical`, `Children.Count == 2`), since nothing existing
+covered this exact resolved-axis behavior.
+
+**#61** fixed the stale README.md:58 blockquote claiming the CLI flags were "not built yet... will
+tell you so and stop." Independently verified (not assumed) that `--items` and `--preview`, not
+just `--check`, are also fully implemented and tested (Program.cs handlers, `CommandProviderTests.cs`,
+`PreviewJsonRowsTests.cs`) — the stale premise applied to all three flags. Updated to point at the
+new [CLI](#cli) section (added in #56) instead. Whether the `/migrate`/`/edit`/`/revert` slash
+commands are themselves fully wired to that CLI was correctly left out of scope — the blockquote's
+"which" grammatically refers to the CLI flags, not the slash commands.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1312/1312)
+and post-merge on `main` (1320/1320, build 0 warnings/0 errors, `check-all.sh` all five checks
+green, 20 doc tokens checked, 0 disagree). Landed as merge commit `faec247`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
