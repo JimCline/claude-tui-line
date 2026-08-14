@@ -109,7 +109,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // ComputeRows, shared with RunPreview below, so the real render and a preview capture
         // can't compute that decision two different ways.
         var (rows, renderingPanel, boxBorder, borderColor) =
-            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, cacheDir, stampWidths: true, unavailableIds);
+            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, cacheDir, stampWidths: true, unavailableIds, topLevel.SurfaceMaxRows);
         DrawRows(console, rows, renderingPanel, boxBorder, borderColor, surfaceWidth);
 
         return 0;
@@ -160,7 +160,8 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
     string? cwd,
     string cacheDir,
     bool stampWidths,
-    IReadOnlyCollection<string> unavailableIds)
+    IReadOnlyCollection<string> unavailableIds,
+    int surfaceMaxRows)
 {
     var useSplitPipeline = surfaceWidth is int
         && (pane.Items.Count > 0 || (pane.Split != PaneSplit.None && pane.Children.Count > 0));
@@ -177,13 +178,15 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
             return (Array.Empty<PaneRow>(), false, null, Style.Plain);
         }
 
-        var resolvedRoot = SizeResolver.Resolve(collapsedPane, surfaceWidth!.Value, ctx, values, notes);
+        // SPEC-V2-FRAMEWORK.md §2.8.1: surfaceMaxRows and every pane's own maxRows are enforced
+        // by the degrade ladder, which resolves both the sized tree and its rendered contribution
+        // in one pass so a rejected intermediate attempt's width resolution never leaks out.
+        var (resolvedRoot, rootContribution) = HeightLadder.Resolve(collapsedPane, surfaceWidth!.Value, surfaceMaxRows, ctx, values, tokens, notes);
         if (stampWidths)
         {
             StampPaneWidths(resolvedRoot, cwd, cacheDir);
         }
 
-        var rootContribution = PaneTreeRenderer.Render(resolvedRoot, ctx, values, tokens, notes);
         return (rootContribution.Buffer.Rows, false, null, Style.Plain);
     }
 
@@ -387,7 +390,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
         // cached width at a different one. §9.3.4: this is permanent, not a placeholder — it stays
         // until §5.0.1's widths store is keyed by resolved surface width.
         var (jsonRows, jsonRenderingPanel, jsonBoxBorder, jsonBorderColor) =
-            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds);
+            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds, topLevel.SurfaceMaxRows);
 
         // §9.3.4: a row is a line of the rendered surface, borders included — the same draw the
         // bare form produces, captured through the same console configuration rather than a second
@@ -444,7 +447,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     }
 
     var (bareRows, renderingPanel, boxBorder, borderColor) =
-        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds);
+        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, cacheDir, stampWidths: false, unavailableIds, topLevel.SurfaceMaxRows);
 
     // §9.3.2: bare --preview writes through the render path's own console configuration (forced
     // ANSI, not the auto-detecting instance --colors uses), captured first so the columns/notes

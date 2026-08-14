@@ -313,13 +313,15 @@ public partial class ConfigJsonContext : JsonSerializerContext
 /// <see cref="ColorSystem"/> (§6.2) defaults to <see cref="ColorSystemSupport.Standard"/>, keeping
 /// the golden parity baseline byte-identical by construction. <see cref="Colors"/> (§6.3) is the
 /// parsed <c>colors</c> token table, keyed by name without the leading <c>@</c>.
+/// <see cref="SurfaceMaxRows"/> (§2.8.1) is the whole surface's row budget, defaulting to 8.
 /// </summary>
 public sealed record ResolvedConfig(
     ColorResolution.ColorExpr BorderColor,
     BoxBorder? Style,
     int ChromeReserve,
     ColorSystemSupport ColorSystem,
-    IReadOnlyDictionary<string, ColorResolution.ColorRule> Colors);
+    IReadOnlyDictionary<string, ColorResolution.ColorRule> Colors,
+    int SurfaceMaxRows = ConfigLoader.DefaultSurfaceMaxRows);
 
 public static class ConfigLoader
 {
@@ -328,6 +330,9 @@ public static class ConfigLoader
 
     // SPEC.md §6 "MEASURED": the real Claude Code truncation boundary is COLUMNS - 3.
     public const int DefaultChromeReserve = 3;
+
+    // SPEC-V2-FRAMEWORK.md §2.8.1: the whole surface's default row budget.
+    public const int DefaultSurfaceMaxRows = 8;
 
     /// <summary>
     /// SPEC.md §6b "Config path resolution": <paramref name="configPathOverride"/>, when set and
@@ -379,8 +384,9 @@ public static class ConfigLoader
         var chromeReserve = config?.Layout?.ChromeReserve ?? DefaultChromeReserve;
         var colorSystem = ParseColorSystem(config?.ColorSystem);
         var colors = ParseColorTable(config?.Colors);
+        var surfaceMaxRows = config?.Surface?.MaxRows ?? DefaultSurfaceMaxRows;
 
-        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, chromeReserve, colorSystem, colors);
+        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, chromeReserve, colorSystem, colors, surfaceMaxRows);
     }
 
     private static readonly (string Token, ColorSystemSupport Value)[] ColorSystemAccepted =
