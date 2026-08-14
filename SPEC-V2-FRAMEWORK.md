@@ -1667,13 +1667,25 @@ Two severities, and the split resolves defects 3–6 (silent acceptance):
   `size`, `style`, `align`, `valign`, or `overflow`; an unknown colour name; a `link` naming an
   id that resolves to nothing; `overflow: "overflow"` on a pane inside a split (§2.6); a pane
   whose fixed sizes cannot fit its parent.
-- **`warning`** — it works, but probably not as intended. A pane with no items; `minSize`
-  greater than `maxSize`; a `command` item with no `timeoutMs`.
+- **`warning`** — it is satisfiable, but probably not what was meant. A pane with no items; a
+  `command` item with no `timeoutMs`.
 
-**Unknown enum values are errors even though the renderer accepts them.** That is not a
-contradiction: `--check` is diagnostic and changes no runtime behaviour, so calling a typo an
-error breaks nobody's running statusline while making it visible. The renderer keeps its fallback.
-Silence was the defect; the fix is a diagnostic, not a runtime change.
+**The line between them is satisfiable versus unsatisfiable — not "does the renderer cope."**
+That distinction cannot be the test, because §7 makes the renderer cope with everything: it
+degrades rather than failing, by design. If coping meant `warning`, nothing would ever be an
+`error`, including the unknown enum values ruled on below. So the question is whether a width, a
+terminal, or a state exists in which the config means what it says. If none does, the user wrote
+something that cannot be true, and that is an `error` however gracefully it is absorbed.
+
+`minSize` greater than `maxSize` **is an error**, and was listed as a warning here in an earlier
+draft. There is no width at which both constraints hold; the renderer clamps to *something*, but
+the intent is unachievable everywhere. §9.8 gives it the code `min-exceeds-max` and this line is
+the correction, not a second opinion.
+
+**Unknown enum values are errors even though the renderer accepts them.** Same principle, and it
+is not a contradiction: `--check` is diagnostic and changes no runtime behaviour, so calling a
+typo an error breaks nobody's running statusline while making it visible. The renderer keeps its
+fallback. Silence was the defect; the fix is a diagnostic, not a runtime change.
 
 `--check` reports what is **invalid or unresolvable**, never what is untidy. No diagnostics for
 formatting, ordering, or unused-but-valid keys. A checker that warns about things that work gets
@@ -1770,7 +1782,9 @@ terminal width can resolve.
 - Children's **fixed** sizes, plus gutters, plus border reserve, exceeding the parent's own
   **bounded** size — where bounded means the parent is itself fixed, or carries a `maxSize`.
   Code: `fixed-sizes-exceed-parent`.
-- `minSize` greater than `maxSize` on the same pane. Code: `min-exceeds-max`.
+- `minSize` greater than `maxSize` on the same pane. Code: `min-exceeds-max`. This is an
+  **error**; §9.4 listed it as a warning in an earlier draft and has been corrected there rather
+  than here.
 - Children's `minSize` sum, plus gutters and border reserve, exceeding the parent's `maxSize`.
   Same code as the first: it is the same contradiction with the floor rather than the exact size.
 
