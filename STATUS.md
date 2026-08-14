@@ -570,6 +570,39 @@ rule stated as closing a failure is a claim to test, not a claim to accept — t
 §9.4's stale warnings needed, applied to a rule that was never true rather than one that stopped
 being true.
 
+### §4.2 made the right argument and applied it to only half the cases (task #5)
+
+Same pass over argv placeholders. `--check`'s three codes and §5's six-construct enumeration are
+both complete and consistent — that part is clean. The gap is elsewhere, and it is a nice example
+of a section containing its own missing ruling.
+
+§4.2 justifies making an **unknown** placeholder id an error with this: "The literal
+`{gitbranch}`? An empty string? A dropped argv entry? Each is a different command line, the script
+sees a different `$1`, and the spec picks none of them." That argument is exactly as true of an id
+that is **known and simply empty at render time** — `{git-branch}` outside a repo. And there,
+unlike the unknown case, `--check` cannot help, because emptiness is a runtime condition. The
+section made the argument and then applied it only where a checker could act, leaving the harder
+half unspecified.
+
+**Ruled: substitute the empty string; the argv entry survives.** Arity is the thing that must not
+change. Dropping the entry shifts every positional after it, so
+`mytool --branch {git-branch} --format json` outside a repo becomes `mytool --branch --format json`
+and the tool binds `--format` as the *value* of `--branch` — **a third render-wrong case**, and the
+nastiest of the three, because the command runs, exits 0, and reports something the user never
+asked for. An empty argument can be wrong; it cannot re-bind a flag to the wrong value.
+
+Under `shell: true` the variable is exported **empty rather than unset**, for a parallel reason:
+unset lets the script's own `${VAR:-default}` fire, silently converting "no branch this render"
+into "whatever the script's default is", which is indistinguishable downstream.
+
+**And the item is not suppressed** — the opposite call from defect 14, deliberately. There the
+config has no defined meaning; here it has one and the value merely happens to be empty.
+Suppressing would delete behaviour the author chose.
+
+The pattern across §3.3 and §4.2 is the same: both sections argue well about the case a checker
+can catch, and go quiet on the case only the renderer sees. That is where the render-wrong class
+keeps coming from — three instances now, and none of them reachable by `--check`.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from

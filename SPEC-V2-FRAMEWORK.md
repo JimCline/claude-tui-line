@@ -1484,6 +1484,34 @@ framework exports second wins and the script reads a value belonging to the othe
 nothing anywhere reporting it — the same silence this section's substitution ban exists to avoid,
 arriving by the route the ban opened.
 
+**A placeholder naming a known id that is empty at render time substitutes the empty string, and
+the argv entry survives.** `{"command": ["mytool", "--branch", "{git-branch}"]}` outside a repo
+runs `mytool --branch ""`, not `mytool --branch`.
+
+This case needs ruling for the reason this section already gave about the *unknown* case, four
+paragraphs up: "The literal `{gitbranch}`? An empty string? A dropped argv entry? Each is a
+different command line, the script sees a different `$1`." That argument is exactly as true of an
+id that is known and simply empty — and there, unlike the unknown case, **`--check` cannot help**,
+because emptiness is a runtime condition. The section made the argument and then applied it only
+where a checker could act, which left the harder half unspecified.
+
+Preserving arity is the choice that cannot go silently wrong. Dropping the entry shifts every
+positional after it, so `mytool --branch {git-branch} --format json` outside a repo becomes
+`mytool --branch --format json` and the tool binds `--format` as the *value* of `--branch`. That
+is the render-wrong class again: a command that runs, exits 0, and reports something the user
+never asked for. An empty argument can be wrong, but it cannot re-bind a flag to the wrong value.
+
+The same rule under `shell: true`: the variable is exported **empty rather than unset**, so a
+quoted `"$CLAUDE_TUI_LINE_VAL_GIT_BRANCH"` expands to one empty argument and arity is preserved
+there too. Unset would leave the script's own `${VAR:-default}` free to fire, which silently
+converts "this render had no branch" into "this render had whatever the script's default is" —
+a different value, indistinguishable downstream.
+
+**The item is not suppressed for an empty placeholder.** A command that handles empty input is a
+reasonable thing to write, and suppressing would delete behaviour the author chose. This is the
+opposite call from defect 14's `shell: true` argv fault, and deliberately: there the config has no
+defined meaning, whereas here it has one and the value simply happens to be empty.
+
 ## 5. Execution model — the hard part
 
 The process is spawned **every second**. Naive shelling out per item per tick would destroy
