@@ -369,6 +369,11 @@ public static class ConfigChecker
             yield return UnknownEnumValue(path + "/distribute", pane.Distribute, "distribute", PaneDistributeParsing.AcceptedTokens);
         }
 
+        if (PaneHeightParsing.IsUnrecognized(pane.Height))
+        {
+            yield return UnknownEnumValue(path + "/height", pane.Height, "height", PaneHeightParsing.AcceptedTokens);
+        }
+
         if (pane.Items is { } items)
         {
             for (var i = 0; i < items.Count; i++)

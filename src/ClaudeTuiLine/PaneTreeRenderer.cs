@@ -48,7 +48,11 @@ public static class PaneTreeRenderer
                     contributions.Add(new Compositor.PaneContribution(new PaneBuffer(Array.Empty<PaneRow>()), pane.Gutter, HasBackground: false));
                 }
 
-                var contribution = natural[i].Buffer.Rows.Count < childHeight
+                // §2.8.3: a "content"-height child keeps its own natural border box instead of
+                // being re-rendered to the band height — Compositor.ComposeRoot's own Valign-based
+                // padding (below) then places that shorter box within the band, unbordered.
+                var childIsContentHeight = node.Children[i].Source.Height == PaneHeight.Content;
+                var contribution = natural[i].Buffer.Rows.Count < childHeight && !childIsContentHeight
                     ? Render(node.Children[i], ctx, values, tokens, notes, childHeight)
                     : natural[i];
                 contributions.Add(contribution);

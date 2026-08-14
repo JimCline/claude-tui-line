@@ -150,6 +150,53 @@ public static class PaneDistributeParsing
 }
 
 /// <summary>
+/// SPEC-V2-FRAMEWORK.md §2.8.3: whether a pane's border box fills the shared band a vertical
+/// split's children divide (§2.2's <c>height(vertical split) = max(height(children))</c>) or
+/// closes immediately under its own last content row. The same vocabulary as §2.3's width
+/// <c>size</c> key — <c>content</c>/<c>fill</c> — because it is the same question on the other
+/// axis.
+/// </summary>
+public enum PaneHeight
+{
+    Content,
+    Fill,
+}
+
+public static class PaneHeightParsing
+{
+    private static readonly (string Token, PaneHeight Value)[] Accepted =
+    {
+        ("content", PaneHeight.Content),
+        ("fill", PaneHeight.Fill),
+    };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
+    private static PaneHeight? ParseCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
+
+    public static PaneHeight Parse(string? value) => ParseCore(value) ?? PaneHeight.Fill;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched neither recognized token —
+    /// distinct from an absent field, which also defaults to <see cref="PaneHeight.Fill"/>.
+    /// §9.4's config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && ParseCore(value) is null;
+}
+
+/// <summary>
 /// One entry of a leaf pane's <c>items</c> list (§8). <see cref="Item"/> selects a builtin by id;
 /// a <c>command</c> item instead carries its own <see cref="Id"/> plus <see cref="Command"/>/
 /// <see cref="Shell"/>/<see cref="TtlSeconds"/>/<see cref="TimeoutMs"/> (§4/§5) and leaves
@@ -201,4 +248,5 @@ public sealed record Pane(
     int Gutter = 0,
     PaneValign Valign = PaneValign.Top,
     PaneAlign Align = PaneAlign.Left,
-    PaneDistribute Distribute = PaneDistribute.Greedy);
+    PaneDistribute Distribute = PaneDistribute.Greedy,
+    PaneHeight Height = PaneHeight.Fill);

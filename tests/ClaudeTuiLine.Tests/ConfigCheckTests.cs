@@ -607,6 +607,55 @@ public class ConfigCheckTests
     }
 
     [Fact]
+    public void UnrecognizedHeight_ReportsUnknownEnumValueNamingAcceptedSet()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Height = "shrink", Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-enum-value" && d.Path == "/surface/pane/children/0/height" &&
+            d.Severity == DiagnosticSeverity.Error && d.Message == "'shrink' is not a height — expected content or fill");
+    }
+
+    [Fact]
+    public void ExplicitHeightContent_ProducesNoUnknownEnumValueDiagnosticForHeight()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Height = "content", Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "unknown-enum-value" && d.Path == "/surface/pane/children/0/height");
+    }
+
+    [Fact]
     public void UnrecognizedColorSystem_ReportsUnknownEnumValueNamingAcceptedSet()
     {
         var config = new UserConfig

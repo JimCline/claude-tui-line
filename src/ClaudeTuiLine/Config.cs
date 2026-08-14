@@ -99,6 +99,9 @@ public sealed class PaneConfig
     [JsonPropertyName("distribute")]
     public string? Distribute { get; set; }
 
+    [JsonPropertyName("height")]
+    public string? Height { get; set; }
+
     [JsonPropertyName("items")]
     public List<PaneItemJsonConfig>? Items { get; set; }
 }
@@ -468,7 +471,8 @@ public static class ConfigLoader
             cfg.Gutter ?? 0,
             PaneValignParsing.Parse(cfg.Valign),
             PaneAlignParsing.Parse(cfg.Align),
-            PaneDistributeParsing.Parse(cfg.Distribute));
+            PaneDistributeParsing.Parse(cfg.Distribute),
+            PaneHeightParsing.Parse(cfg.Height));
     }
 
     private static readonly (string Token, PaneSplit Value)[] SplitAccepted =
