@@ -106,6 +106,11 @@ public static class ConfigChecker
                 yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-derived-source",
                     $"'{reference.Id}' is a derived item; an argv placeholder may not name a derived item");
             }
+            else if (reference.Form == ReferenceForm.ArgvPlaceholder && string.Equals(reference.Id, reference.OwnerId, StringComparison.Ordinal))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-self-reference",
+                    $"'{reference.Id}' names this command item's own id, but its output does not exist until it has run");
+            }
             else if (reference.Form == ReferenceForm.ArgvPlaceholder && scan.CommandItemIds.Contains(reference.Id))
             {
                 yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-command-source",

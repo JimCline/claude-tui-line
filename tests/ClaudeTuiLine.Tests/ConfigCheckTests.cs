@@ -1114,6 +1114,20 @@ public class ConfigCheckTests
     }
 
     [Fact]
+    public void ArgvPlaceholderNamedSelfReference_ReportsPlaceholderSelfReferenceNotCommandSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig> { new() { Id = "cmd", Command = new List<string> { "tool", "{cmd}" } } },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "placeholder-self-reference" && d.Path == "/items/0/command" && d.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Code == "placeholder-command-source");
+    }
+
+    [Fact]
     public void ShellTrueWithTwoIdsManglingToSameEnvVar_ReportsPlaceholderEnvCollision()
     {
         var config = new UserConfig
