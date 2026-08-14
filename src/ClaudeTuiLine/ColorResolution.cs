@@ -63,13 +63,18 @@ public static class ColorResolution
         };
 
     /// <summary>
-    /// A border needs an actual <see cref="Color"/> to build its <c>Style</c>, unlike item text
-    /// which renders through markup — and a border always renders in *some* colour, so an
-    /// expression that resolves to no colour (or fails to parse) falls back to
-    /// <see cref="Color.Grey"/>, the same default an absent <c>color</c> config has always used.
+    /// A thin adapter over <see cref="Resolve"/> for the single-pane <c>Panel</c> path: it needs a
+    /// full Spectre <see cref="Style"/>, not just a foreground <see cref="Color"/>, so a
+    /// decoration-only spec (<c>dim</c>, <c>bold</c>, ...) survives into <c>Panel.BorderStyle</c>
+    /// the same way it already does via markup on the pane-tree path (§6.6). A border always
+    /// renders in *some* style, so an expression that resolves to no colour (or fails to parse)
+    /// falls back to plain <see cref="Color.Grey"/>, the same default an absent <c>color</c>
+    /// config has always used.
     /// </summary>
-    public static Color ResolveBorderColor(ColorExpr expr, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorRule> tokens) =>
-        (Resolve(expr, values, tokens) is { } spec ? ResolveLiteral(spec) : null) ?? Color.Grey;
+    public static Style ResolveBorderColor(ColorExpr expr, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorRule> tokens) =>
+        Resolve(expr, values, tokens)?.Trim() is { Length: > 0 } spec && Style.TryParse(spec, out var style)
+            ? style
+            : new Style(Color.Grey);
 
     /// <summary>
     /// §6.4: a missing, failed, or empty source value takes the <c>default</c> branch, same as a

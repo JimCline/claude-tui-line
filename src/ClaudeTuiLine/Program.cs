@@ -146,7 +146,7 @@ static IAnsiConsole CreateRenderConsole(ResolvedConfig topLevel, TextWriter? out
 // RunPreview's capture can't diverge from what the real render path would have produced. Returns
 // the content rows either way; DrawRows below decides how to put them on a console, since
 // --preview's --json form needs the rows without a border drawn around them.
-static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, Color BorderColor) ComputeRows(
+static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, Style BorderColor) ComputeRows(
     Pane pane,
     int? surfaceWidth,
     ItemContext ctx,
@@ -169,13 +169,13 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
         }
 
         var rootContribution = PaneTreeRenderer.Render(resolvedRoot, ctx, values, tokens, notes);
-        return (rootContribution.Buffer.Rows, false, null, Color.Default);
+        return (rootContribution.Buffer.Rows, false, null, Style.Plain);
     }
 
     var segments = SegmentBuilder.Build(ctx);
     if (segments.Count == 0)
     {
-        return (Array.Empty<PaneRow>(), false, null, Color.Default);
+        return (Array.Empty<PaneRow>(), false, null, Style.Plain);
     }
 
     // Border reserve is a property of the box being drawn (2 verticals + 2 padding cells),
@@ -205,21 +205,21 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
     var renderingPanel = pane.Border.Style is not null && !suppressBorder;
     var borderColor = renderingPanel
         ? ColorResolution.ResolveBorderColor(pane.Border.Color, values, tokens)
-        : Color.Default;
+        : Style.Plain;
 
     return (rows, renderingPanel, renderingPanel ? pane.Border.Style : null, borderColor);
 }
 
 // The one place either drawing form (bordered Panel vs plain per-row MarkupLine) is produced, so
 // RunAsync's real console and RunPreview's captured one can't draw the same rows two different ways.
-static void DrawRows(IAnsiConsole console, IReadOnlyList<PaneRow> rows, bool renderingPanel, BoxBorder? boxBorder, Color borderColor, int? surfaceWidth)
+static void DrawRows(IAnsiConsole console, IReadOnlyList<PaneRow> rows, bool renderingPanel, BoxBorder? boxBorder, Style borderColor, int? surfaceWidth)
 {
     if (renderingPanel)
     {
         var panel = new Panel(new Markup(string.Join('\n', rows.Select(r => OscHyperlink.EscapeForRender(r.Markup)))))
             .Padding(1, 0)
             .Border(boxBorder!)
-            .BorderStyle(new Style(borderColor));
+            .BorderStyle(borderColor);
 
         panel.Width = surfaceWidth!.Value;
         console.Write(panel);

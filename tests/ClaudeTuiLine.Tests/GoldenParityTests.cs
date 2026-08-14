@@ -98,7 +98,7 @@ public class GoldenParityTests
             var panel = new Panel(new Markup(string.Join('\n', rows.Select(r => r.Markup))))
                 .Padding(1, 0)
                 .Border(boxBorder)
-                .BorderStyle(new Style(borderColor));
+                .BorderStyle(borderColor);
 
             panel.Width = surfaceWidth!.Value;
 

@@ -62,9 +62,8 @@ public class ConfigTests
         try
         {
             var resolved = ConfigLoader.LoadBorderConfig(path);
-            Assert.Equal(
-                Color.Grey,
-                ColorResolution.ResolveBorderColor(resolved.BorderColor, new Dictionary<string, string?>(), new Dictionary<string, ColorResolution.ColorRule>()));
+            var style = ColorResolution.ResolveBorderColor(resolved.BorderColor, new Dictionary<string, string?>(), new Dictionary<string, ColorResolution.ColorRule>());
+            Assert.Equal(Color.Grey, style.Foreground);
         }
         finally
         {
