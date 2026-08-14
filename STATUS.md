@@ -501,10 +501,26 @@ documented in §6.1, both accepted by `Style.TryParse` — are predicted to rend
 vanish on the other, with no diagnostic, because both paths *succeeded*. The two fallbacks agree
 in appearance today by coincidence, not construction.
 
-**Recorded as unverified where it is unverified.** That `Style.TryParse("dim")` yields
-`Foreground == Color.Default` is inferred from the signature, not observed, and §6.6 says so in a
-block quote rather than burying it. The defect holds either way — two resolvers and two fallbacks
-for one key is the defect — but the symptom is a prediction about a third-party library, and
+**Since verified, and it is wider than predicted.** The implementor built a throwaway console app
+against the pinned Spectre 0.57.2 for §9.6.3.1's round-trip assertion — a different section — and
+in the process settled this: `TryParse("dim")`, `("bold")` and `("default")` all return true with
+`Foreground == Color.Default`, while `("olive")` returns a real colour. Then every remaining
+decoration keyword behaved the same way: `italic`, `underline`, `invert`, `conceal`,
+`strikethrough`, and both blinks. So the rule is not three special cases but one — **a
+decoration-only spec has no colour component to contribute** — and `ResolveLiteral` drops the whole
+class, not just the two §6.1 happens to document. `border.color: "italic"` fails identically.
+
+That also fixes the shape of the test: driving this with a *colour* passes on both paths, because a
+colour is the one input where the two resolvers agree. It has to be driven with a decoration, and
+it has to assert the decoration survives — `Color.Default` is what the broken path returns
+*successfully*, so "it resolved" passes against the bug (§10.1, arriving through a second door).
+
+The original entry below is kept as written, because how the gap was recorded is the reusable part.
+
+**Recorded as unverified where it was unverified.** That `Style.TryParse("dim")` yields
+`Foreground == Color.Default` was inferred from the signature, not observed, and §6.6 said so in a
+block quote rather than burying it. The defect held either way — two resolvers and two fallbacks
+for one key is the defect — but the symptom was a prediction about a third-party library, and
 §9.4's lesson (a claim about the implementation goes stale, or was never checked) applies to spec
 prose exactly as it applies to diagnostics. Task #15 makes verifying it step 1, ahead of the fix,
 so it cannot enter a test as an assumption.

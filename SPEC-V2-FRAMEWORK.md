@@ -2493,11 +2493,27 @@ else, so a decoration-only spec — `dim` and `bold`, both of which §6.1 docume
 therefore expected to render dim in a split config and undim in a single-pane one, with no
 diagnostic on either, because both paths *succeeded*.
 
-> **Unverified, and it must be checked before the fix is written:** the claim that
-> `Style.TryParse("dim")` returns a style whose `Foreground` is `Color.Default` is inferred from
-> the signature, not observed. Assert it directly. The defect stands either way — two resolvers
-> with two fallbacks for one key is the defect — but the *symptom* named above is a prediction
-> about Spectre's behaviour, and §9.4's lesson applies to spec prose as much as to diagnostics.
+> **Now verified, and it is worse than the prediction.** This paragraph read "unverified, and it
+> must be checked before the fix is written" — the claim was inferred from the signature rather
+> than observed. It was checked, against the pinned Spectre 0.57.2, in a throwaway console app
+> built for §9.6.3.1's round-trip assertion and not for this: `Style` is a value type,
+> `Foreground` reflects as a non-nullable `Spectre.Console.Color`, and `TryParse("dim")`,
+> `TryParse("bold")` and `TryParse("default")` all return true with `Foreground == Color.Default`,
+> while `TryParse("olive")` returns a real colour. The symptom above is real.
+>
+> **The gap is wider than `dim` and `bold`.** The same run put every remaining decoration keyword
+> through it — `italic`, `underline`, `invert`, `conceal`, `strikethrough`, and both blinks — and
+> all seven behave identically. That is the general fact rather than three special cases: a
+> **decoration-only spec has no colour component to contribute**, so `.Foreground` is `Color.Default`
+> for all of them, and `ResolveLiteral` discards every one. The table above says a `Color` cannot
+> carry decorations; the measurement says which decorations, and it is all of them. §6.1 documents
+> `dim` and `bold`, which is why those are the two named — but `border.color: "italic"` fails the
+> same way, and the fix below covers the class rather than the two.
+
+Note where that evidence came from: a test being written for a *different* section, whose author
+recognised the reasoning as inferred and built a harness rather than agreeing with it. §9.4's
+lesson applies to spec prose as much as to diagnostics, and the discharge of an "unverified" block
+is worth as much as the block was.
 
 **Fix: one resolver, and `ResolveLiteral`'s return type is the actual bug.** `ColorResolution.Resolve`
 becomes the sole border-colour resolver, as it already is for items. `ResolveBorderColor` stays,
@@ -2505,6 +2521,15 @@ but only as a thin adapter over it, and it must return a **`Style`** rather than
 `Style.TryParse(spec)` whole, not `.Foreground` — so decorations survive into
 `Panel.BorderStyle`. The two fallbacks collapse into the one constant they only coincidentally
 agree on today.
+
+**The test that proves it must use a decoration, and asserting on `Style` equality is not enough.**
+A test that sets `border.color: "olive"` passes today on both paths, because a colour is the one
+input where the two resolvers agree — that is the whole shape of this defect. Drive it with `dim`
+through the single-pane path, and assert the resolved `Style` carries the **decoration**, not
+merely that resolution returned something non-default. `Color.Default` is what the broken path
+returns *successfully*, so any assertion phrased as "it resolved" passes against the bug. This is
+§10.1's rule arriving through a second door: an assertion that cannot fail against the defect it
+was written for is not a test of it.
 
 The general form is §9.8's rule, which was written about a checker transcribing the renderer's
 arithmetic: **two expressions of one thing drift silently.** This is the same failure with both
