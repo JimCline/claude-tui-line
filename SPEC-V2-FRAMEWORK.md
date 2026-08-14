@@ -4441,16 +4441,23 @@ fix is rule 1's distinction again, in the shape prose markers need: the marker c
 trailing note inside the comment, so this could not be an exact match on the marker alone.
 
 That this went unnoticed is the second finding. `check-examples.sh` is deliberately outside
-`check-docs.sh` (it needs a binary) and runs only in CI's `build` job — and CI has never executed on
-this repository, so between the day rule 3 was documented and the day something ran it, the only
-check that compares documentation against code was failing and nothing said so. The exclusion from
-`check-docs.sh` is still right. The conclusion is that a check whose only runner is an unproven one
-is not yet in service, and should be run by hand with `CLAUDE_TUI_LINE_BIN` pointed at any existing
-build until CI is real.
+`check-docs.sh` (it needs a binary), and for most of its life its only runner was GitHub Actions'
+`build` job — which never executed on this repository, Actions never having been billed. So between
+the day rule 3 was documented and the day something ran it, the only check that compares
+documentation against code was failing and nothing said so. The exclusion from `check-docs.sh` is
+still right. The conclusion is that **a check whose only runner is an unproven one is not yet in
+service**, no matter how correct the check is.
 
-It cannot run in the `spec` CI job, which has no toolchain by design. It runs in `build`, after the
-tests, so a red suite reads as a red suite. If it cannot obtain a binary or the item list comes back
-empty it exits 2 and says so — never a clean report it did not earn.
+That conclusion is what eventually retired the workflow rather than the check. Keeping a runner that
+had never run made the repository *look* covered, which is worse than looking uncovered; the checks
+moved to `./tools/check-all.sh` — `check-docs.sh` then `check-examples.sh`, both run even when the
+first fails. Clone-and-build-locally is the supported story (§14.3), so the gate has to be runnable
+that way. `CLAUDE_TUI_LINE_BIN` still points it at an existing build to skip the `dotnet run`.
+
+If it cannot obtain a binary, or the item list comes back empty, it exits 2 and says so — never a
+clean report it did not earn. That is what keeps it honest about the toolchain it needs, and it is
+load-bearing in a way it was not before: the old `spec`/`build` job split enforced the distinction
+structurally, and now nothing does but this exit code.
 
 **`version` carries the same string `--version` prints**, read from the assembly through the one
 `AssemblyVersionInfo.InformationalVersion` accessor, never re-derived. §9.7 already makes the
@@ -5030,7 +5037,8 @@ Each phase is wired into the live session and eyeballed before the next begins. 
 only step that caught the last defect — and §10.1 explains why it keeps being the step that does.
 A person looking at the statusline notices that it is blank; a suite whose strongest assertions
 are about width does not. The eyeball is the blank-surface control, run by hand. §10.1 exists so
-that the control also runs in CI, where it is repeatable and where nobody has to remember to look.
+that the control also runs in the test suite, where it is repeatable and where nobody has to
+remember to look.
 
 **Phase 7 is the exception and needs a different acceptance**, because there is nothing to eyeball
 — an MCP tool's output is a JSON payload consumed by a model. Its acceptance is a round trip: a
@@ -6266,8 +6274,9 @@ The single-citation dangle, `§4.3`, is the one a reader would most likely have 
   of the surrounding prose, because prose citing a section reads correctly whether or not the
   section exists — the sentence carries the meaning and the number is decoration until someone
   tries to follow it. Comparing the set of cited numbers against the set of heading numbers is
-  three lines of shell and belongs in CI beside the §9.7 version-drift check, which exists for
-  the same reason: two things that must agree, and no symptom when they stop.
+  three lines of shell and belongs in `check-docs.sh`, alongside the §9.7 version-drift check in
+  the test suite, which exists for the same reason: two things that must agree, and no symptom
+  when they stop.
 
 ## 14. Building, and the difference between a build and a deploy
 

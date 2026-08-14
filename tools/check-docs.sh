@@ -12,11 +12,15 @@
 # The fix is not to remember `set -o pipefail`. It is to have one thing to run whose whole
 # output is short enough that there is no reason to pipe it anywhere.
 #
-# check-examples.sh is deliberately NOT here. It needs a binary, it lives in CI's `build`
-# job after the tests for that reason, and folding it in would mean this script either
-# fails on a machine mid-build or — far worse — learns to skip itself when it cannot find
-# one. A check that can silently downgrade to a pass is the thing all three of these guard
-# against. Run it separately, with CLAUDE_TUI_LINE_BIN pointing at a real build.
+# check-examples.sh is deliberately NOT here. It needs a binary, and folding it in would
+# mean this script either fails on a machine mid-build or — far worse — learns to skip
+# itself when it cannot find one. A check that can silently downgrade to a pass is the
+# thing all three of these guard against.
+#
+# Run ./tools/check-all.sh to get this plus check-examples.sh, or run that one on its own
+# with CLAUDE_TUI_LINE_BIN pointing at a real build. It used to live in CI's `build` job
+# instead, which is why it had no local runner — and why, GitHub Actions never having been
+# billed on this repo, it went from written to committed without ever once executing.
 
 set -uo pipefail
 

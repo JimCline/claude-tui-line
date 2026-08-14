@@ -111,8 +111,9 @@ command -v jq >/dev/null 2>&1 || die "jq is required to read --items --json, and
   CLAUDE_TUI_LINE_BIN to a built binary on a machine that has it."
 
 # The binary is the oracle; this script never reimplements a builder. CLAUDE_TUI_LINE_BIN
-# lets CI reuse the artifact it just built (and lets this be tested against a stub) instead
-# of paying for a second build.
+# lets a caller reuse an artifact it already built (and lets this be tested against a stub)
+# instead of paying for a second build. That mattered most when this ran in CI's `build`
+# job; with the workflow gone it is what makes ./tools/check-all.sh cheap to re-run.
 if [[ -n "${CLAUDE_TUI_LINE_BIN:-}" ]]; then
     [[ -x "$CLAUDE_TUI_LINE_BIN" ]] || die "CLAUDE_TUI_LINE_BIN is set to '$CLAUDE_TUI_LINE_BIN', which is not executable."
     items_json=$("$CLAUDE_TUI_LINE_BIN" --items --json 2>/dev/null)

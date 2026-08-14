@@ -345,7 +345,13 @@ carries the meaning; the number is decoration until someone tries to follow it.
 list announced three and had four, and the extra one was the rule whose failure mode is silent —
 so a reader reconciling it against the other copy would have dropped exactly the wrong one.
 
-Run both after editing any document. CI runs everything here.
+Run `./tools/check-docs.sh` after editing any document — it runs those two plus `check-notes.sh`,
+needs no toolchain, and reports every disagreement in one pass rather than the first one.
+
+`./tools/check-all.sh` runs that and then `check-examples.sh`, which needs a .NET SDK because it
+compares every documented example against what the binary actually emits. Run it before sending a
+change that touches an example. There is no CI: this project is cloned and built locally, so these
+scripts are the whole gate.
 
 ## Licence
 

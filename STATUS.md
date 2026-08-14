@@ -1739,7 +1739,15 @@ Three things worth keeping from closing the four:
   and therefore harmless. The same mistake in the other direction reports clean forever, which is
   why the script now refuses to run if it extracts zero headings.
 
-### Open, and needs Jim: GitHub Actions is billing-blocked
+### ~~Open, and needs Jim~~ RESOLVED: GitHub Actions is billing-blocked
+
+**Resolved by deleting the workflow, not by paying the bill** — see "GitHub Actions removed" near the
+end of this document. The reasoning below is preserved as written and the last paragraph of it turned
+out to be wrong, which is why it is worth leaving in place: *"deleting it would discard correct work
+over a one-minute fix"* weighed the workflow's correctness and not its runtime, and a correct
+workflow that never runs is not correct work — it is a claim of coverage. The one thing that reasoning
+got exactly right is the sentence before it, about a signal that cannot mean what it appears to mean;
+it simply did not notice that the ✗ was that signal.
 
 The CI workflow is correct and has never run. Both jobs on `088a759` were refused before starting:
 
@@ -3381,6 +3389,43 @@ now **#18 → §14.2.2 deploy check → §9.2.2 protected-region fix → #37 →
 different `-o` scratch directories compared byte-for-byte. Asked the implementor to run it at a
 natural stopping point rather than racing their build over a shared `obj/`. Neither directory may be
 `publish/`.
+
+### GitHub Actions removed; `tools/check-all.sh` is the gate
+
+**User ruling: CI is deleted, clone-and-build-locally is the supported story.** `.github/workflows/ci.yml`
+is gone and `.github/` went with it, having held nothing else. Branch protection is unaffected —
+`required_status_checks` was `null`, so the workflow was never a merge gate and removing it cannot
+block a push.
+
+What prompted it: the workflow had never run. Actions was never billed on this repo, so `main` carried
+a red ✗ meaning "never ran" rather than "failing" — a permanently-red signal, which is the same defect
+§1.1.1 describes in another register. A check that cannot fail is not a check; one that always fails
+is the same check.
+
+**The concrete loss, and the reason this is not just tidying: `check-examples.sh` has never executed
+anywhere.** It needs a built binary, so it lived only in the Actions `build` job. Written, reviewed,
+committed, and it has compared nothing. **Task #30 is marked complete and the gate behind it has never
+fired.** Expect its first real run to find things; those findings are latent, not new.
+
+`tools/check-all.sh` is `check-docs.sh` then `check-examples.sh`, both run even if the first fails. No
+build step — `check-examples.sh` already builds via `dotnet run` when `CLAUDE_TUI_LINE_BIN` is unset and
+dies rather than reporting clean when it cannot. Deliberately **not** folded into `check-docs.sh`, whose
+header already rules that it must run with no toolchain and must never learn to skip a check it cannot
+perform.
+
+Handed to the implementor to run, since it shells out to `dotnet run` and shares `obj/` with their
+build.
+
+### §1.1 discharged: nine accepted-value lists, none tied to its parser (§1.1.1)
+
+`ConfigCheck.cs:289–297`. Every one currently agrees, which is the point. `BorderStyleParsing` was
+extracted specifically to avoid "a second copy of the token list" and `ConfigCheck.cs:289` is one,
+twenty lines away — because **a switch is not enumerable**, so a shared parser can make two acceptance
+behaviours agree and can never make the documented set agree. Fix is to make the set data; `size` is
+exempt, its list mixes literals with descriptions of a form.
+
+Open: whether the README and spec carry a third and fourth copy. §9.6.2.2 covers item examples, not
+enum tokens.
 
 ## Standing constraints
 
