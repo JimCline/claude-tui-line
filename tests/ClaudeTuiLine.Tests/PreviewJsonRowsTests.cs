@@ -58,12 +58,14 @@ public class PreviewJsonRowsTests
     {
         var configPath = WriteTempConfig("""
         {
-          "pane": {
-            "split": "vertical",
-            "children": [
-              { "border": { "enabled": true }, "items": [ { "item": "model-short" } ] },
-              { "border": { "enabled": true }, "items": [ { "item": "git-branch" } ] }
-            ]
+          "surface": {
+            "pane": {
+              "split": "vertical",
+              "children": [
+                { "border": { "enabled": true }, "items": [ { "item": "model-short" } ] },
+                { "border": { "enabled": true }, "items": [ { "item": "git-branch" } ] }
+              ]
+            }
           }
         }
         """);
@@ -80,6 +82,52 @@ public class PreviewJsonRowsTests
             {
                 var text = row.GetProperty("text").GetString();
                 Assert.Equal(text!.Length, row.GetProperty("width").GetInt32());
+            }
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
+    // Two side-by-side bordered children (split pipeline, PaneBorderRenderer-drawn borders) rather
+    // than the single Spectre-Panel-drawn pane the other tests in this file exercise. #49 fixed
+    // rows[].width in this pipeline to reuse PaneRow.Width instead of recomputing it; contentWidth
+    // is set from that same PaneRow.Width, so the two must always agree here.
+    [Fact]
+    public void Preview_SplitPaneConfig_WidthAndContentWidthAgreeSinceBothComeFromTheSameLayoutValue()
+    {
+        var configPath = WriteTempConfig("""
+        {
+          "surface": {
+            "pane": {
+              "split": "vertical",
+              "children": [
+                { "border": { "enabled": true }, "items": [ { "item": "model-short" } ] },
+                { "border": { "enabled": true }, "items": [ { "item": "git-branch" } ] }
+              ]
+            }
+          }
+        }
+        """);
+        try
+        {
+            var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--columns", "60", "--config", configPath);
+
+            Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
+            using var doc = JsonDocument.Parse(stdout);
+            var rowList = doc.RootElement.GetProperty("rows").EnumerateArray().ToList();
+
+            Assert.NotEmpty(rowList);
+
+            // Two side-by-side bordered panes at columns 60: confirms this fixture actually reaches
+            // the split pipeline rather than silently falling back to a single default pane.
+            Assert.Contains(rowList, row => row.GetProperty("text").GetString()!.Count(c => c == '╭') >= 2);
+
+            foreach (var row in rowList)
+            {
+                Assert.True(row.TryGetProperty("contentWidth", out var contentWidth), "a split-pipeline row must carry contentWidth");
+                Assert.Equal(row.GetProperty("width").GetInt32(), contentWidth.GetInt32());
             }
         }
         finally
