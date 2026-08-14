@@ -2633,6 +2633,82 @@ count that decays without anybody editing it.** The section that adds the member
 look upstream, and the upstream list has no way to notice. Wherever a spec states a set and a later
 subsection extends it, the earlier statement is a defect waiting for a reader who trusts it.
 
+## check-examples.sh: a fourth rule, and two defects found by running it at all
+
+Acting on the finding above — a count decays with nobody editing anything — the durable fix was to
+make the claim checkable rather than to fix the one sentence. `check-examples.sh` already has the
+binary and treats it as the oracle, so **rule D** went there: a prose count of the builtins must be
+the live count. Verified three ways: clean at the true count, and firing at both one below and one
+above, because a checker only proven on the passing case is a checker proven to print a string.
+
+The anchor is `builtin(s)` or `built-in item(s)` immediately after the numeral, and two near-misses
+set that boundary. "the nearest of the **sixteen**" is the ANSI palette — closed by the standard,
+not by this registry, and it will be wrong the day the two counts differ. SPEC.md's banner says v1
+had "14 **built-in segments**" — true, past tense, about a design v2 replaced. Requiring the noun
+`item` is not a carve-out for that line; it is the check asking about the *registry* rather than
+about anything that happens to be built in. STATUS.md is exempt outright: it is append-only, and a
+check that demands a retrospective be rewritten to stay green teaches people to rewrite
+retrospectives.
+
+**Running it turned up two defects that had nothing to do with the new rule.**
+
+1. **Rule 3 tripped on its own documentation.** Its marker test was a substring test — line contains
+   `<!--` and contains `items-table` — and §9.6.2.2's bullet *documenting rule 3* quotes the marker
+   inside a sentence. The check read its own spec as a marker, opened a table scan, found no table,
+   and reported SPEC-V2-FRAMEWORK.md as omitting all sixteen items. **A check that cannot survive
+   being described is a check nobody can write documentation for.** Fixed with rule 1's own
+   distinction in the shape a prose marker needs: the marker counts only when the *whole line is the
+   comment*. Not an exact match on the marker — README.md's carries a trailing note inside it.
+
+2. **Nothing had ever run this check.** It is deliberately outside `check-docs.sh` (needs a binary)
+   and runs only in CI's `build` job — and CI has never executed here, billing being blocked. So
+   between the day rule 3 was documented and today, the only check that compares documentation
+   against *code* was failing, and the failure had no reader. The exclusion from `check-docs.sh` is
+   still correct. The conclusion is narrower and worse: **a check whose only runner is an unproven
+   runner is not in service yet.** Task #30 is marked complete and the check was red the whole time.
+
+Until CI is real, run it by hand — no build needed, any existing artifact will do:
+
+```
+CLAUDE_TUI_LINE_BIN=./src/ClaudeTuiLine/bin/Release/net10.0/claude-tui-line ./tools/check-examples.sh
+```
+
+## check-citations named two innocent lines, and the reason was eight unescaped dots
+
+Writing the section above produced a citation to `§9.6.2.3`, which has no heading — a real finding,
+correctly caught. But the report named **three** locations for it, and two were lines about `§2.3`
+that have never mentioned it: `SPEC-V2-FRAMEWORK.md:906` and `:916`, both innocent, alongside the
+one real citation in this file.
+
+(Every number in this section is written backticked, deliberately. check-citations treats a bare
+`§N.M` as a citation and a backticked one as a mention, which is the same accommodation Rule A of
+check-examples makes for fenced-versus-prose — and it is the only reason a retrospective about a
+dangling reference can name the reference. Without it this paragraph would trip the check it
+describes, which is how the check would come to be switched off.)
+
+The resolve step is exact — `comm` over two sorted sets — so the *finding* was right. The
+**reporting** step then goes back to the occurrence list with `grep -E ":${ref}$"`, and in an ERE
+every `.` is a wildcard. The occurrence line for line 906 is `SPEC-V2-FRAMEWORK.md:906:2.3`, whose
+last eight characters are `:906:2.3`, and the pattern `:9.6.2.3$` is eight characters that match it
+one for one. Escaping the dots is the whole fix.
+
+Three things worth keeping from it:
+
+- **A correct finding pointing at wrong lines is worse than a wrong finding.** It sends the reader to
+  edit prose that is fine, and the conclusion they reach is that the checker is broken — which, on
+  the evidence in front of them, it is.
+- It cost real time here: the misattribution made the dangling citation look **pre-existing**, since
+  both bogus locations sat in a region nothing had touched. The next twenty minutes went to "how was
+  this ever green?" rather than to the one line that actually needed changing.
+- The exact-vs-fuzzy split is the tell. A checker that computes its verdict one way and its
+  explanation another has two implementations of "which citation is this", and only the first is
+  covered by the green run. **Wherever a check reports a location, the location is a second answer
+  and nothing tests it.**
+
+The citation itself was fixed by pointing at §9.6.2.2 — the `--items` section that already contains
+the `check-examples.sh` ruling — rather than by adding a `#### 9.6.2.3` heading, which would have
+split the `version` ruling out of the section whose title promises it.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

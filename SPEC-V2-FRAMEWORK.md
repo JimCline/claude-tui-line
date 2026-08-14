@@ -3862,15 +3862,27 @@ Writing an illustrative value is frictionless; verifying it means reading a buil
 machine closes that gap.
 
 **It exists: `tools/check-examples.sh`,** the third check, and the only one that runs the code. It
-enforces three rules, all exact, none guessing at what a line "looks like":
+enforces four rules, all exact, none guessing at what a line "looks like":
 
 - a `"example": "…"` **inside a fenced block** must be a value some item renders;
 - inside a fenced block that reproduces `--items` plain output — identified by its own trailing
   `Item kinds:` pointer line, not by resembling a table — a row whose first column is a known item
   id must carry that item's live example in its second;
-- a markdown table preceded by an `<!-- items-table -->` comment must **enumerate the live set
-  exactly** — no id absent, none listed that no longer exists, and each row's `(opt-in)` marker
-  agreeing with that item's `default: false`.
+- a markdown table preceded by a line that is **nothing but** an `items-table` HTML comment must
+  **enumerate the live set exactly** — no id absent, none listed that no longer exists, and each
+  row's `(opt-in)` marker agreeing with that item's `default: false`;
+- a prose **count** of the builtins — "all sixteen built-in items", "the sixteen builtins" — must
+  be the live count. The numeral must be immediately followed by `builtin(s)` or `built-in item(s)`,
+  which is what keeps "the nearest of the sixteen" (the ANSI palette, closed by the standard, not by
+  this registry) and SPEC.md's "14 built-in segments" (v1's concept, true in past tense) out of it.
+  STATUS.md is exempt: it is append-only, and a check that demands a retrospective be rewritten to
+  stay green teaches people to rewrite retrospectives.
+
+The fourth rule exists because a count is the one claim that decays with nobody editing anything.
+Whoever adds item seventeen has no reason to look upstream at a sentence written when there were
+sixteen, and the sentence has no way to notice it was overtaken. §9's own opening carried exactly
+that failure — "v2 needs three more" above a list of four, itself missing `--version` — and survived
+four flags shipping.
 
 The third rule checks a different thing from the first two: they ask whether a documented *value*
 is real, and it asks whether a documented *list* is complete, which no per-row check can see. The
@@ -3892,6 +3904,24 @@ and prose discusses**; the original defect was in a fenced shape, so nothing was
 check's very first execution produced a false positive rather than a finding is the more useful
 result: the class it guards is narrow, and the cost of drawing it one notch too wide is the check
 itself.
+
+**Rule 3 had to learn the same lesson, and the way it surfaced is worth keeping.** Its marker test
+was a substring test — "the line contains `<!--` and contains `items-table`" — and the bullet three
+paragraphs above, the one *documenting rule 3*, quotes the marker inside a sentence. So the check
+read its own specification as a marker, opened a table scan, found no table under it, and reported
+this file as omitting every item in the registry. **A check that cannot survive being described is a
+check nobody can write documentation for**, which is a slower version of getting switched off. The
+fix is rule 1's distinction again, in the shape prose markers need: the marker counts only when the
+**whole line is the comment** — opens with `<!--`, closes with `-->`. README.md's marker carries a
+trailing note inside the comment, so this could not be an exact match on the marker alone.
+
+That this went unnoticed is the second finding. `check-examples.sh` is deliberately outside
+`check-docs.sh` (it needs a binary) and runs only in CI's `build` job — and CI has never executed on
+this repository, so between the day rule 3 was documented and the day something ran it, the only
+check that compares documentation against code was failing and nothing said so. The exclusion from
+`check-docs.sh` is still right. The conclusion is that a check whose only runner is an unproven one
+is not yet in service, and should be run by hand with `CLAUDE_TUI_LINE_BIN` pointed at any existing
+build until CI is real.
 
 It cannot run in the `spec` CI job, which has no toolchain by design. It runs in `build`, after the
 tests, so a red suite reads as a red suite. If it cannot obtain a binary or the item list comes back

@@ -60,6 +60,34 @@
 #      thing, and a one-line description of what it reports is exactly that. The check
 #      does not write the row, it refuses to let you not notice.
 #
+#   D. A prose *count* of the builtins — "all sixteen built-in items", "the sixteen
+#      builtins" — must be the live count. Rules A–C pin documented values and one
+#      documented list; a number is the third way a document claims something about the
+#      set, and it is the one that decays with nobody editing anything. Whoever adds item
+#      seventeen has no reason to look upstream at a sentence written when there were
+#      sixteen, and the sentence has no way to notice it was overtaken. §9's opening
+#      carried exactly this failure — "v2 needs three more" above a list of four that had
+#      itself gone stale — and survived four flags shipping.
+#
+#      The anchor is deliberately tight: the numeral must be immediately followed by
+#      `builtin(s)` or `built-in item(s)`. Two near-misses set that boundary, and both are
+#      lines this must never flag:
+#
+#        - "approximated to the nearest of the sixteen" is the ANSI palette, a set closed
+#          by the standard rather than by this registry. Flagging it would be wrong every
+#          time the two counts happen to differ — which is the day the check gets
+#          switched off.
+#        - SPEC.md's banner says v1 was "one hardcoded statusline with 14 built-in
+#          segments". True, and true in past tense about a design v2 replaced. A *segment*
+#          is v1's concept and an *item* is v2's, so requiring the noun `item` after
+#          `built-in` is not a carve-out for one line — it is the check asking about the
+#          registry rather than about anything that happens to be built in.
+#
+#      STATUS.md is not scanned. It is append-only, and its entries are true as of their
+#      date; a check that demands a retrospective be rewritten to stay green teaches
+#      people to rewrite retrospectives. Rule A hit the same wall and answered it the same
+#      way — see the ⎇ note above.
+#
 # Columns are split on two-or-more spaces, so the padding widths in §9.6.2.2's illustration
 # are not load-bearing — deliberately. That table is a convenience view; --json is the
 # contract (§9.6.2.2), and pinning its whitespace here would freeze the half that was
@@ -120,6 +148,8 @@ pairs=$(printf '%s' "$items_json" \
 
 [[ -n "$pairs" ]] || die "--items --json listed no items — refusing to report clean."
 
+item_count=$(printf '%s\n' "$pairs" | wc -l | tr -d ' ')
+
 FILES=("$@")
 if [[ ${#FILES[@]} -eq 0 ]]; then
     # shellcheck disable=SC2207
@@ -130,6 +160,16 @@ fi
 printf '%s\n' "$pairs" > "/tmp/check-examples-pairs.$$"
 
 awk -v anchor="$ANCHOR" -v marker="$TABLE_MARKER" '
+# The marker only counts when the whole line is the comment: it must open with `<!--` and
+# close with `-->`, with the marker somewhere between. Rule A learned this as "a fenced
+# block asserts and prose discusses", and rule C had to learn it the same way — §9.6.2.2
+# documents rule C by quoting `<!-- items-table -->` inside a sentence, and a substring
+# test read that bullet as a marker, opened a table scan, found no table, and reported the
+# spec as omitting every item in the registry. A check that cannot survive being described
+# is a check nobody can write documentation for. README.md:168 carries a trailing note
+# inside the comment, which is why this is not an exact-match on the marker alone.
+BEGIN { markerline = "^[ \t]*<!--.*" marker ".*-->[ \t]*$" }
+
 # A placeholder is a description of a value, not a claim about one. Only these two forms:
 # an angle-bracketed slot, or an elision. Anything else is an assertion and gets checked.
 function is_placeholder(s) {
@@ -176,7 +216,7 @@ FNR == 1 { close_table(); file = FILENAME; fence = 0; nbuf = 0 }
     }
 
     # --- Rule C: a marked table must enumerate the live set exactly. ---------------------
-    if (!fence && index($0, "<!--") > 0 && index($0, marker) > 0) {
+    if (!fence && $0 ~ markerline) {
         intable = 1; tableline = FNR; tablerows = 0; tablegap = 0
         next
     }
@@ -248,18 +288,46 @@ FNR == 1 { close_table(); file = FILENAME; fence = 0; nbuf = 0 }
 END { close_table() }
 ' "/tmp/check-examples-pairs.$$" "${FILES[@]}" > "/tmp/check-examples.$$" 2>/dev/null
 
+# Rule D runs as its own pass rather than inside the one above, because it is the only
+# rule that reads a line as prose: it must see text outside fences and outside tables,
+# which every branch up there is busy excluding. Findings append to the same file so
+# there is still one report.
+awk -v livecount="$item_count" '
+BEGIN {
+    split("zero one two three four five six seven eight nine ten eleven twelve thirteen " \
+          "fourteen fifteen sixteen seventeen eighteen nineteen twenty", w, " ")
+    for (i = 1; i <= 21; i++) num[w[i]] = i - 1
+}
+FILENAME ~ /(^|\/)STATUS\.md$/ { next }
+{
+    line = $0
+    while (match(line, /[A-Za-z0-9]+[ \t]+(builtins?'"'"'?|built-?in[ \t]+items?)/)) {
+        m = substr(line, RSTART, RLENGTH)
+        line = substr(line, RSTART + RLENGTH)
+        split(m, p, /[ \t]+/)
+        word = tolower(p[1])
+        if (word in num) v = num[word]
+        else if (word ~ /^[0-9]+$/) v = word + 0
+        else continue
+        if (v != livecount + 0)
+            printf "%s:%d: says %s builtins; --items lists %d\n", FILENAME, FNR, p[1], livecount
+    }
+}
+' "${FILES[@]}" >> "/tmp/check-examples.$$" 2>/dev/null
+
 status=0
 if [[ -s "/tmp/check-examples.$$" ]]; then
-    echo "check-examples: a documented example disagrees with what the binary renders:" >&2
+    echo "check-examples: the documentation disagrees with what the binary reports:" >&2
     sed 's/^/  /' "/tmp/check-examples.$$" >&2
     echo >&2
     echo "The binary is the fact and the document is the finding — --items' examples are" >&2
     echo "rendered live off the builders (§9.3.1), so they cannot be the stale side. Fix the" >&2
     echo "document. If you believe a builder is wrong, that is a separate change with a test." >&2
+    echo "A count finding usually means an item was added and a sentence written before it" >&2
+    echo "was not; the sentence is what changes." >&2
     status=1
 else
-    count=$(printf '%s\n' "$pairs" | wc -l | tr -d ' ')
-    echo "check-examples: every documented example matches the binary ($count items, ${#FILES[@]} files)"
+    echo "check-examples: every documented example and count matches the binary ($item_count items, ${#FILES[@]} files)"
 fi
 
 rm -f "/tmp/check-examples.$$" "/tmp/check-examples-pairs.$$"

@@ -93,7 +93,15 @@ fi
 echo "check-citations: cited but never defined as a heading:" >&2
 while read -r ref; do
     [[ -z "$ref" ]] && continue
-    where=$(printf '%s\n' "$occurrences" | grep -E ":${ref}$" | sed -E 's/:[0-9.]+$//')
+    # The dots have to be escaped, and this is not pedantry — unescaped they are ERE
+    # wildcards, so `§9.6.2.3` matched the occurrence line `…md:906:2.3`, character for
+    # character, and the report named two innocent lines about §2.3 as citing a section
+    # they have never heard of. The resolve step above is exact-string (comm over sorted
+    # sets), so only the *reporting* was ever wrong — which is the worse half to get wrong:
+    # a correct finding pointing at the wrong lines sends the reader to edit working prose,
+    # and the first thing they conclude is that the check is broken.
+    ref_re=${ref//./\\.}
+    where=$(printf '%s\n' "$occurrences" | grep -E ":${ref_re}$" | sed -E 's/:[0-9.]+$//')
     echo "  §${ref} — cited $(printf '%s\n' "$where" | wc -l | tr -d ' ')×:" >&2
     printf '%s\n' "$where" | sed 's/^/      /' >&2
 done <<< "$dangling"
