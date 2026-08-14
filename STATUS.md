@@ -4075,6 +4075,37 @@ conflicts), independently verified via task-gopher pre-merge on the worktree and
 `main`. Full suite: 1258/1258 passed. Landed as merge commit `a2b3f01` (branch tip `7a628ba`),
 pushed.
 
+### #45: `AcceptedCommand` gains `height`, closing the drift from `CheckEnums` (§1.1.3 follow-up)
+
+Problem: `ConfigCheck.cs`'s `CheckEnums` (via `CheckPaneEnums`/`CheckItemEnums`) validates
+`height` as an enum kind, but #42's `AcceptedCommand` key table (backing `--accepted --json`) had
+9 rows and never included it — added after `height` was already a checked enum, so the two lists
+drifted out of lockstep.
+
+Fix: added `new("height", PaneHeightParsing.AcceptedTokens, null)` to `AcceptedCommand.Build()`,
+reusing the parser's own `AcceptedTokens` (`["content", "fill"]`) directly, matching the
+zero-copy convention already used for the other 8 rows — `size` remains the sole exception
+(`accepted: null` + `alsoAccepted`). The doc comment's stale "eight parser-colocated registries"
+count corrected to nine.
+
+Verified against the live built binary (no committed `--accepted` subprocess test existed to
+extend, unlike #42's assumption): `--accepted --json` now emits the `height` row
+(`{"key":"height","accepted":["content","fill"],"alsoAccepted":null}`) alongside the other 9,
+confirmed byte-for-byte. `AcceptedCommandTests.cs` updated: the exact-key-count test now expects
+10 keys for 9 enumerable kinds plus `size`, and the same-object-as-parser's-`AcceptedTokens`
+assertion gained a `height` case.
+
+Judgment call (implementor-flagged, not acted on): a structural drift-prevention fix — a test
+asserting `AcceptedCommand`'s key set matches whatever `CheckEnums` actually validates — was
+considered and declined as out of scope. `CheckEnums`'s validated keys are inline string literals
+scattered across three methods with no existing registry to introspect; building one is a real
+design decision (reflection over diagnostic codes? an explicit shared registry?), left as a
+suggestion for the architect rather than built here.
+
+Merged cleanly (git auto-merged `AcceptedCommand.cs`/`AcceptedCommandTests.cs`, no conflicts),
+independently verified via task-gopher pre-merge on the worktree and post-merge on `main`. Full
+suite: 1258/1258 passed. Landed as merge commit `dc25b42` (branch tip `b739fad`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
