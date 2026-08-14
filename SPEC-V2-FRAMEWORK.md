@@ -3759,9 +3759,14 @@ standard rather than by Spectre's version) plus the three named here. Nineteen i
 a number to hard-code — in the test or in this paragraph, which is why the sentence above names the
 sum rather than repeating the nineteen.
 
-Confirm the nullability against Spectre before relying on the reasoning above — it is read off a
-cast rather than off the library, which is precisely the standard of evidence §9.6.2.1 warns about.
-If `Foreground` turns out nullable, the first bullet still holds and only the explanation changes.
+**Confirmed against the library, and the reasoning holds.** This paragraph read "confirm the
+nullability against Spectre before relying on the reasoning above" — it was read off a cast rather
+than off the library, which is precisely the standard of evidence §9.6.2.1 warns about. Checked
+against the pinned 0.57.2: `Style` is a value type, `Foreground` reflects as a non-nullable
+`Spectre.Console.Color`, and `ResolveLiteral`'s `(Color?)null` on the failure branch is therefore
+the only thing making "non-null" mean anything at all — exactly "did `TryParse` succeed", and
+nothing more. §6.6 records what the same run found about decorations, which is more than this
+section needed and settles a defect two sections away.
 
 **`themeMapped` is false for `default`, `dim`, and `bold`.** They are not theme-mapped colours;
 they are a reset and two decorations. Marking them `true` to keep the rows uniform would assert
