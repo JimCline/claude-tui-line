@@ -1267,6 +1267,47 @@ This distinction is not new machinery. §5's TTL cache already has to know the d
 what is cacheable, and §9.4.1's two-tier severity already separates "reported nothing" from
 "failed". What is new is that the collapse pre-pass must read it.
 
+#### 2.11.3 The config-error fallback pane collapses, and takes the error report with it
+
+`SafeLoadAll` (`Program.cs:490`) builds the pane used when the config cannot be loaded, and it
+satisfies **every** qualifier this section and its subsections narrowed collapse down to:
+
+- `Array.Empty<PaneItem>()` — structurally empty, not emptied by degradation (§2.11) and not
+  holding an unavailable item (§2.11.2). It is the genuine `items: []` case.
+- size `"auto"`, which §2.4 defines as a deprecated alias for `fill` — collapse-eligible.
+- no `minSize`, so §2.11.1 does not hold it open.
+- `PaneSplit.None` with no children, so it is the **root**.
+
+Which lands on §2.11's last bullet: *"If the root collapses, the surface emits nothing — zero rows."*
+
+**So implementing Defect 12 makes an unreadable config render nothing at all.** Today it renders a
+bordered empty box. That box is Defect 12's complaint and it is genuinely wrong — but it is also
+the only evidence the user gets that anything happened. Zero rows is indistinguishable from a
+working statusline with nothing to say, from claude-tui-line not being installed, and from the
+`statusLine` key having been removed. §7.1's third outcome is output that is wrong rather than
+absent; this is the fourth and worse one — absent *and* silent, on precisely the input where the
+user most needs a reason.
+
+**The ruling is not an exemption in the collapse pre-pass.** Adding "unless it is the fallback
+pane" would work and is the wrong shape: it puts a special case in the one piece of code whose
+correctness argument (§2.11's convergence reasoning) depends on having no special cases.
+
+**§9.2.1 removes the condition instead.** That section already requires the render path to draw
+*the reason* a config could not be read. A pane carrying that reason is not structurally empty, so
+it never qualifies for collapse, and no exemption is needed anywhere. The bug and the feature are
+the same edit.
+
+**Ordering, and it is a hard constraint.** §9.2.1 (task #17) must land with or before §2.11
+(task #4). If §2.11 lands first, it ships with a temporary guard holding the fallback pane open,
+deleted when §9.2.1 arrives — because the window between them is one in which **every** config
+error is silent, and that window is exactly when a user is most likely to have just edited their
+config.
+
+This also settles §6.6.1's reachability question in the other direction: once the fallback pane
+carries content, it routes through `useSplitPipeline` to the tree path and stops reaching the
+`Panel` branch at all. The branch stays live regardless, on empty `fixed`/`percent`/`minSize` panes
+which §2.4 and §2.11.1 deliberately keep open.
+
 ## 3. Item model
 
 An item resolves to a **block**: zero or more rows, **plus a state**. One row is the ordinary case
@@ -2616,20 +2657,28 @@ entire visible output — there is no content inside it to carry the styling ins
 drops decorations everywhere except where the decoration is the only thing on screen is not an
 edge case that mostly misses. It is a defect that only fires where it is total.
 `SafeLoadAll`'s fallback pane (`Program.cs:496`) is built with `Array.Empty<PaneItem>()`,
-`PaneSplit.None` and no children, so it routes here by construction and draws through the narrow
-resolver whenever the resolved top-level border style is non-null — which means the **config-error
-rendering** is one of the two things this affects.
+`PaneSplit.None` and no children, so it routes here by construction — and its border style is
+`BoxBorder.Rounded`, hard-coded one line above it (`Program.cs:492`), not a nullable read. It
+always draws. So the **config-error rendering** is one of the two things this affects, not merely
+one that could be.
 
-**And it collides with Defect 12.** Task #4 — "empty pane still draws its border" — is the ruling
-that an empty pane should not draw one at all. Its subject is the `Panel` branch's only live case.
-Whichever of the two lands second inherits a changed world: fix Defect 12 first and the `Panel`
-branch may have no reachable case left, making §6.6's adapter dead code written to a
-specification; fix §6.6 first and Defect 12 deletes the case it was written for. **Rule them
-together, and state in each fix which one it assumes has already landed.** Neither may be
-implemented on the assumption that the other has not moved. If Defect 12's fix does strand the
-branch, the honest outcome is to delete it rather than keep a second border drawer alive for a
-config that can no longer reach it — §6.5's "one resolution point beats two" reached by removal,
-which is the better ending of the two.
+**And it touches Defect 12 — but less than the task title suggests.** Task #4 reads "empty pane
+still draws its border", and read as a title it says the `Panel` branch's only live case is about
+to disappear. §2.11 says something narrower: collapse reaches only a **structurally empty**
+`content` or `fill` pane with no `minSize`. An empty `fixed` or `percent` pane keeps its extent
+and its border on purpose (§2.4 — the author named a number), and so does one with an explicit
+`minSize` (§2.11.1). Those panes still have no items and no children, so they still route here.
+
+**Defect 12 narrows this branch's live set; it does not empty it.** The adapter is needed either
+way, and deleting the branch is off the table. What does leave the set is `SafeLoadAll`'s fallback
+pane, for a reason that turned out to matter well beyond border colour — see §2.11.3, where
+collapsing that pane is what makes a config error render zero rows.
+
+The ordering constraint that survives is the modest one: whichever of §6.6 and §2.11 lands second
+should re-check this paragraph rather than assume it, because both edit the same branch's
+reachability. That is bookkeeping, not a coupling — and stating it as a coupling, which an earlier
+draft of this section did, overstated it in the direction that would have cost an implementor the
+adapter.
 
 **`--check` is an aggravator here, not a co-defect.** `ConfigCheck.cs:194` calls `ResolveLiteral`
 too, and the instinct on finding a third caller of the narrow resolver is to file it as more of

@@ -523,11 +523,15 @@ pane (`Program.cs:496`), which is built with no items and no children by constru
 reach, worse in stakes: on the only path where the narrow resolver runs, the border is the entire
 visible output, with no content inside it to carry styling instead.
 
-That collides with **Defect 12** (task #4, "empty pane still draws its border"), whose subject is
-this branch's only live case. The two must be ruled together and each fix must name which one it
-assumes has landed — otherwise §6.6's adapter is written for a case Defect 12 deleted, or Defect 12
-deletes the case the adapter was written for. If Defect 12 strands the branch, delete it rather
-than keep a second border drawer alive.
+**Defect 12 narrows this branch, it does not empty it — and reading §2.11 rather than task #4's
+title is what showed that.** "Empty pane still draws its border" as a title says the branch's only
+live case is about to vanish. §2.11 rules something narrower: collapse reaches only a structurally
+empty `content`/`fill` pane with no `minSize`. Empty `fixed` and `percent` panes keep extent and
+border on purpose (§2.4), as do `minSize` panes (§2.11.1), and all of them still have no items and
+no children — so they still route to the `Panel` branch. The adapter is needed either way and
+deleting the branch is off the table. My first draft of §6.6.1 said the opposite, from the task
+title alone; the correction is the same wrong-citation habit as always, one door further along —
+a *task title* is not the ruling either.
 
 **`--check` is an aggravator, not a third instance of the defect.** `ConfigCheck.cs:194` also calls
 `ResolveLiteral`, and the reflex is to file it as more of the same. Its comment already reasons
@@ -2529,6 +2533,43 @@ capture stderr under `/tmp` and are right to.
 
 So §12.1.2 states the rule (transport → §12.6; condition → §12.1) and writes the command layer's own
 list out rather than cross-referencing one that is subtly false here.
+
+## Fixing Defect 12 makes a broken config render nothing (§2.11.3, tasks #4 and #17)
+
+Found while checking whether Defect 12 would strand §6.6's `Panel` branch. It does not — but the
+same question turned up something worse three subsections deeper.
+
+`SafeLoadAll` (`Program.cs:490`) builds the pane used when the config cannot be loaded, and it
+satisfies every qualifier §2.11 spent three subsections narrowing: `Array.Empty<PaneItem>()` so it
+is structurally empty rather than degradation-emptied (§2.11) or holding an unavailable item
+(§2.11.2); size `"auto"`, which §2.4 makes a deprecated alias for `fill` and therefore
+collapse-eligible; no `minSize` to hold it open (§2.11.1); and `PaneSplit.None` with no children,
+so it is the root. §2.11's last bullet: *"If the root collapses, the surface emits nothing — zero
+rows."*
+
+So the moment Defect 12 is implemented, an unreadable config renders **nothing at all**. Today it
+renders a bordered empty box — which is Defect 12's own complaint, and genuinely wrong, and also
+the only evidence the user gets that anything happened. Zero rows is indistinguishable from a
+working statusline with nothing to say, from claude-tui-line not being installed, and from the
+`statusLine` key having been deleted. §7.1's third outcome is output that is wrong rather than
+absent; this is absent *and* silent, on exactly the input where a reason is most needed.
+
+**The fix is §9.2.1, not an exemption.** Special-casing the fallback pane in the collapse pre-pass
+would work, and it puts a special case in the one function whose correctness argument (§2.11's
+convergence reasoning) rests on having none. §9.2.1 already requires the render path to draw the
+*reason* a config could not be read — and a pane carrying that reason is not structurally empty, so
+it never qualifies for collapse and no exemption exists to write. The bug and the feature are one
+edit.
+
+**Hard ordering constraint: #17 lands with or before #4.** If #4 goes first it must ship a
+temporary guard holding the fallback pane open, deleted when #17 arrives, because the window
+between them is one where every config error is silent — and that window is precisely when a user
+has just edited their config.
+
+The reusable part is the shape of the question. "Does fixing A break B?" was asked about a border
+drawer and answered no; the same walk found that fixing A deletes the surface C needs. **A
+reachability question asked about one consumer is worth re-asking about every consumer of the same
+condition** — the empty-root condition had two, and only one of them was on the list.
 
 ## Standing constraints
 
