@@ -1,0 +1,168 @@
+using System.Globalization;
+using Spectre.Console;
+
+namespace ClaudeTuiLine;
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §6: one resolution path for a "color" config value, covering every form —
+/// literal name (16-color or Spectre's 256-color set), hex, numeric thresholds, and string match.
+/// Thresholds and match are the same mechanism selecting on different value types, not two parallel
+/// resolvers. This is also the one place the existing context/rate-limits 50/80 rule lives, so a
+/// command item's own "thresholds" config and the two legacy builtins share one ladder instead of
+/// each carrying a copy of it (§1).
+/// </summary>
+public static class ColorResolution
+{
+    public readonly record struct ThresholdRule(double Min, string Color);
+
+    public readonly record struct MatchRule(string? Contains, string? EqualsValue, string Color);
+
+    /// <summary>
+    /// A parsed "color" config value once it is a rule rather than a literal string: an unordered
+    /// set of thresholds (numeric, evaluated highest-<see cref="ThresholdRule.Min"/>-first) or an
+    /// ordered list of match rules (string, evaluated first-declared-first), plus a fallback
+    /// default. At most one of <see cref="Thresholds"/>/<see cref="Match"/> is populated for a
+    /// given rule — which one is selected by whether the value being resolved is numeric or string.
+    /// <see cref="From"/> (§6.3/§6.4) is the item id whose value drives the rule: required for a
+    /// <c>colors</c>-table token (a border has no value of its own to default to) and defaulting to
+    /// the owning item for an inline rule — resolved to a concrete id by the config binder in
+    /// either case, so it is only ever null here for an inline rule with no owning item (a
+    /// border's inline rule with no explicit <c>from</c>), which resolves to no colour.
+    /// </summary>
+    public sealed record ColorRule(IReadOnlyList<ThresholdRule>? Thresholds, IReadOnlyList<MatchRule>? Match, string? Default, string? From = null);
+
+    /// <summary>
+    /// §6: a colour expression — the one grammar valid anywhere this spec accepts a colour. A
+    /// plain literal (§6.1), a <c>colors</c>-table token reference (§6.3), or an inline rule
+    /// (§6.4). <see cref="Resolve"/> is the single entry point that evaluates any of the three.
+    /// </summary>
+    public abstract record ColorExpr
+    {
+        public sealed record Literal(string Spec) : ColorExpr;
+
+        public sealed record TokenRef(string Name) : ColorExpr;
+
+        public sealed record Inline(ColorRule Rule) : ColorExpr;
+    }
+
+    /// <summary>
+    /// §6.5: the single up-front colour resolution point — reads already-resolved item values
+    /// (§5's fetch phase) and the parsed <c>colors</c> token table, never touches layout, and is
+    /// safe to call once per render before sizing begins. Returns a literal colour spec (§6.1),
+    /// ready to drop straight into Spectre markup, or null for no colour. An unknown <c>@name</c>
+    /// resolves to no colour, silently (§6.3/§7).
+    /// </summary>
+    public static string? Resolve(ColorExpr? expr, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorRule> tokens) =>
+        expr switch
+        {
+            null => null,
+            ColorExpr.Literal lit => lit.Spec,
+            ColorExpr.TokenRef tok => tokens.TryGetValue(tok.Name, out var rule) ? ResolveRuleColor(rule, values) : null,
+            ColorExpr.Inline inline => ResolveRuleColor(inline.Rule, values),
+            _ => null,
+        };
+
+    /// <summary>
+    /// A border needs an actual <see cref="Color"/> to build its <c>Style</c>, unlike item text
+    /// which renders through markup — and a border always renders in *some* colour, so an
+    /// expression that resolves to no colour (or fails to parse) falls back to
+    /// <see cref="Color.Grey"/>, the same default an absent <c>color</c> config has always used.
+    /// </summary>
+    public static Color ResolveBorderColor(ColorExpr expr, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorRule> tokens) =>
+        (Resolve(expr, values, tokens) is { } spec ? ResolveLiteral(spec) : null) ?? Color.Grey;
+
+    /// <summary>
+    /// §6.4: a missing, failed, or empty source value takes the <c>default</c> branch, same as a
+    /// value that matches nothing — both degrade to <see cref="ColorRule.Default"/>, which is
+    /// itself optional and, when absent, yields no colour rather than the previous rule's colour
+    /// or a suppressed item.
+    /// </summary>
+    private static string? ResolveRuleColor(ColorRule rule, IReadOnlyDictionary<string, string?> values)
+    {
+        var raw = rule.From is { Length: > 0 } from ? values.GetValueOrDefault(from) : null;
+
+        return string.IsNullOrEmpty(raw)
+            ? rule.Default
+            : rule.Thresholds is { Count: > 0 } && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var numeric)
+                ? ResolveNumeric(numeric, rule)
+                : rule.Match is { Count: > 0 }
+                    ? ResolveString(raw, rule)
+                    : rule.Default;
+    }
+
+    /// <summary>
+    /// SPEC.md's captured 50/80 rule, expressed as data instead of code, so the legacy default
+    /// segments (context, rate-limits) and any item's own numeric "thresholds" config are driven by
+    /// one evaluator rather than two independent copies of the same ladder.
+    /// </summary>
+    public static readonly ColorRule StandardThreshold = new(
+        Thresholds: new[] { new ThresholdRule(80, "maroon"), new ThresholdRule(50, "olive") },
+        Match: null,
+        Default: "green");
+
+    /// <summary>Replaces the old SegmentBuilder.ThresholdTag — same ladder, now the shared evaluator.</summary>
+    public static string ResolveStandardThreshold(double value) => ResolveNumeric(value, StandardThreshold) ?? "green";
+
+    /// <summary>
+    /// §6: a value matches the highest threshold whose <c>min</c> it clears, regardless of the
+    /// order thresholds were declared in — the existing 80/50 ladder depends on this (85 must match
+    /// 80, not whichever of the two rules happens to be declared first). Falls to
+    /// <see cref="ColorRule.Default"/>, then null (ambient/no color, silent per §7).
+    /// </summary>
+    public static string? ResolveNumeric(double value, ColorRule rule)
+    {
+        if (rule.Thresholds is { Count: > 0 } thresholds)
+        {
+            foreach (var t in thresholds.OrderByDescending(t => t.Min))
+            {
+                if (value >= t.Min)
+                {
+                    return t.Color;
+                }
+            }
+        }
+
+        return rule.Default;
+    }
+
+    /// <summary>
+    /// §6 string-match form: first match wins, in declaration order — unlike numeric thresholds,
+    /// match rules have no natural ranking, so order is authored, not inferred. <c>contains</c> is
+    /// a case-insensitive substring match (the documented form: a builtin like <c>model</c> yields
+    /// "Claude Opus 4.5", and exact matching would break on every version bump); <c>equals</c> is
+    /// case-insensitive exact match for authors who want it.
+    /// </summary>
+    public static string? ResolveString(string value, ColorRule rule)
+    {
+        if (rule.Match is { Count: > 0 } match)
+        {
+            foreach (var m in match)
+            {
+                if (m.Contains is { Length: > 0 } contains && value.Contains(contains, StringComparison.OrdinalIgnoreCase))
+                {
+                    return m.Color;
+                }
+
+                if (m.EqualsValue is { Length: > 0 } equalsValue && string.Equals(value, equalsValue, StringComparison.OrdinalIgnoreCase))
+                {
+                    return m.Color;
+                }
+            }
+        }
+
+        return rule.Default;
+    }
+
+    /// <summary>
+    /// §6 addendum: resolves a literal color spec — a standard-16 name, a Spectre 256-palette name,
+    /// or "#rrggbb" hex — to a Spectre <see cref="Color"/>. Unparseable ⇒ null (no color specified),
+    /// silent per §7. Parsing itself was never limited to 16 colors (<see cref="Style.TryParse"/>
+    /// already accepts all three forms); §6's "widen the palette" is a rendering-profile change
+    /// (Program.cs's <c>ColorSystem</c>), not a parsing one.
+    /// </summary>
+    public static Color? ResolveLiteral(string spec)
+    {
+        var trimmed = spec.Trim();
+        return trimmed.Length > 0 && Style.TryParse(trimmed, out var style) ? style.Foreground : (Color?)null;
+    }
+}

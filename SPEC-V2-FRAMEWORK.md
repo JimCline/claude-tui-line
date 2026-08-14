@@ -1,0 +1,1426 @@
+# SPEC v2 — pane surface + status item framework
+
+Goal, in the user's words:
+
+> *"a statusline TUI framework where users can add pre-built status items, wire in their own
+> (even if it means calling shell or py scripts for their placeholders) and it all is rendered
+> inside the TUI surface."*
+
+> *"The render surface inside our TUI shell should support panes, split vertically,
+> horizontally, etc. The first iteration is one pane that fills the status line."*
+
+v1 (SPEC.md) is a faithful rebuild of one hardcoded statusline. v2 turns it into a framework:
+the render surface becomes a **pane tree**, and the 14 captured segments become **registry
+rows** that a user-defined item joins as a peer rather than as a special case bolted on.
+
+Prerequisite: SPEC.md Phase 1 (the `chromeReserve` width fix) must be verified in a live
+session first. Panes make width errors catastrophic instead of cosmetic — a pane that
+miscomputes its width by two columns corrupts every pane to its right — so the surface must be
+measured correctly before anything is composed on it.
+
+## 1. The load-bearing rule
+
+**One implementation per behavior; one registry per enumerable kind.** Adding a status item
+costs *one registry row* plus whatever is genuinely unique about it, and zero edits to the
+renderer, the compositor, the layout engine, or any test harness. If adding an item means
+touching `SegmentBuilder`'s control flow, the abstraction has not landed.
+
+Concretely: `SegmentBuilder.Build`'s current 14 hand-written `if` blocks collapse into a loop
+over a resolved item list. The per-item logic that survives lives in the row.
+
+## 2. The render surface and panes
+
+### 2.1 What the surface is
+
+The statusline is a rectangle: **width** = `COLUMNS - chromeReserve` (Phase 1), **height** =
+however many lines we print, since Claude Code renders one row per stdout line. Panes
+partition that rectangle.
+
+### 2.2 The pane tree
+
+A pane is either a **leaf** (holds items, renders them) or a **split** (holds children).
+
+```
+Pane
+    Split      none | horizontal | vertical
+    Children   Pane[]          (split only)
+    Size       "auto" | "40%" | 24        (share of the PARENT's split axis)
+    Border     border config, per pane, independent of any other pane.
+               An IMPLICIT border applies to leaves only — see §8.
+    Overflow   wrap | truncate | overflow    (§2.6) — inherited by this pane's items
+    Ellipsis   string, default "…"           marker for truncation, "" for a hard clip
+    MaxRows    int, default unbounded        rows this pane may occupy
+    Items      item[]          (leaf only)
+```
+
+- **`vertical`** splits side by side — children divide the parent's **width**, each spanning
+  the parent's full height. This is the hard one; it requires real compositing (§2.4).
+  Concretely: `height(vertical split) = max(height(children))`, and **every** child is then
+  rendered at exactly that height, its border drawn around the full extent rather than around
+  its content. `valign` distributes the leftover inner rows above and below the content; it
+  never changes a pane's extent. A box that stops short of its siblings is this rule broken.
+- **`horizontal`** splits top to bottom — children divide the parent's **height**, each
+  spanning the parent's full width. This is nearly free, because rows are already the output
+  unit.
+
+Naming follows tmux/vim convention: a "vertical split" produces a vertical divider.
+
+**Leaf-or-split is decided exactly once, at config resolution, and normalized before anything
+downstream sees the tree.** A non-empty `children` with `split` absent normalizes to
+`vertical` — a user who wrote `children` has stated the intent to split unambiguously, and
+side-by-side is the statusline-shaped default. `--check` notes the omission. Conversely a pane
+with `split` set and no children is a leaf, and the stray `split` is dropped.
+
+This is a normalization rule, not merely a default, and the distinction is the point: the
+ambiguous state must not survive into the renderer, so no code downstream needs a rule for it and
+none can invent a different one. The failure this prevents is two modules disagreeing about
+whether the same pane is a container — one resolving borders as a leaf while the other renders it
+as a split, producing a pane whose items silently never render. There is ONE predicate, derived
+during resolution, and border resolution and render branching both read it rather than each
+recomputing the question from raw config fields.
+
+### 2.3 Sizing
+
+Along the split axis, each child declares `size`:
+
+- **integer** — exactly that many cells (or rows), clamped to what remains.
+- **`"content"`** — **the anchor**: exactly what the pane's content intrinsically needs, and
+  no more. The pane declares its width; the layout does not impose one.
+- **`"NN%"`** — that share of the parent's axis extent, rounded down.
+- **`"fill"`** / **`"auto"`** (default) — an equal share of whatever is left. This is the pane
+  that *absorbs* the consequences of everyone else's sizing, and wraps its content into
+  whatever it ends up with.
+
+Resolution is deterministic, in this order: **fixed → content → percent → fill**. Explicit
+numbers win over derived ones; derived-but-firm wins over relative; `fill` takes the remainder,
+split left-to-right with the **last** `fill` child absorbing the rounding remainder.
+
+`minSize` / `maxSize` bound a `content` pane, because an anchor with no ceiling can starve
+everything beside it. A `content` pane is clamped to `maxSize` (and to what actually remains);
+its content then degrades under its own §2.6 rules rather than the layout stretching to obey.
+
+`maxSize` is not enough on its own, though, because it is a fixed number the config author has
+to guess. The layout also has to stop an anchor from starving its siblings *as a function of
+how much room actually exists*. That is the **viability floor**: the width below which giving a
+pane space is pointless.
+
+```
+floor(p):
+    p.minSize set             ->  p.minSize                (author said so; always wins)
+    p is a vertical split     ->  Σ floor(children) + gutters
+    p is a horizontal split   ->  max(floor(children))
+    p.size is fixed           ->  the fixed size
+    p.size is "content"       ->  p.minSize, else 0
+    p.size is fill/percent    ->  MinUsableWidth (20) + (p bordered ? borderReserve : 0)
+```
+
+Note which kinds get the default 20: **`fill` and percent only.** A `content` pane's floor is 0
+absent an explicit `minSize`, and a fixed pane's floor is what it declared. Imposing 20 on a
+`content` pane would be wrong on its own terms — a pane sized to its content is by definition
+usable at that size — and it would forbid the very degrade §2.9 depends on.
+
+A split's floor follows its orientation, for the same reason its allocation does: the axis a
+split **divides** sums, the axis it **shares** maxes. A vertical split's children divide width,
+so its width floor is their sum plus gutters; a horizontal split's children each span the full
+width, so its width floor is the largest of theirs. Getting this backwards over-states the floor
+of a nested horizontal split, which caps a `content` sibling harder than the room warrants and
+shows up much later as an unexplained degrade rather than as an arithmetic bug.
+
+**Allocation within one split, one pass:**
+
+1. `avail` = this pane's inner width − Σ gutters.
+2. Grant every **fixed** pane its size. `rem` = `avail` − Σ fixed.
+3. `reserve` = Σ `floor(p)` over every unresolved percent/`fill` sibling.
+4. For each **`content`** pane, in declaration order:
+   - `cap`   = `rem` − `reserve` − Σ (`minSize` else 0) of the `content` panes after it
+   - `grant` = clamp(measured, `p.minSize`, min(`p.maxSize`, `cap`))
+   - `rem` −= `grant`
+5. **Percent** panes: `pct × avail` — the pre-allocation figure, not `rem` — clamped to `rem`.
+6. **`fill`** panes split `rem` evenly; leftover cells go to the leftmost.
+
+Step 4 is the rule that keeps an anchor from eating the surface, and it has **no trigger
+condition**. The cap is applied on every pass unconditionally; it simply does not bind when
+space is ample. At the §2.9 demo's wide case the cap is 108 − 24 = 84 against an ask of 43, so
+it is inert; at the narrow case it is 56 − 24 = 32 against the same ask, so it binds and forces
+the degrade. Same formula, no branch. Any prose elsewhere in this spec that reads like a
+special "the surface is too tight" mode is describing this formula's *outcome* — there is no
+second code path, and implementing one violates §1.
+
+No child may resolve below 1 cell; children that would are **dropped entirely** rather than
+rendered at a nonsense width, and the freed space is redistributed. A **`fill` or percent** pane
+whose resolved inner width falls under `MinUsableWidth` (20) suppresses its own border first
+(SPEC.md §6b narrow-width suppression, now applied per pane rather than per surface), and is
+dropped only if it still does not fit.
+
+`MinUsableWidth` governs `fill` and percent panes **only** — for border suppression exactly as
+it does for the viability floor above, and for the same reason: *a pane sized to its own content
+is by definition usable at that size.* A `content` pane is never squeezed; it requested its width
+— borderReserve included — and was granted it, so suppressing the border it already paid for
+would leave it holding dead space where its box should be. A fixed pane is the same case: the
+author named the number. Suppression exists for a pane squeezed below viability by *someone
+else's* sizing, which is precisely what `fill` and percent are. One predicate governs both rules;
+letting the floor and the suppression disagree about what `MinUsableWidth` means is what produced
+a `content` pane granted 12 cells for 8 columns of text and no border at all.
+
+**Over-constrained splits.** If `rem − reserve` goes negative, the split cannot honour its own
+floors — three bordered panes in a 40-column terminal, say. The cap must not be allowed to go
+negative and sub-floor panes must not be produced silently. This routes into the same drop loop
+as the <1-cell case: drop the **last** child, recompute from step 1, repeat. One loop, two
+triggers — not a new mechanism. If it reduces to a single child, that child takes the full
+width, and §2.6's surface-level fallback applies only if it is by then the sole pane of the
+*surface*. This is a layout outcome, not an error, and nothing is logged.
+
+**Intrinsic width is measured, never estimated.** A pane reports what it needs by actually
+assembling its content: the width it would need to render unwrapped on a single row. That is
+worth knowing before using it — a `content`-sized pane asks for its *entire* unwrapped width,
+which for the 14-segment statusline is far more than any terminal has. `content` is for anchors
+whose natural size is small and meaningful; `fill` is for everything else. That is exactly the
+division in §2.9.
+
+**Sizing iterates to a fixpoint, and the fixpoint is guaranteed to exist.** A single pass is
+not enough: an anchor that asks for 39 and is clamped to 25 wraps, and its longest wrapped row
+may be only 18 — stopping there strands 7 columns inside the anchor while the `fill` sibling is
+cramped. Freed space must reach the sibling.
+
+So:
+
+1. Every `content` pane reports its preferred intrinsic width. Resolve all sizes by running the
+   six-step allocation above.
+2. Any `content` pane granted **less** than it asked for — which now includes being capped by
+   step 4 on account of a sibling's floor, not only by `maxSize` or by exhaustion —
+   re-reports its intrinsic width *under the width it was actually granted*, i.e. after
+   wrapping at that width — i.e. its longest wrapped row (§2.9).
+3. Re-resolve. Repeat while any request changed.
+
+**A pane that degrades stays degraded for this render.** When an anchor is capped to 32, falls
+back to text needing 12, and its `fill` sibling consequently balloons from 13 to 44, the anchor
+must **not** re-expand on noticing the slack. The monotone clamp below forbids it, and this is
+the exact case that clamp exists for: re-expansion here is a genuine two-cycle, not a
+hypothetical one.
+
+**Termination is enforced, not assumed: a pane's request may never increase between passes.**
+If a re-measurement returns a larger width than that pane's previous request, it is clamped to
+the previous request. Requests are therefore non-negative integers that strictly decrease until
+they stop changing, so the loop converges — in practice in two passes. Cap it at **3** as a
+backstop and use the last resolved sizes if the cap is hit.
+
+The clamp is what makes this safe, and it is deliberately not a good-behavior assumption about
+content: a renderer that asked for *more* space when given *less* would cycle forever, so the
+layout refuses the request rather than trusting every present and future renderer not to make
+it.
+
+An earlier draft of this section banned re-measurement outright, reasoning that it could
+oscillate. That was over-cautious and it was wrong about the mechanism. The loop runs **within
+a single render**, and a single render is deterministic — same inputs, same output — so it
+cannot produce flicker across renders no matter how many passes it takes. Only a changing input
+can do that, which is not something layout gets to prevent.
+
+`gutter` (default `0`) is the number of blank cells between siblings in a vertical split,
+subtracted from the available extent before children are sized.
+
+**`distribute` — sizing every pane correctly still gives the wrong surface.**
+
+Everything above resolves each pane's width from that pane's own declaration. Every pane can be
+individually correct and the surface still wrong, because the quantity a reader cares about is
+not any pane's width — it is how many rows the whole surface occupies. A `content` pane capped
+just below its natural width wraps to two rows while its `fill` sibling sits half empty, and
+neither pane is in a position to notice: the cap was satisfied, the fill was satisfied, and the
+surface grew by a row that a different split would not have cost.
+
+No static configuration fixes this, and that is a measured claim rather than a design opinion.
+Sweeping `maxSize` for a real two-pane config across terminal widths 100–240 produced no value
+that wins everywhere: `42` holds a flat 4 rows at every width; removing the cap reaches 3 rows
+at 160+ but costs **7** at 100, because the right pane takes its natural width and the left
+wraps four times paying for it. Any single number is a bet on one terminal width, and the user
+resizes.
+
+So a split may declare how it divides extent among its children:
+
+```json
+{ "split": "vertical", "distribute": "min-rows", "children": [ ... ] }
+```
+
+- **`greedy`** (default) — the resolution above, unchanged. It stays the default because it is
+  what every existing config already means, and a layout policy is not something to change under
+  a user who did not ask.
+- **`min-rows`** — choose the allocation minimising the surface's total row count.
+- **`even`** — equal extents, for a layout that must not move as content changes. Stability is
+  sometimes worth more than tightness; a status bar that reflows on every token count is
+  harder to read than one that wastes a column.
+
+`min-rows` binds only the extent left over after the existing rules have had their say. Fixed and
+percent panes are *not* candidates — they were given an exact answer and the policy does not
+overrule it — and `minSize`/`maxSize` remain hard bounds on every candidate considered. The
+policy chooses among allocations that are already legal; it never invents one that isn't.
+
+Ties break toward the **most even** allocation. Two allocations costing the same rows are equally
+good by the stated objective, and evenness is the tiebreaker a reader will perceive as
+deliberate rather than arbitrary.
+
+**The search must be over breakpoints, not widths.** The naive reading of "minimise rows" is to
+lay the surface out at every candidate width and count, which at 180 columns is ~180 full layouts
+per render against a 44 ms budget currently spending 13 ms. That would trade a feature for the
+performance property this project was rebuilt to get. It is also unnecessary: rows-as-a-function-
+of-width is a **monotonically non-increasing step function**, and it can only step where a pane's
+greedy packing gains or loses a row — at most once per item. A pane with 14 items has at most 14
+breakpoints, so the candidate set is *tens* of allocations, not hundreds, and the optimum is
+guaranteed to sit at a breakpoint because the function is flat between them.
+
+An implementation that samples every width is therefore not a slower version of this — it is a
+different algorithm with the same output and the wrong cost, and it must not ship on the grounds
+that the tests pass. **Latency is re-measured against the p90 budget as an acceptance condition
+for this feature, not as follow-up work.**
+
+### 2.4 Compositing — the part that must not be improvised
+
+A leaf pane renders to a **`PaneBuffer`**: an ordered list of rows, each carrying its markup
+*and* its measured plain width. A split composes its children's buffers into one buffer. The
+root buffer is printed, one row per line.
+
+Extending the v1 invariant, which stays in force:
+
+> **`RowLayout` is the sole authority on line breaks within a pane. The compositor is the sole
+> authority on the surface. Spectre must never re-break either one.**
+
+Compositing rules, all load-bearing:
+
+1. **Every row of a pane buffer is padded to exactly the pane's width** before it is joined to
+   a sibling. A short row is not "close enough" — one missing cell shears every column to its
+   right for that row only, which is the ugliest possible failure and the hardest to spot in a
+   screenshot.
+2. **Sibling buffers in a vertical split are padded to a common height** with full-width blank
+   rows. Ragged heights corrupt the same way ragged widths do.
+3. **Width is measured on ANSI-stripped text**, never on the markup string, using the same
+   `Plain.Length` metric as v1 (§11 keeps wcwidth out of scope deliberately).
+4. **Trailing whitespace is trimmed once, at the very end, on the composed root rows** — and
+   only when the rightmost contributing pane has no background color set, because with a
+   background those cells are visible. This is what preserves byte-parity in the single-pane
+   case (§2.7).
+5. **`Profile.Width` stays at the sentinel** for all pane rendering. Panes are sized by our
+   arithmetic; Spectre is used for styling and border glyphs, not for layout. The one thing
+   that must never happen is Spectre deciding a break we did not ask for.
+
+### 2.5 A pane's content sees only its own pane
+
+**Content is laid out against the pane's inner width, never against `COLUMNS`.** A pane is the
+entire world its content knows about.
+
+A pane's **inner width** is its resolved outer width minus its own chrome:
+
+```
+inner = outer - (bordered ? borderReserve : 0)        borderReserve = 4  (2 verticals + 2 padding)
+```
+
+`chromeReserve` is subtracted exactly once, at the root, to get the surface width. It never
+appears again anywhere below that.
+
+Everything downstream takes inner width as a parameter:
+
+- `RowLayout.Wrap` packs segments to the **pane's** inner width. Greedy packing, the separator
+  budget, and the row-break decisions are all pane-local.
+- The narrow-width rules are evaluated **per pane**: a `fill` or percent pane whose inner width
+  falls below `MinUsableWidth` (20) suppresses its own border and re-measures (§2.3 — `content`
+  and fixed panes never suppress, having sized themselves); a wide terminal split into
+  four columns hits these thresholds constantly, so they are ordinary operating conditions now,
+  not an edge case for tiny terminals.
+- Truncation (§2.6) measures against the pane's inner width.
+- `command` providers receive `CLAUDE_TUI_LINE_PANE_WIDTH` = the inner width of the pane the
+  item lives in, so a user script can size its own output to the space it actually has.
+
+**Enforcement, not just intent:** `COLUMNS` is read exactly once, in the surface-sizing code at
+the root. No leaf-rendering code path may reach it — not `RowLayout`, not `SegmentBuilder`, not
+any provider. Leaf rendering is a pure function of `(items, innerWidth)`.
+
+That purity is directly testable, and §10 requires it: **the same leaf pane at the same inner
+width renders identically whether it is the root pane of an 80-column terminal or the third
+child of a split in a 200-column one.** If those two outputs differ, something below the
+compositor is still reading the surface width, and that is the defect the rule exists to
+prevent.
+
+### 2.6 Overflow — wrap or truncate, chosen per pane
+
+Content that does not fit its pane is a routine condition, not an error, and how it resolves is
+the **user's choice**, configured per pane and overridable per item.
+
+Two levels of "does not fit" exist and must not be conflated:
+
+- **Segment packing** — several items do not fit on one row. Existing greedy packing flows them
+  onto additional rows. Every mode does this; it is not what `overflow` selects.
+- **A single value wider than the pane** — no packing can help. This is what `overflow` decides.
+
+**`overflow` values:**
+
+| value | a segment wider than the pane inner width | row can exceed pane width? |
+|---|---|---|
+| `"wrap"` | hard-broken across continuation rows; nothing is lost | never |
+| `"truncate"` | cut to fit, ending with the marker; the tail is lost | never |
+| `"overflow"` | emitted whole, spilling past the pane | yes — legacy only |
+
+**`"wrap"`** — the pane grows taller instead of losing text. In a vertical split a taller pane
+forces its siblings to pad to the same height (§2.4), so one wrapping pane grows the whole
+surface; `maxRows` is what bounds that.
+
+**`"truncate"`** — the pane keeps its height and loses the tail of the value. The marker is
+`ellipsis`, default `…`, and setting it to `""` gives a hard clip that sacrifices no cell —
+which is what a very narrow pane usually wants. The marker's own width is budgeted against the
+inner width, and if the inner width is not greater than the marker width the marker is dropped
+rather than allowed to consume the whole pane.
+
+**`"overflow"`** — v1's behavior, preserved for byte-parity and nothing else. It is **only
+legal when the surface has exactly one pane.** Inside any split it corrupts the neighbor to its
+right, so `--check` rejects it there and the renderer treats it as `"truncate"`.
+
+**Defaults**, which are deliberately context-sensitive:
+
+- Single root pane ⇒ `"overflow"`. This is the compatibility default and is what makes the
+  §2.7 parity gate achievable at all — widths 21–24 exercise exactly this path.
+- Any pane inside a split ⇒ `"truncate"`. Corrupting a neighbor is never an acceptable default;
+  losing the tail of one over-long value is.
+
+**Vertical overflow** is governed by the same marker. When wrapping produces more rows than the
+pane's `maxRows` (or the surface's, §2.8), the surplus rows are dropped and the last surviving
+row ends with the marker, so truncation is always visible rather than silent.
+
+**The `MinUsableWidth` single-line fallback is a property of the SURFACE, not of a pane.**
+
+`RowLayout` emits one unwrapped, deliberately over-wide row when its available width is under
+20. That is correct v1 behavior for a whole terminal too narrow to pack into, and it is the
+`overflow` mode expressed at the layout level.
+
+Inside a split it is a defect. §2.3 explicitly permits a pane to resolve below 20 columns — it
+suppresses its border and keeps rendering — so a narrow pane is a routine outcome of splitting
+a wide terminal, not a tiny-terminal edge case. If such a pane took the single-line fallback it
+would emit one long row straight through its neighbour.
+
+The rule:
+
+- **Surface has exactly one pane** ⇒ the fallback applies as in v1. Parity depends on it.
+- **Surface has more than one pane** ⇒ no pane ever takes the fallback. A pane under 20 columns
+  packs and then wraps or truncates per its own `overflow` mode, exactly like any other pane.
+  Narrow is not special; it is just small.
+
+Consequently **the overflow mode is applied after `RowLayout` unconditionally**, never only to
+rows that packed "normally". Any path that hands a row onward without measuring it against the
+pane width is the bug this rule exists to prevent.
+
+**Two implementation traps, both non-negotiable:**
+
+1. **Break on plain text, never inside an escape sequence.** Width is measured and cut on the
+   ANSI-stripped string; the markup is re-applied to each resulting piece.
+2. **Style is re-emitted on every continuation row.** A hard-broken segment must carry its
+   color onto each row it occupies. A style that opens on row 1 and is never reopened leaves
+   rows 2+ unstyled — or worse, bleeds into the pane beside it.
+
+### 2.7 Iteration 1 — one pane filling the statusline
+
+Ships the entire pane machinery with exactly one leaf pane at the root, and is verified by a
+single hard claim:
+
+> **Output is byte-identical to the pre-pane build across the full width sweep**, border on and
+> border off.
+
+Any diff at any width is a compositor bug, not a behavior change, and is fixed rather than
+re-baselined. Splits ship only after that claim holds — a compositor debugged against a known
+output is cheap; one debugged against a moving target is not.
+
+### 2.8 Height
+
+`surface.maxRows` (default `8`) bounds the whole surface, and a pane's own `maxRows` bounds it
+individually. Nothing about a statusline should be able to eat half the terminal because one
+pane got chatty — a live risk once `overflow: "wrap"` exists, since wrapping trades width for
+height. **`maxRows` is a hard ceiling: the surface never emits more rows than it allows.**
+
+#### There is no height fixpoint, and there must not be one
+
+The obvious symmetry — a row-budget fixpoint mirroring §2.3's width fixpoint — does not work,
+and reaching for it is the trap this subsection exists to close.
+
+Width converges because every pass makes requests monotonically smaller. Height has no such
+direction. The lever that reduces a wrapping pane's height is *more width*, and in a vertical
+split more width for pane A is less width for pane B, which then wraps taller — and since
+`height(vertical split) = max(height(children))` (§2.2), the surface may not shrink at all. Two
+coupled dimensions pulling opposite ways, with no monotone quantity, is not something to iterate
+to convergence once per second on the user's critical path.
+
+So height is resolved by a **deterministic degrade ladder**: an ordered sequence of steps, each
+of which *strictly* reduces row count, applied only until the budget is met. It terminates
+because the ladder is finite and every rung is strictly reducing.
+
+1. **Measure.** Rows within budget — stop. This is the overwhelmingly common case and must cost
+   nothing.
+2. **Demote `wrap` to `truncate`**, one pane at a time, in **reverse declaration order**, re-measuring
+   after each. Later-declared panes degrade first; the first-declared pane is the author's
+   primary content and is the last thing to lose fidelity. This overrides an explicit
+   `overflow: "wrap"`, which is a real surprise and is accepted deliberately — a surface that
+   silently grows without bound is the worse surprise, and `maxRows` is the author stating which
+   of the two they want.
+3. **Drop trailing items** from the tallest pane, one at a time, re-measuring after each, using the
+   existing §3.1 block ordering rather than a second priority scheme.
+4. **Clip**, as the last resort.
+
+#### Clipping must close the border
+
+A bordered pane clipped mid-box emits a top edge and two verticals with no bottom edge. That
+does not read as "truncated", it reads as "crashed" — the failure mode §7 exists to prevent, so
+the ladder must not produce it.
+
+When step 4 clips a bordered pane, the **last emitted row becomes that pane's bottom edge**,
+replacing the content row that would otherwise have occupied it. The box always closes. The
+`ellipsis` marker goes on the last surviving *content* row, so a clipped surface still never
+looks like a complete one.
+
+Clipped rows remain subject to §2.4: every emitted row is exactly `COLUMNS - chromeReserve`
+display columns. Degrading height never licenses a ragged row.
+
+### 2.9 The two-pane test — the acceptance target for splits
+
+The user's stated next test, and what "splits work" means concretely:
+
+> *Left pane: my current statusline. Right pane: the model, effort, thinking and context
+> segments, with the pane border and the model text sharing one colour.*
+
+```json
+{
+  "surface": {
+    "maxRows": 8,
+    "pane": {
+      "split": "vertical",
+      "gutter": 1,
+      "children": [
+        { "size": "fill", "overflow": "wrap",
+          "border": { "enabled": true, "color": "grey" } },
+        { "size": "content", "overflow": "wrap",
+          "border": { "enabled": true, "color": "@model-accent" },
+          "items": [ { "item": "model", "color": "@model-accent" },
+                     { "item": "effort" }, { "item": "thinking" }, { "item": "context" } ] }
+      ]
+    }
+  }
+}
+```
+
+**The model pane is the anchor; the statusline pane absorbs.** The right pane is `content`, so
+it declares its own width from the text it must draw. The left pane is `fill` with
+`overflow: "wrap"`, so it takes whatever remains and reflows into it. Nothing in this config
+names a column count — change the model name or the terminal width and the layout re-derives
+itself.
+
+The left pane omits `items`, so it gets the default list — all 14 builtins, i.e. today's
+statusline, reflowed to whatever width the anchor leaves it.
+
+**The arithmetic at `COLUMNS=112`**, as the shipped build actually resolves it:
+
+```
+surface   = 112 - 3 (chromeReserve)             = 109
+           - 1 (gutter)                         = 108
+right     = content: its 4 items unwrapped on one row + borderReserve 4 = 66
+left      = fill: 108 - 66 = 42  → inner = 42 - 4 = 38
+```
+
+The anchor asks for its whole unwrapped row, gets it, and the statusline reflows into the 38
+that remain. **This is the case that motivates `distribute` (§2.3).** Both panes are individually
+correct — `content` got exactly what it asked for, `fill` got the remainder — and the surface is
+still wrong: the right pane spends 66 columns on one row while the left pane wraps into six.
+A layout can satisfy every declared size and still be the wrong layout, because the quantity the
+reader cares about is total rows.
+
+**The same config at `COLUMNS=60`**, which is where the §2.3 cap earns its place:
+
+```
+surface   = 60 - 3 - 1 (gutter)                          = 56
+floor(left) = MinUsableWidth 20 + borderReserve 4        = 24      (it is `fill`, so it has one)
+pass 1    right asks 66; cap = rem 56 - reserve 24       = 32      (§2.3 step 4)
+          right granted 32  →  its inner = 32 - 4        = 28
+```
+
+Note what did *not* happen: right asked for 66 and a naive reading would clamp only against the
+remaining 56, granting it and leaving the left pane nothing usable. It is the §2.3 step-4 cap —
+`rem − reserve`, reserving the `fill` sibling's floor — that pulls the grant down to 32.
+**That cap is the mechanism; there is no "surface is too tight" predicate anywhere.**
+
+**The second pass currently frees nothing, and that is a live defect.** Under the 28-column
+inner grant the right pane wraps to three rows whose longest is 22, so it needs 26 columns, not
+32. §2.3 requires it to re-report that and hand the 6 columns back to its sibling — "freed space
+must reach the sibling" — and the build does not: it re-reports the width it was granted. The
+left pane is therefore squeezed to its 20-column floor and wraps `jimcline/claude-tui-line`
+mid-word while six columns sit unused inside the anchor.
+
+The cause is worth recording, because it was introduced by a deletion rather than by a bug: the
+degradation that used to shrink a re-measured request was the banner-to-text fallback, and when
+the banner renderer was removed nothing else implemented one. The fixpoint loop survived intact
+while the only thing that made it converge to something *smaller* went away, leaving machinery
+that runs and cannot change its answer. **A re-measurement under a narrower grant must return the
+longest wrapped row, not the grant.** That is the wrap-aware measurement `distribute` also needs,
+so it is specified once, here, and used by both.
+
+**These integers are measured, not asserted.** They come from rendering the config above at those
+two widths. Tests must assert **behaviour and invariants** — the cap binds at `COLUMNS=60`, the
+re-measure returns the longest wrapped row, requests are monotone non-increasing, and every
+composed row is exactly the surface width — and **not** `right == 32`.
+
+**This costs height.** The left pane packs its segments into the 38 columns the anchor leaves it
+at `COLUMNS=112`, so it runs six rows; add the border and the surface is eight rows tall. That is
+the real price of a vertical split at this width, and it is what `distribute: "min-rows"` exists
+to reclaim.
+
+**What this test actually proves**, and why it is the right acceptance gate: the two panes have
+**different natural heights** — one row of model text against however many rows the statusline
+packs into whatever the anchor leaves it. Every compositing rule in §2.4 fires at once. Ragged
+padding, height mismatch, `valign`, and a per-pane border all fail visibly here and are nearly
+invisible in a single-pane test.
+
+### 2.10 Borders are a grid, not per-pane boxes
+
+A border is **not a property of a pane**. It is a property of the **boundary**, and a boundary
+between two panes is one physical line that both of them touch. This is CSS's
+`border-collapse: collapse`, and it is the model the whole section rests on.
+
+The consequence that matters: **panes stop drawing boxes.** A pane renders *content only*, into
+its own inner rectangle. The compositor then overlays a single resolved **border grid** across
+the finished surface. This is not a new authority — it is §2.4's existing rule ("the compositor
+is the sole authority on the surface") finally applied to borders too, and it deletes the
+per-pane border-wrapping path along with the re-padding defence that path needed.
+
+**Per-edge selection.** Each pane declares which of its four edges it wants:
+
+```json
+"border": { "edges": { "top": true, "right": false, "bottom": true, "left": true },
+            "color": "grey", "style": "rounded" }
+```
+
+with Excel-style shorthands, which are the friendly form and expand to exactly the above:
+
+```
+"border": "all"      every edge of every pane, dividers included
+"border": "outline"  the outer boundary of this pane/split only, no interior dividers
+"border": "inside"   interior dividers only, no outer boundary
+"border": "none"
+```
+
+**Collapsing.** A physical line is drawn if **any** adjacent pane asks for it. Where two panes
+disagree about colour or style, the **first requester in tree declaration order wins** — chosen
+because it is deterministic and explainable, not because it is clever. `--check` (§9) reports
+every conflict it resolves, since a silently-dropped colour is exactly the kind of thing a user
+will otherwise spend an evening on.
+
+**Junctions.** At each grid position, the glyph is a pure function of which of the four
+directions carry a line. Implement it as one 16-entry table per style, keyed by the `NESW`
+neighbour mask — `0b0011 -> ┐`, `0b1111 -> ┼`, `0b0000 -> ` ` `, and so on. Never a chain of
+special cases; the table generalises to any nesting depth for free, and a rounded style simply
+supplies rounded glyphs for the four corner masks.
+
+**Sizing.** `borderReserve` was a constant 4 that quietly conflated two different things: the
+edge glyphs and the content padding. Split them.
+
+```
+reserve(p)  =  (edges p is charged for)  +  padLeft + padRight
+```
+
+A shared edge is charged **once, to the split**, never twice to the two neighbours — that
+double-charge is the whole bug this section exists to avoid. So for a vertical split with `N`
+children and interior dividers on, the dividers consume `N − 1` columns, and
+
+```
+avail = splitInnerWidth − (N − 1)      // dividers, in place of the old gutter
+```
+
+The divider **occupies the gutter**: with dividers on, `gutter` must be ≥ 1 and defaults to 1;
+a `gutter` greater than 1 centres the line with blanks either side (`  │  `). Everything else in
+§2.3 — the floor table, the six-step allocation, the fixpoint — is untouched and takes the new
+per-pane `reserve(p)` wherever it currently reads `borderReserve`.
+
+**Edges are static config, and this is load-bearing.** Colours may be derived from a provider's
+value (§6); edges may **never** be. An edge has extent, so a value-derived edge would put a
+provider's output inside the sizing loop, and the §2.3 fixpoint's convergence argument does not
+survive that. Static edges are known before sizing begins, which is precisely why this whole
+feature needs no new sizing machinery.
+
+**Degrade.** §2.3's narrow-width suppression gets sharper here: a squeezed pane drops its
+**vertical** edges first, because columns are what is scarce and horizontals cost none. Losing
+one line beats losing the whole box.
+
+**Back-compatibility.** A surface with a single pane has no neighbours, so nothing collapses and
+its four outer edges render exactly as today. The golden parity gate covers only the
+no-`surface` single-pane config and is therefore unaffected by this section — if it moves, that
+is a defect in the reserve decomposition, not an expected consequence.
+
+## 3. Item model
+
+An item resolves to a **block**: zero or more rows. Zero rows means "suppressed" — the existing
+rule that a missing field renders nothing, never `null`. One row is the ordinary case and is
+what every v1 segment is. More than one row is a user-defined item (§4) whose command emitted
+multiple lines.
+
+This generalization is worth taking now rather than later: a one-row-only item model would have
+to be unwound the first time a user's script prints two lines.
+
+```
+StatusItemDefinition
+    Id           string          stable key, used in config and cache
+    Provider     provider        how the VALUE is obtained (§4)
+    Format       string          "{}" placeholder, e.g. "ctx:{}%" — default "{}"
+    Color        string          Spectre color name, or a threshold rule (§6)
+    Align        left|center|right   within the pane — default left
+    Overflow     string          optional per-item override of the pane's §2.6 mode
+    Enabled      bool            default true
+```
+
+The provider is the only axis that distinguishes one item from another. Everything downstream —
+formatting, colouring, packing, wrapping — is identical for a builtin and for a user's shell
+script, which is what makes a user-defined item a first-class item rather than a bolt-on.
+
+**A provider takes one `ItemContext`, never a growing parameter list.** The context carries the
+session payload plus environment values probed lazily and memoized for the process — git branch,
+remote URL, and whatever the next item needs. This is the §1 rule applied to the registry's own
+signature: threading each new input as its own parameter means the Nth item that needs a new
+probe re-edits all N rows, which is precisely the cost the registry exists to remove. The
+signature widens once and then never again.
+
+Laziness is not a nicety here. `refreshInterval: 1` makes startup cost the render cost, so a
+probe that spawns a subprocess must run only when an item actually asks for it, and at most once
+per render.
+
+### 3.1 Blocks and packing
+
+Row packing (§2.6) operates on single-row items. A multi-row block **occupies its own rows**:
+it never shares a row with a neighbouring item and never has items packed beside it. A pane's
+content is therefore a vertical sequence of packed single-row groups and standalone blocks, in
+config order.
+
+Panes also gain `valign` (`top` | `middle` | `bottom`, default `top`), which decides where the
+content sits when a pane is shorter than its siblings — the padding from §2.4 goes below, split,
+or above accordingly. Without it, a 1-row model pane beside a 6-row statusline sits awkwardly at
+the top of its box — visibly so in §2.9.
+
+### 3.2 Hyperlinks
+
+An item may carry a `link` whose value is a URL template. The item's text is emitted wrapped in
+an OSC 8 hyperlink, so a terminal that supports them makes it clickable and one that does not
+shows the text unchanged.
+
+```json
+{ "item": "git-branch", "link": "{remote-url}/tree/{}" }
+```
+
+`{}` is the item's own value; `{other-id}` is another item's resolved value. No second lookup
+mechanism — the same registry that resolves items resolves these.
+
+**Zero-width is the whole problem.** `\e]8;;URL\e\\text\e]8;;\e\\` costs no columns and is
+roughly 40–80 characters, so anything that measures it as text puts the pane border that many
+columns early and §2.4's rectangle invariant breaks. Three rules, none optional:
+
+1. **`Plain` carries the link text only; `Markup` carries the sequence.** This is the split that
+   already keeps SGR out of the width metric (§6); hyperlinks join it rather than getting a
+   parallel mechanism.
+2. **OSC is not CSI and must be scanned separately.** A CSI scan ends at the first letter; an
+   OSC 8 runs to a string terminator — `\e\\` or BEL. Scanning an OSC as a CSI stops inside the
+   URL and counts its tail as visible text. §10's existing "a hard break never lands inside an
+   escape sequence" was written and tested against SGR only and does **not** cover this.
+3. **A wrapped or truncated link closes itself.** A continuation row re-opens the hyperlink, and
+   a truncated one emits the closing `\e]8;;\e\\` before the ellipsis. An unterminated OSC 8
+   leaks: the terminal keeps hyperlinking subsequent output, including the user's next prompt.
+
+**Derived items** cover the case where the thing to link is not an item but a fragment of one:
+
+```json
+{ "id": "issue", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+", "case": "upper",
+  "link": "https://linear.app/example/issue/{}", "color": "blue" }
+```
+
+`from` names a source item, `extract` is a regex whose first match becomes the value, and an
+empty match suppresses the item under the existing missing-field rule (§3). This is deliberately
+one general mechanism rather than a registry row per tracker: an issue id scraped from a branch
+name and any future scraped fragment cost a config row, not a code change — the §1 rule.
+
+`remote-url` is a new registry row: origin normalized to https, `git@host:path` rewritten,
+`.git` stripped. It probes via `git remote get-url origin` rather than reading git config
+directly, so `insteadOf` rewrites are honored. It is a value like any other, so it is linkable,
+formattable, and testable on its own rather than being logic buried inside the branch item.
+
+**A raw OSC 8 emitted by a `command` provider (§4) is measured the same way**, since a user's
+script can emit one directly — which is exactly how this defect was found. `Segment.Plain` is
+contracted escape-free, so sanitizing belongs where Plain is built from raw command output, not
+at the measurement sites. Preserving the script's own colour and links in `Markup` is desirable
+but secondary: correct width first, fidelity if the markup path can carry raw ANSI without a
+fight.
+
+Preserving that fidelity brings rule 3's leak with it in a second form. A script that opens an
+SGR and never resets bleeds into every segment after it, exactly as an unterminated OSC 8 bleeds
+into the user's next prompt. **A segment built from raw command text terminates its own styling
+regardless of what the script emitted.**
+
+The strip helper's OSC scan has two ways to be wrong in opposite directions. Its terminator is
+`\e\\` **or** BEL, and missing BEL leaves a shell script's link counted as text; and it must be
+non-greedy, since two OSC sequences on one row otherwise collapse into one match that swallows
+the visible text between them and measures the row far too narrow.
+
+#### 3.2.1 Resolved questions
+
+- **`case`** is `upper` or `lower`. An unrecognized value passes through unchanged today. That is
+  the same silent-acceptance flaw as `"auto"` resolving to `fill` (§2.2) and is owned by the
+  config-diagnostics work, not fixed here.
+- **A `{other-id}` that does not resolve drops the link, not the item.** The text still renders,
+  plainly. The missing-field rule governs an item's own `{}` value; a decoration's unmet
+  dependency must not delete information.
+- **`from` names a real registry or command id only.** Pointing it at another derived item does
+  not resolve and suppresses the item. The alternative — a single order-dependent pass — makes
+  config line order silently load-bearing, so reordering two lines loses a link with no error.
+  Chaining can be added later behind a topological sort; order-dependence cannot be withdrawn
+  once configs rely on it.
+- **A truncated linked segment closes the link before the ellipsis and keeps its colour.** The
+  ellipsis is the pane's artifact, not part of the target; clicking `…` must never navigate.
+
+#### 3.2.2 The renderer's restyle path is the hazard
+
+`PaneRenderer.TryGetSimpleWrap` matches only markup ending in exactly `[/]`. Wrapping coloured
+markup in an OSC 8 open/close breaks that match, and the restyle then degrades to unstyled plain
+on any wrap or truncate of an oversized linked-and-coloured segment — dropping the colour **and**
+the link, with no error. A link-aware restyle that detects, strips, and reapplies the OSC 8
+wrapper around the existing SGR logic makes rule 3's per-row re-open fall out of wrapping for
+free; truncation still needs its own branch so the closer precedes the ellipsis.
+
+The test that matters here asserts the link *survives* a wrap of a coloured segment. A row that
+is merely the right width passes even when both the colour and the link have been silently
+thrown away.
+
+## 4. Providers
+
+Two kinds in v2. The provider is the *only* thing that differs between a built-in item and a
+user-defined one — everything downstream is identical.
+
+**`builtin`** — a function of the parsed stdin JSON plus render context (git branch, engram
+telemetry). These are the 14 captured segments, each registered as one row in a single static
+table keyed by id: `directory`, `git-branch`, `repo`, `worktree`, `pr`, `model`, `effort`,
+`thinking`, `output-style`, `context`, `rate-limits`, `agent`, `engram`, `vim` — plus
+`model-short`, a shortened form for narrow anchor panes, which appears only if it is explicitly
+configured, since adding it to the default list would change the parity baseline.
+
+The registry is the ONLY place the set of builtins is enumerated. No second list anywhere —
+not in tests, not in config validation, not in docs generation.
+
+**Every registry row carries a default `format`, and it is the only place an item's display
+text is constructed.** A row resolves a *raw value* (`62`, `high`, `approved`) and a `format`
+that turns it into display text (`ctx:62% (125k/200k)`, `effort:high`, `PR #42`). This is the
+same `format` a `command` item declares below and the same one a `{ "item": "<id>" }` entry may
+override (§8) — one mechanism, not a builtin-only shortcut.
+
+Both are load-bearing, because the raw value and the display text have different consumers:
+colour rules read the **raw value**, since `from: "context"` with numeric thresholds needs `62`
+and not `ctx:62% (125k/200k)`, while `contains: "Sonnet"` matches the model string itself. The
+surface renders the **display text**. Resolving one from the other at use time is what keeps
+them from drifting.
+
+**A row's two outputs, and how a composite item supplies them.** Most rows produce display text
+by applying a format string to the raw value — `"effort:{}"`, `"PR {}"`, `"[{}]"`, or plain `{}`
+where the value is already display-ready. Some items cannot: `context` displays
+`ctx:62% (125k/200k)`, where the parenthetical is built from two further fields and appears only
+when both are present, while its raw value must stay the bare number `62` so a numeric threshold
+rule (§6.4) can compare against it. No format string can wrap data that was never passed through
+it, and none can express a conditional.
+
+So a row supplies **either** a format string applied to the value, **or** a text function with
+access to the full resolved input — never both, and the registry exposes a single accessor that
+hides which one a row used. This is not a second display mechanism competing with the first: the
+behaviour is "how item X displays", exactly one implementation of it lives in item X's row, and
+both the default list and an explicit `items` array call the same accessor. Format strings are
+the common case, not the rule; a text function is the general case, not an escape hatch.
+
+**The accessor returns markup, not plain text.** Splitting display into "text from the registry
+row, colour from somewhere else" reintroduces the exact duplication this section exists to remove
+— one path colours, the other does not, and the plain text matches so a text-only equivalence
+test reports success. Some items colour *within* themselves: `ctx:62% (125k/200k)` colours only
+`62%`, and `5h:30% / 7d:85%` colours each window independently against its own threshold. That
+granularity is finer than any item-level colour expression can express, it is part of the
+captured baseline, and it must survive. So a row's accessor yields both `Plain` and `Markup`
+(§2.4 keeps `Plain` as the sole width metric), and an item rendered from an explicit `items`
+array is coloured identically to the same item in the default list.
+
+An item-level `color` from config (§6) applies on top, and where an item colours its own
+fragments the config colour governs the parts the item did not claim. A config colour never
+silently discards an item's internal threshold colouring.
+
+**Thresholds are one evaluator with two callers.** §6.4's numeric comparison is a single
+implementation, used both by a config-declared `thresholds` token and by an item's own internal
+rule. That — not relocating the 50/80 rule into config — is what "expressed *through* this
+mechanism" requires: moving the rule out of the item would flatten per-fragment colouring and
+break parity, which is a worse outcome than the duplication it would remove.
+
+For a `from: "rate-limits"` rule the raw value is the **maximum across the windows** (`85` for
+`5h:30% / 7d:85%`), since a threshold on usage means the most-constraining limit. Its display
+text keeps both windows. An item whose raw value cannot be a single number cannot be a numeric
+threshold source, and `--check` reports that rather than the rule silently never firing.
+
+A per-item `format` in config (§8) always overrides to apply to the **raw value**, replacing the
+row's default text entirely — **including the row's own internal markup**. A format string
+restructures the text, and per-fragment tags are bound to the structure it replaces, so they
+cannot survive it. `{ "item": "context", "format": "ctx:{}%" }` yields plain text carrying only
+the item-level `color`, if any. This is the predictable reading: an override replaces, it never
+merges. For a composite item that means the user trades the richer default
+away — `{ "item": "context", "format": "ctx:{}%" }` renders `ctx:62%` and loses the
+`(125k/200k)`. That is the correct behaviour and it is predictable: `{}` is always the raw value,
+in every position, for every item.
+
+Note what this rules out. "Let the configured form be narrower than the default form" is not
+available, because the default list renders through this same accessor — a narrower configured
+`context` would render a narrower `context` in the default statusline too, and break golden
+parity against the captured bash output. The parity baseline is not a preference here; it is what
+makes the unification checkable.
+
+The consequence that matters: **the default list is not a separate rendering path.** A leaf with
+no `items` renders the 14 builtins through exactly the code an explicit `items` array uses, with
+the same formats. If a configured `{ "item": "context" }` and the default list can produce
+different text for the same item, there are two display implementations and the framework is
+being bypassed by its own baseline — which also means the golden parity test is guarding a path
+the framework does not use, and is no longer evidence about the framework at all.
+
+**`command`** — an external process producing one line on stdout.
+
+```json
+{
+  "id": "k8s",
+  "command": ["kubectl", "config", "current-context"],
+  "format": "k8s:{}",
+  "color": "cyan",
+  "ttlSeconds": 30,
+  "timeoutMs": 150
+}
+```
+
+- **Argv array, not a shell string.** `["python3", "/path/thing.py"]`. This is the default and
+  the documented form: no quoting rules, no word splitting, no injection surface.
+- **`shell: true` is in scope, not optional.** Pipes are a normal thing to want in a statusline
+  script, and telling a user to wrap their one-liner in a file is the kind of friction that
+  makes a framework unused. The rule: `command` is an **array** normally; when `shell: true` is
+  set, `command` is a **string** run as `sh -c "<string>"`. Both forms accepted, decided by the
+  `shell` flag rather than by sniffing the JSON type — a string `command` without `shell: true`
+  is a config error (silently suppressed per §7, reported by `--check`). Everything downstream
+  — stdin, env, cwd, timeout, cache key, stale-on-failure — is identical for both forms.
+- **stdin**: the command receives the *same session JSON* Claude Code sent us, verbatim. This
+  is what makes user scripts first-class — they see everything the builtins see.
+- **env**: `COLUMNS` is exported and `CLAUDE_TUI_LINE_ITEM_ID` is set to the item id.
+  `CLAUDE_TUI_LINE_PANE_WIDTH` carries the inner width of the pane the item lives in, so a
+  script can size its own output — but note the circularity, because as first written this
+  variable was not implementable. Values are resolved *before* sizing (§5), so at spawn time no
+  pane has a width yet; and for a `content` pane the demand is backwards anyway, since the item
+  determines the pane's width rather than the reverse. The resolution:
+  - The variable carries the pane's inner width **from the previous render**, recorded in the
+    cache entry at render time and read back on the next spawn. A statusline redraws every
+    second and layouts are stable, so this is correct on all but the first tick after a resize.
+  - It is **absent on the first render**, and absent for items in a **`content`-sized pane**. A
+    script must treat it as optional and behave sensibly without it.
+  - Omitting it for `content` panes is what makes this safe rather than merely stale: it
+    removes any path where a script's output width feeds the width it is told about. A `fill`,
+    percent, or fixed pane absorbs its remainder independently of its own content, so no
+    self-feedback exists there.
+  - It is advisory. Pane-level `overflow` (§2.6) is the authoritative mechanism for content
+    that does not fit, and it works whether or not a script consulted this variable.
+- **cwd**: the session's `.cwd`, so `git`-flavored commands behave as the user expects.
+- **Output**: first line of stdout, trailing newline stripped. Empty output ⇒ item suppressed.
+  Nonzero exit ⇒ treated as empty (see §7). ANSI in the output is passed through but its width
+  is measured stripped, so a script may color itself.
+
+## 5. Execution model — the hard part
+
+The process is spawned **every second**. Naive shelling out per item per tick would destroy
+the 12.6ms budget that justified Native AOT in the first place.
+
+**Values are resolved exactly once per render, before sizing begins.** Every item referenced by
+any pane's `items`, plus every item named by a colour token's `from` (§6) even when it is never
+displayed, is fetched in a single up-front phase — builtins synchronously, `command` providers
+concurrently through the cache with one shared timeout window — producing a plain synchronous
+dictionary. Sizing reads that dictionary. Post-sizing colour resolution reads the same
+dictionary. No provider ever runs twice in one render.
+
+This is a **correctness requirement, not an optimisation**, and it is the reason the §2.3
+fixpoint terminates. That fixpoint's convergence argument assumes a pane's intrinsic measurement
+is a deterministic function of the width it was granted. Fetch values inside the loop and that
+assumption dies: a clock, a counter, a flaky command returning a different string on pass 2
+makes the measurement non-deterministic, breaks the monotone-decreasing invariant the 3-pass cap
+is built on, and produces oscillation that no cap can fix — only mask. Resolving up front makes
+the values *constant for the render*, which is exactly the hypothesis the fixpoint needs. The
+latency win — never spawning a process three times for three passes — follows for free.
+
+Items in panes later dropped by §2.3's over-constrained loop will have been fetched
+unnecessarily. That waste is accepted deliberately: recovering it means moving fetching back
+inside the sizing loop, which is the thing this rule exists to forbid.
+
+**Cache with TTL.** Each `command` item's result is cached. Within `ttlSeconds` (default 30)
+the cached value is used and **no process is spawned at all**. The steady-state cost of a
+custom item is a map lookup, not a fork.
+
+- Cache location: `$XDG_CACHE_HOME/claude-tui-line/items/`, else
+  `~/.cache/claude-tui-line/items/`. Overridable by `CLAUDE_TUI_LINE_CACHE` for tests.
+- Cache key: `id` + hash of the resolved argv + `cwd`. `cwd` is in the key because a command
+  like `git status --short` means different things in different sessions, and the cache is
+  shared by every session on the machine.
+- **One file per cache key**, named for the key — *not* a single `items.json` holding every
+  entry. This is load-bearing, not filesystem taste. With one shared file, two sessions
+  refreshing two different items each read-modify-write the whole map, and last-write-wins
+  silently discards the other's refresh: the losing item stays stale, re-spawns next tick, and
+  a busy machine thrashes forever without ever erroring. Per-key files make last-write-wins
+  correct *per item*, which is the granularity the value actually has. Reading five keys is
+  five opens — microseconds against a 13ms budget.
+- Entry: `{ value, capturedAt, exitCode, paneWidth }`. `paneWidth` is the inner width this
+  item's pane resolved to on the render that wrote the entry, and is what feeds
+  `CLAUDE_TUI_LINE_PANE_WIDTH` on the next spawn (§4). It is written on every render, including
+  cache hits where no process was spawned, so it tracks a resize rather than going stale with
+  the value.
+- Writes are atomic: temp file in the same directory, then rename. Concurrent statusline
+  processes will still race on the *same* key; there last-write-wins is genuinely correct and
+  no locking is used. A torn or unparsable cache file is treated as empty, never an error.
+
+**Timeouts and concurrency.** On a cache miss, all due commands are spawned **concurrently**
+and awaited with an individual `timeoutMs` (default 150). Total added latency is therefore one
+timeout window, not the sum. On timeout the process is killed with its whole tree, the same way
+`GitBranch` already does it.
+
+**Stale-on-failure.** If a command times out or fails, the last cached value is used **even if
+expired**, so a flaky command degrades to a slightly old value instead of flickering out. If
+there is no cached value at all, the item is suppressed. The next tick retries.
+
+**Never block the render.** A pathological command cannot exceed its timeout, and the render
+proceeds with whatever is available. Exit code is always 0 and stdout is always valid.
+
+## 6. Coloring
+
+Anywhere this spec accepts a colour — an item's `color`, a border's `color` (§2.10) — the value
+is a **colour expression**: a literal, a token reference, or an inline rule. One grammar, three
+forms, valid in every position. A border and an item can therefore be driven by the *same*
+expression, which is the point of the whole section.
+
+### 6.1 Literals
+
+A plain string names a colour:
+
+- **The 16 standard names** — `blue`, `yellow`, `fuchsia`, `grey`, `maroon`, `olive`, … These
+  resolve **through the user's terminal theme**. `blue` is whatever the user's colour scheme
+  calls blue. This is the right default for a statusline that has to sit inside somebody else's
+  terminal and not clash with it.
+- **The 256 palette names and indices** — `steelblue1`, `gold1`, `hotpink`, or `color(213)`.
+- **Hex** — `#ff5fd7`.
+
+The last two are **absolute**: they ignore the terminal theme and render the same everywhere.
+That difference is the reason to keep all three rather than replacing the 16 with the wider
+set — an author picks theme-following or exact, per colour, and both are legitimate. Do not
+"upgrade" the 16 names to their 256-palette equivalents.
+
+### 6.2 Colour system, and why widening is opt-in
+
+```json
+"colorSystem": "standard" | "256" | "truecolor"     // top-level, default "standard"
+```
+
+**The default is `standard`, and that is load-bearing.** Raising the colour system changes the
+SGR bytes Spectre emits for the builtin segments, which is exactly what the golden parity
+baseline pins. Making the wider palette opt-in means the default render stays byte-identical to
+the captured bash statusline **by construction**, and the parity gate keeps its meaning without
+anyone having to regenerate it. §13 listed palette widening as out of scope precisely because
+it "needs its own decision"; this is that decision, and it is the config knob rather than a
+profile raise.
+
+Under `standard`, a 256-name or hex colour is **down-converted to the nearest of the 16** — it
+is not an error and does not suppress the item. `--check` reports it as a notice so an author
+who wrote `#ff5fd7` and got approximately-magenta knows why.
+
+A baseline regenerated because it was inconvenient has stopped meaning anything. If widening
+ever *does* become the default, that is a separate decision requiring a visually confirmed
+re-capture recorded explicitly as a loss of coverage — not a side effect of a colour change.
+
+### 6.3 Named tokens
+
+A top-level `colors` table defines reusable, value-driven colour tokens. Referenced with a
+leading `@`:
+
+```json
+{
+  "colors": {
+    "model-accent": {
+      "from": "model",
+      "match": [
+        { "contains": "Sonnet", "color": "blue"    },
+        { "contains": "Opus",   "color": "yellow"  },
+        { "contains": "Fable",  "color": "fuchsia" }
+      ],
+      "default": "grey"
+    }
+  },
+  "surface": { "pane": { "children": [
+    { "border": { "color": "@model-accent" },
+      "items":  [ { "item": "model", "color": "@model-accent" } ] }
+  ] } }
+}
+```
+
+The token exists so that the border and the text cannot drift. Written as two inline rules,
+they are two copies of one mapping and someone eventually updates one of them.
+
+- **`from` is required in the `colors` table** and names the item id whose value drives the
+  rule. A token has no owning item — a *border* has no value of its own — so there is nothing
+  to default to. This is the `from` that §5 refers to: the named item is fetched even when it
+  is never displayed in any pane.
+- **Tokens are flat.** A token's `color` values must be literals (§6.1); a token may not
+  reference another token. This makes reference cycles impossible by construction rather than
+  by detection, and one level of indirection is all the drift problem needs.
+- An unknown `@name` resolves to no colour, silently, per §7. `--check` reports it.
+
+### 6.4 Rule forms
+
+Two rule shapes. Both may be written inline as an item's `color`, or in the `colors` table as a
+token. Inline, `from` defaults to **the item the colour is attached to**; in the table it is
+required.
+
+**`thresholds`** — numeric, first satisfied wins, evaluated in declaration order:
+
+```json
+"color": { "thresholds": [ {"min": 80, "color": "maroon"}, {"min": 50, "color": "olive"} ],
+           "default": "green" }
+```
+
+Applied when the value parses as a number. The existing 50/80 rule for `context` and
+`rate-limits` must be expressed *through* this mechanism, not kept as a parallel code path —
+same rule as §1.
+
+**`match`** — string, first match wins, evaluated in declaration order. Each entry carries
+exactly one predicate:
+
+- `"contains": "Sonnet"` — case-insensitive substring.
+- `"equals": "vim"` — case-insensitive full match.
+
+**Substring is the default idiom on purpose.** Model display strings carry version numbers that
+change — `Sonnet 5`, `Sonnet 5.1` — while the family name does not. An `equals` rule against a
+model name is a bug with a delayed fuse: it works until the day the version bumps and then
+silently falls through to `default`, which looks like nothing happened rather than like a
+failure.
+
+No regex. A statusline re-renders every second and a pathological pattern would be a
+per-second stall with no way for the user to see why.
+
+**`default`** is optional in both forms. Absent, a value that matches nothing takes **no
+colour** — it does not inherit the previous rule's colour and does not suppress the item. A
+missing, failed, or empty source value takes the `default` branch.
+
+### 6.5 When colours resolve
+
+**Colour resolution happens in the same up-front phase as value resolution (§5), immediately
+after it, and before sizing begins.** It produces a resolved colour map alongside the value
+dictionary; sizing and the final render pass both read already-resolved colours.
+
+Nothing a colour expression needs depends on layout — a token reads an item value, and item
+values are all known once §5's fetch phase completes. So there is no reason to defer, and
+deferring costs something real: a placeholder colour threaded through measurement is a
+placeholder that can leak into output on any path that skips the later fixup. Resolve once,
+early, and let every downstream consumer read a finished value.
+
+This is safe for the §2.3 fixpoint for the reason §5 gives — colour affects `Segment.Markup`
+and never `Segment.Plain`, which is the width metric — but the fixpoint's safety is not why
+the ordering is specified. It is specified because one resolution point beats two.
+
+## 7. Failure semantics
+
+Inherited from v1 and non-negotiable: **the statusline never errors, never pollutes stdout,
+always exits 0.** A misconfigured item, a missing binary, a script that writes garbage, a
+malformed pane tree — each degrades locally. One bad item suppresses itself; one bad pane
+renders empty; neither takes out the line.
+
+Config validation failures are silent by design. A `--check` CLI flag (§9) is how a user finds
+out they typo'd something, because a statusline is the wrong surface for error text.
+
+## 8. Config
+
+Iteration 1 — one pane, which is also what an omitted `surface` block means:
+
+```json
+{
+  "border": { "enabled": true, "color": "grey", "style": "rounded" },
+  "layout": { "chromeReserve": 3 },
+  "items":  [ { "item": "directory" }, { "item": "git-branch" }, { "item": "context" } ]
+}
+```
+
+Later, with splits:
+
+```json
+{
+  "surface": {
+    "maxRows": 4,
+    "pane": {
+      "split": "vertical",
+      "gutter": 1,
+      "children": [
+        { "size": "auto", "overflow": "wrap",
+          "items": [ { "item": "directory", "overflow": "truncate" },
+                     { "item": "git-branch" } ] },
+        { "size": "32%", "border": { "enabled": true, "color": "blue" },
+          "overflow": "truncate", "ellipsis": "…", "maxRows": 2,
+          "items": [ { "item": "context" },
+                     { "id": "k8s", "command": ["kubectl", "config", "current-context"],
+                       "format": "k8s:{}", "color": "cyan", "ttlSeconds": 30 } ] }
+      ]
+    }
+  }
+}
+```
+
+- `surface` **absent** ⇒ a single root leaf pane holding top-level `items`, with the top-level
+  `border`. This is what keeps every existing config rendering exactly as it does today.
+- `surface` **present** ⇒ top-level `items` is ignored; the pane tree is authoritative.
+- **`border.enabled` defaults to true on a leaf and false on a split container.** An explicit
+  `enabled` always wins; the default applies only where the author wrote nothing. One predicate,
+  leaf vs split — *not* a special case for the root. A split container is a layout device, and
+  adding a split to a config must never silently add chrome: under a uniform default, nesting
+  three deep would spend 12 columns on boxes before any content existed. The border stays on the
+  panes that hold content, which is also where its color is worth setting.
+- `items` **absent** in a leaf ⇒ the default list: all 14 builtins in CAPTURE.md order.
+- `items` **present** ⇒ exactly those, in that order. An unknown builtin id is suppressed
+  silently.
+- A `{ "item": "<id>" }` entry may override `format`/`color`/`overflow` on a builtin.
+- `overflow` and `ellipsis` are inherited by a pane's items unless an item overrides
+  `overflow` itself. A long path set to `truncate` inside an otherwise wrapping pane is the
+  motivating case: wrap everything, but do not let one directory name cost three rows.
+
+Config is still read on every render, so an edit takes effect within a second (SPEC.md §6b).
+
+## 9. CLI surface
+
+The binary currently does exactly one thing. v2 needs three more, none of which may interfere
+with the statusline path (no args ⇒ render, exactly as now):
+
+- `--check` — validate config, print human-readable diagnostics for unknown ids, bad colors,
+  malformed panes, sizes that cannot fit, and `overflow: "overflow"` on a pane inside a split
+  (§2.6); exit nonzero on error.
+- `--preview [--columns N]` — render to stdout at a fixed width, for iterating on a config
+  without waiting for the real statusline. Prints each row's measured width alongside, so
+  overflow and ragged compositing are visible rather than inferred.
+- `--items` — emit the registry as JSON: every item's id, what it reports, its default format,
+  whether its colour is decorative or semantic (§6), and which config keys it accepts.
+- `--colors` — print every accepted colour name **rendered in its own colour**, so the choice is
+  made by looking rather than by guessing what `olive` is. `--colors --json` emits the same list
+  unstyled for a program. The palette is theme-mapped (§6.2), so printing it through the user's
+  own terminal is the only honest preview; a swatch in documentation shows the author's theme.
+
+`--items` exists because §12's authoring tools need to know what the framework can do, and any
+other way of knowing it is a copy. A skill or command with an item list embedded in its prose is
+a second registry that drifts the moment a row is added — the §1 failure, relocated into
+documentation where nothing type-checks it. The binary is the only thing that knows its own
+capabilities, so the authoring surface asks it rather than remembering.
+
+`--check` also takes `--json`, emitting the same diagnostics as structured records with a
+`path` (JSON Pointer into the config), `severity`, `code`, and `message`. A human reads the
+prose form; a program that has just written a config reads this one and knows *which key* it
+got wrong without parsing English.
+
+## 10. Testing requirements
+
+The v1 lesson was expensive and is now policy:
+
+1. **Parity gate for iteration 1** (§2.7): byte-identical to the pre-pane build across the
+   full width sweep, border on and off. This is the whole justification for landing panes as a
+   no-op first.
+2. **Pane content is position-independent** (§2.5): the same leaf pane at the same inner width
+   renders identically as the root of an 80-column surface and as the third child of a split in
+   a 200-column one. A failure here means something below the compositor is reading `COLUMNS`.
+3. **The rectangle invariant**: for any pane tree, at any width, every composed root row has
+   the *same* ANSI-stripped width, and that width never exceeds `COLUMNS - chromeReserve`.
+   This one assertion catches ragged padding, height mismatch, and overflow together. It must
+   be shown to FAIL against a deliberately broken compositor (drop the padding step) before it
+   is trusted.
+
+   **There is exactly one escape-stripping implementation in the repo and every test drives
+   it.** It handles CSI and OSC, each scanned by its own rule (§3.2). A second copy is not a
+   duplication nuisance but a lying instrument: an SGR-only stripper scores an OSC-broken row
+   as clean, and a pattern missing its `ESC` prefix leaves the escape byte counted as text.
+   Both of those existed here and both passed a green suite.
+4. **Every overflow mode obeys the rectangle invariant** (§2.6). Same pane, same too-long
+   value, same width, three modes: `wrap` emits more rows and loses no characters; `truncate`
+   emits the same row count and ends with the marker; `overflow` exceeds the width and is
+   therefore rejected in a split. Also assert the two traps directly — a hard break never lands
+   inside an escape sequence, and every continuation row of a styled segment carries the style.
+   `ellipsis: ""` must clip without sacrificing a cell, and a marker wider than the pane must be
+   dropped rather than fill it. A wrapped link-and-colour segment must keep **both** across every
+   continuation row, and a truncated one must close its link before the ellipsis (§3.2.2) — a
+   row of the correct width passes even when the restyle path has silently discarded both.
+5. **Re-measurement under a narrower grant returns the longest wrapped row**, not the grant
+   (§2.9). This needs a test that asserts the *sibling's* final inner width, because a
+   re-measure that simply echoes its grant passes any test phrased as "the anchor did not
+   exceed its cap".
+6. **Intrinsic sizing is verified by derivation, not by a golden number** (§2.3): change the
+   model string, change `COLUMNS` — the anchor's resolved width must equal its measured content
+   width plus its own chrome every time, and the `fill` sibling must equal the exact remainder.
+   Assert `maxSize` clamps rather than stretches.
+   **The fixpoint needs three tests of its own**, because it is the subtlest thing in the
+   layout: (a) *convergence* — an anchor clamped below its unwrapped width re-measures to its
+   longest wrapped row and the freed columns actually land in the `fill` sibling, verified by
+   asserting the sibling's final inner width, not merely that the anchor shrank; (b) *the monotone clamp* — a
+   deliberately misbehaving stub renderer that requests MORE width when granted less must be
+   clamped to its previous request and the loop must still terminate; (c) *the pass cap* — a
+   stub that changes its request every pass must stop at 3 passes and render with the last
+   resolved sizes rather than looping.
+7. **No pipe-diff-only verification.** Byte-parity against bash remains a useful regression
+   check on the builtin path, but it cannot validate anything about the render surface, because
+   both sides can share a wrong constant. Every width claim needs an invariant, not a diff.
+8. **Command providers are tested with real processes**, not mocks — a script that succeeds,
+   one that exits nonzero, one that hangs past its timeout, one that emits 400 characters, one
+   that emits nothing. The timeout path is the most likely to be wrong and the least likely to
+   be exercised by accident.
+9. **Cache behavior tested directly**: a hit within TTL spawns no process (assert on a marker
+   the script writes), an expired entry re-spawns, a corrupt cache degrades to a miss, and a
+   failed command falls back to an expired value.
+10. **Perf regression**: median render latency stays under the v1 measurement of ~12.6ms with
+   zero command items configured, and the added cost of N cached command items is a lookup.
+   Measure with the existing bench harness, including its self-calibration.
+11. **Revert always finds the original** (§12.2). The test is the sequence that breaks a naive
+    implementation: migrate, edit, migrate again, revert — and assert the restored command is
+    the user's, not claude-tui-line's. Assert too that a second `origin` is refused, that no
+    command deletes or overwrites a backup file, and that a hand-edited `settings.json` is
+    reported rather than clobbered. This is the one area where a bug destroys something the
+    user cannot rebuild, so it is tested against the filesystem in a temp HOME, not mocked.
+
+## 11. Phasing
+
+1. **Phase 1** — `chromeReserve` width fix. *Done; awaiting live confirmation.*
+2. **Phase 2** — pane surface, root leaf pane only, including the §2.6 overflow modes. The
+   default stays `"overflow"` so the §2.7 parity claim holds; `wrap` and `truncate` ship
+   opt-in and fully tested, so that splits land on machinery already proven rather than on
+   code written the same week it first matters.
+3. **Phase 3** — splits: sizing, gutters, per-pane borders, `valign`, multi-row blocks.
+   **Acceptance is §2.9**, eyeballed live.
+4. **Phase 4** — item registry + `command` providers, cache, TTL, timeouts.
+5. **Phase 5** — the CLI surface: `--check` (with `--json`), `--preview`, `--items`.
+6. **Phase 6** — the authoring surface (§12): the backup ledger first, then `migrate`, `revert`,
+   and `edit`.
+
+Phase 6 depends on Phase 5 and not the other way round: §12's commands are prompts driving the
+binary, so every one of them is guesswork until `--items` and `--check --json` exist to be
+driven. Within Phase 6 the ledger comes first for the same reason — `migrate` and `revert` are
+both defined in terms of it, and a migrate that ships before the ledger is a tool that replaces
+a user's statusline with no way back.
+
+Splits now come **before** the item registry, reordered because the two-pane test needs no
+providers at all — it needs only a compositor. Getting a visible result out of
+the surface work early is worth more than getting the registry in early, and §2.9 exercises the
+compositor far harder than any registry change would.
+
+Each phase is wired into the live session and eyeballed before the next begins. That is the
+only step that caught the last defect.
+
+## 12. Authoring surface — plugin commands and LLM-driven editing
+
+The framework is configured by a JSON file, and the person configuring it should not have to
+learn that file. Three plugin commands cover the lifecycle: adopt an existing statusline, change
+it in conversation, and go back.
+
+### 12.1 The binary is the oracle; the commands are prompts
+
+None of this is renderer work. The commands are prompt files that drive a model, and the model
+already has file editing — what it lacks is *what the framework can do* and *whether what it
+just wrote is right*. Both come from the binary (§9), never from prose:
+
+- **What exists** — `--items`, not a list written into a skill. An item list in a command file
+  is a second registry, and it goes stale on the next row added. This is the §1 rule applied to
+  documentation, where nothing type-checks the copy.
+- **Whether it is valid** — `--check --json`, which names the offending key by JSON Pointer. A
+  model that has just written a config needs to know *which* key it got wrong.
+- **What it looks like** — `--preview --columns N`, at the user's real width and at a narrow
+  one, because most layout mistakes only appear when something has to wrap.
+
+The loop is therefore fixed and the same for every authoring command: **query, edit, check,
+preview, show the user.** A model writing config from memory and declaring success is the
+failure mode this structure exists to prevent — §7 makes a bad config silent, so an unverified
+edit produces a wrong statusline with no error anywhere.
+
+### 12.2 The backup ledger
+
+Shared by every command that writes. It lives at `~/.claude/claude-tui-line/backups/` — under
+the user's Claude directory rather than plugin data, because a backup that a plugin reinstall
+can delete is not a backup.
+
+`ledger.json` is append-only. Each entry records the UTC timestamp, the previous
+`statusLine.command` verbatim, a copy of any script that command referenced, the SHA-256 of
+each captured artifact, and a `kind`:
+
+- **`origin`** — the state before claude-tui-line ever touched this machine. **Written exactly
+  once, ever.** If an `origin` entry exists, no command may write another.
+- **`checkpoint`** — any state captured since.
+
+That distinction is the whole point of the ledger rather than a timestamped file. Migrate, edit,
+migrate again, and a naive "back up whatever is there now" captures *claude-tui-line's own*
+command as the thing to restore; revert then cheerfully restores the tool the user is trying to
+escape. `origin` is written once and revert targets it by default, so the escape hatch survives
+any number of intervening changes.
+
+Three rules, none optional:
+
+1. **Nothing in the backup directory is ever overwritten or deleted by any command.** Reverting
+   is itself a change and appends a `checkpoint`; it does not consume the `origin`.
+2. **The user's original script is copied, never moved and never modified.** Restoring a command
+   that points at a file the user has since deleted is a broken revert, which is why the copy is
+   taken even though installing does not touch the script.
+3. **Only the `statusLine` key of `settings.json` is read or written.** Writes are atomic — temp
+   file in the same directory, then rename, per §5 — and preserve unrelated keys and formatting.
+   A recorded SHA-256 that no longer matches means the user edited it by hand since; that is
+   reported, and it is theirs to resolve, not the tool's to overwrite.
+
+### 12.3 `/claude-tui-line:migrate`
+
+Adopts an existing statusline. An existing statusline is an arbitrary program — the user's real
+one is 280 lines of bash — so this is a model's job, not a parser's, and the command's value is
+in constraining what the model is allowed to conclude.
+
+Every element found in the source maps into exactly one of three tiers:
+
+1. **A builtin item**, when `--items` offers an equivalent — a branch readout becomes
+   `git-branch`.
+2. **A `command` provider (§4) wrapping the original logic**, when it does not. This tier is why
+   migration can be lossless: worst case every element shells out to a snippet of the user's own
+   script, and they still gain panes, borders, sizing, and colour rules over logic that already
+   worked.
+3. **Unmappable**, which is *reported to the user*, never silently dropped.
+
+Tier 3 existing is what makes tiers 1 and 2 trustworthy. A migration that cannot say what it
+failed to carry across will quietly lose an element, and the user will not notice until the day
+they needed it.
+
+**Fidelity is checked, not asserted.** After generating the config, run the original script and
+`--preview` against the same stdin payload and compare the escape-stripped text. This is not
+byte-parity — the layout differs by design, that is the point — it is a *content* check: every
+visible token the original produced must appear in the new render or be on the tier-3 list.
+Anything else is a silent drop wearing a success message.
+
+**Nothing is written until the user says yes.** The command shows the proposed config, the
+side-by-side preview, and the tier-3 list, and only then writes — recording `origin` first if
+this is the first time.
+
+### 12.4 `/claude-tui-line:edit`
+
+Conversational editing: "move context into the right pane", "make the border follow the model".
+Mechanically it is §12.1's loop plus a `checkpoint` written before the first edit of a session,
+so undoing one bad idea never requires going all the way back to `origin`.
+
+Two constraints on the model, both learned from this project's own failures:
+
+- **Re-read `--items` rather than trusting recall.** Item ids and accepted keys change between
+  versions; a remembered id resolves to nothing and is silently suppressed (§7).
+- **Never widen the request.** Reformatting the whole config while adding one item makes the
+  diff unreviewable and buries an unintended change where nobody will look for it.
+
+### 12.5 `/claude-tui-line:revert`
+
+Restores from the ledger — `origin` by default, a named `checkpoint` on request. It restores
+**both** the `statusLine.command` and, if the recorded script is missing from its original
+location, the copied script, because restoring a command that points at nothing leaves the user
+with no statusline at all and no obvious cause.
+
+It verifies the SHA-256 of what it restores against the ledger and reports a mismatch rather
+than proceeding. It appends a `checkpoint` for the state it replaced, so reverting a revert is
+possible. And it prints the restored command, because a user reaching for revert is already
+having a bad time and deserves to see exactly what they got back.
+
+## 13. Out of scope for v2
+
+- ~~True-color / 256-color palettes.~~ **Resolved — see §6.2.** The decision this bullet was
+  waiting on is the opt-in `colorSystem` knob, defaulting to `standard`, which keeps the parity
+  baseline valid by construction instead of trading it away.
+- Long-running provider daemons, watch-mode providers, push updates.
+- Interactive elements. A statusline is a render target, not a TUI app — there is no input, no
+  focus, no resize event.
+- Per-item wcwidth. `Plain.Length` remains the width metric (SPEC.md §6), deliberately.
