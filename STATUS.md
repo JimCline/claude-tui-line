@@ -3272,6 +3272,47 @@ repo roots, both satisfy the `.csproj` path, and only one holds the `publish/` t
 runs. That is §14.1's original drift with the directories renamed, and it is another argument for
 §9.7: a version answers *which tree*, a hash only *which file*.
 
+## Compare-and-swap notifies; it does not protect (§12.6.11)
+
+Audited §12.6.5. **Three hypotheses discarded first**, which is worth recording because two of them
+were already answered better elsewhere in the document:
+
+- *§2.7's byte-parity gate is a milestone that stops being enforced once it passes* — **false.**
+  `tests/ClaudeTuiLine.Tests/GoldenParityTests.cs` and `fixtures/golden-phase1-baseline.json`
+  captured the pre-pane output once, before Phase 2 touched any rendering code. The gate is a file,
+  not a memory. This is the §1.1 pattern done right, and it was done right before I looked.
+- *`baseRevision` being optional voids the protection on a fresh machine* — **already ruled**, at
+  §12.6.9, and more precisely than I had it: optionality handles a caller *omitting* the field;
+  the fresh-machine hole is separate, and `revision: "absent"` closes it by giving a first write a
+  value to send.
+- *The mechanism is scoped to the MCP server while the hazard names three writers* — **already
+  ruled**, at §12.1.2, and `commands/edit.md` already says so in its own step 5.
+
+What survived is in the sentence both layers share. §12.6.5 refuses a stale write and says the
+model "re-reads instead of clobbering"; `edit.md` step 5, having no `baseRevision` to be refused
+by, independently arrives at "re-read immediately before you edit." Re-reading makes the **content**
+current and leaves the **intent** stale — a position resolved against the older copy, applied
+unchanged to a reordered newer one, removing the wrong item validly and silently.
+
+Credit where it is due: neither section oversells its backstop. `edit.md` explicitly calls the
+checkpoint "recoverable rather than preventable," which is the honest claim. The one word that
+overreached was calling the re-read *the whole of your protection*.
+
+**Ruled (§12.6.11).** Compare the re-read against the first read and branch: identical → proceed;
+different → re-derive the edit, and tell the user the file moved under them and what moved. Same
+for the server: `stale-revision` means re-derive, not re-read.
+
+**The point worth keeping.** A caller that answers `stale-revision` by fetching a fresh `revision`
+and resubmitting its original `config` *succeeds*, and the ledger then records a clean
+compare-and-swap over a write that discarded someone's work. Without CAS the clobber is silent;
+with CAS and a naive retry it is silent **and attested**. The refusal was never the protection — it
+was the notification, and what the caller does next is the protection. That half was left to the
+caller's judgment by a section that reads as though it had specified it.
+
+Touched: new §12.6.11; §12.6.5's two superseded clauses marked in place (forward to §12.6.11 and
+§12.6.9); `commands/edit.md` step 5 rewritten with the compare-and-branch. check-docs green at 108
+cited sections.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

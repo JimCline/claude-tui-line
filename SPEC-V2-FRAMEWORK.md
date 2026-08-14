@@ -5613,11 +5613,17 @@ because the model writes faster.
 
 `get_config` returns a `revision`, a hash of the file's bytes as read. `set_config` takes an
 optional `baseRevision`; if supplied and no longer matching, the write is **refused** with
-`code: "stale-revision"` and the model re-reads instead of clobbering.
+`code: "stale-revision"` and the model re-reads instead of clobbering. **Read "re-derives" for
+"re-reads" — §12.6.11 supersedes that clause**, because a caller that re-reads and resubmits its
+original `config` defeats the refusal by complying with it.
 
 It is optional rather than required so a first write to a machine with no config file works
 without ceremony. A model that read the config is expected to hand back what it was given; one
 that did not is writing blind, and the §12.2 checkpoint is what keeps that recoverable.
+**§12.6.9 supersedes that first sentence's reasoning**: optionality covers a caller omitting
+`baseRevision`, but it left the fresh-machine case — the moment two agents are most likely to act
+on the same file — with no compare-and-swap at all. `revision: "absent"` is the fix, and it means
+a first write has a value to send and no ceremony to avoid.
 
 #### 12.6.6 When the CLI is not there
 
@@ -5750,6 +5756,53 @@ cannot render ANSI at all — escapes there are not colour, they are noise in th
 sentence. So the same test §9.3.2 applies gives the opposite answer again: the payload is not lost
 by omitting styling, because the channel could never have carried it. A model that needs to show a
 user what a colour change looks like has the CLI, whose output goes where colour means something.
+
+#### 12.6.11 "Re-read instead of clobbering" makes the bytes current and leaves the intent stale
+
+§12.6.5 refuses a stale `set_config` and tells the model to "re-read instead of clobbering."
+`/claude-tui-line:edit` step 5, which has no `baseRevision` to be refused by, reaches the same
+instruction from the other direction: re-read immediately before editing, "rather than editing the
+copy you read at step 2." Both are right. Both stop one step short of the same place, and they
+stop there in the same words, which is what made it look settled.
+
+Re-reading makes the *content* current. It does nothing to the *intent*, which was derived against
+the older content and is then applied unchanged to the newer one. "Remove the second item in the
+first pane" is a JSON Pointer resolved at read time; a hand edit that reordered that pane between
+the two reads leaves the pointer aimed at a different item. The command removes the second item —
+of a config it never showed anyone — and every step after it passes. `--check` validates the
+result, the preview renders it, step 8 shows the user a config that is exactly what was written and
+is not what was asked for.
+
+What re-reading *does* prevent is worth keeping, and neither section overstates it: the naive
+alternative writes the step-2 copy back with the edit applied, discarding the intervening write
+whole. Re-reading turns a total loss into a misapplied edit. `edit.md` is scrupulous about the
+rest, too — it says step 4's checkpoint makes a clobber "recoverable rather than preventable,"
+which is the honest claim and the right one. The single word that overreaches is calling the
+re-read "the whole of your protection."
+
+The missing step costs one comparison, against data both layers already hold. **Ruled:**
+
+1. **Compare the re-read against the first read and branch on the answer.** Unchanged — the
+   ordinary case — proceeds exactly as now. Changed: do not apply the pending edit. Re-derive it
+   against the new content, then apply it.
+2. **Say so.** A concurrent write to the file being edited is information the user does not
+   otherwise have, and one of the three writers §12.6.5 names is *them*, in an editor. They are the
+   only party who can say whether the two edits belong together. Naming what moved costs a
+   sentence; §12.2's checkpoint is the backstop for when nobody read that sentence.
+3. **The same for the server.** §12.6.5's sentence should say re-derive, not re-read. A caller that
+   answers `stale-revision` by fetching a fresh `revision` and resubmitting its original `config`
+   has written a retry loop that is not a retry.
+
+Rule 3 is the one that matters, because compare-and-swap makes it look handled. That resubmission
+*succeeds*, and the mechanism records a clean swap over a write that discarded someone's work — so
+the arrangement now carries evidence of its own correctness. Without CAS the clobber is silent;
+with CAS and a naive retry it is silent and attested. **The refusal was never the protection; it
+was the notification.** What the caller does next is the protection, and that is the half §12.6.5
+left to the caller's judgment while appearing to have specified it.
+
+This is the same shape as §12.6.9's fresh-machine finding, one turn later in the exchange. There,
+the gap was a caller who never supplied `baseRevision`; here it is a caller who supplies it,
+is correctly refused, and then defeats the refusal by complying with it.
 
 ### 12.7 `/claude-tui-line:setup`
 

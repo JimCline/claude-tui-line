@@ -104,8 +104,20 @@ If the checkpoint cannot be written, stop and report.
 **Re-read the config file immediately before you edit it**, rather than editing the copy you read
 at step 2. Several steps have happened since, and an MCP call, another session, or the user in an
 editor can have written it in between (§12.1.2). You have no `baseRevision` to refuse a stale write
-with, so re-reading is the whole of your protection — that, and step 4's checkpoint, which is what
-makes a clobber recoverable rather than preventable.
+with, so this is your only chance to notice — that, and step 4's checkpoint, which makes a clobber
+recoverable rather than preventable.
+
+**Then compare it against what you read at step 2, and branch (§12.6.11).** Re-reading alone makes
+the *content* current and leaves your *intent* stale: "remove the second item" is a position you
+resolved against the older copy, and applying it to a reordered newer one removes the wrong thing —
+correctly, silently, and past every check below, because the config you write is valid and the
+config you show the user is the one you wrote.
+
+- **Identical** — the ordinary case. Carry on.
+- **Different** — someone is editing this file right now. Do **not** apply the edit you already
+  worked out. Re-derive it against the new content, and **tell the user the file changed underneath
+  you and what moved.** They are one of the three writers this guards against, and they are the
+  only one who can say whether their change and the requested change belong together.
 
 **Never widen the request.** Do not reformat the JSON, reorder untouched keys, add borders, or
 "tidy" adjacent items while you are in there. Reformatting the whole config while adding one item
