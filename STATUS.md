@@ -4355,6 +4355,34 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 and post-merge on `main` (1311/1311, build 0 warnings/0 errors, `check-all.sh` all five checks
 green). Landed as merge commit `25ff0ab` (branch tip `898acc3`), pushed.
 
+### #55/#56: document `height` pane key and `--check`/`--accepted --json` CLI usage in README
+
+Problem: two documentation gaps, both discovered as byproducts of earlier tasks rather than
+planned work. #55 — the `height` pane key (real, implemented, covered by #7's shrink-wrap work)
+was never added to README's pane-keys table; #43 spun it out as a known gap rather than scope-creep
+into it while doing the docs⊆registry subset check. #56 — `--accepted --json` (added in #42, used
+internally by `check-doc-tokens.sh` since #43) was never itself documented as a public CLI command.
+
+Fix: #55 added a `height` row to the pane-keys table (`"content"`/`"fill"` (default), values taken
+directly from `PaneHeightParsing.Accepted`), placed next to `maxRows` as the height-axis sizing key,
+mirroring how `size` sits next to `minSize`/`maxSize`. Verified against the built binary via
+`check-doc-tokens.sh` (18→20 tokens checked, 0 disagree).
+
+#56 surfaced a real structural gap while in progress, correctly not guessed at: README has no
+CLI-flag documentation section at all — every existing mention of `--check`/`--items`/`--preview`/
+`--accepted` was either the stale "not built yet" blockquote near line 58, one passing sentence, or
+a non-reader-facing HTML tooling marker. Decided directly (a doc-shape call, not a product/
+architecture one — no escalation needed): added a new `### CLI` section documenting `--check`
+(plain and `--json`) and `--accepted --json`, all examples copy-pasted from the built binary's real
+output rather than hand-typed. `--items`/`--preview` get a one-line pointer at the existing
+blockquote rather than full documentation — kept out of scope. The blockquote's staleness for
+`--check` (confirmed working since #21/#43/#24) was flagged but deliberately left untouched, filed
+separately as task #61.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree and
+post-merge on `main` (1311/1311, build 0 warnings/0 errors, `check-all.sh` all five checks green,
+20 doc tokens checked). Landed as merge commit `74a3b38` (branch tip `dc7c168`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
