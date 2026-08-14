@@ -2942,7 +2942,8 @@ Three rulings on the shape, each closing a way this could have become the thing 
 
 ## 10. Testing requirements
 
-The v1 lesson was expensive and is now policy:
+The v1 lesson was expensive and is now policy. Read **§10.1 first** — it states a property every
+assertion in this list has to satisfy, and four of them do not satisfy it as written.
 
 1. **Parity gate for iteration 1** (§2.7): byte-identical to the pre-pane build across the
    full width sweep, border on and off. This is the whole justification for landing panes as a
@@ -2993,9 +2994,26 @@ The v1 lesson was expensive and is now policy:
    one that exits nonzero, one that hangs past its timeout, one that emits 400 characters, one
    that emits nothing. The timeout path is the most likely to be wrong and the least likely to
    be exercised by accident.
+
+   **Each of those asserts the item's resulting *state*, not its rendered string** (§4). The
+   script that emits nothing must produce `absent`; the one that exits nonzero and the one that
+   hangs must produce `unavailable`. All three render as no text, so an assertion phrased
+   against the output cannot tell them apart — and §2.11.2's collapse rule reads the state, not
+   the text. A suite that only checks the string scores the collapse-on-timeout defect as
+   passing, which is precisely the defect §2.11.2 was written to forbid.
 9. **Cache behavior tested directly**: a hit within TTL spawns no process (assert on a marker
    the script writes), an expired entry re-spawns, a corrupt cache degrades to a miss, and a
    failed command falls back to an expired value.
+
+   **The widths store is a second store and needs its own tests** (§5.0.1). The record behind
+   `CLAUDE_TUI_LINE_PANE_WIDTH` is keyed by the cache key *and* `COLUMNS`, so the sequence is:
+   render at one width and a record appears; render at a different width and there is no record
+   yet, so the variable is **absent from the child's environment** rather than present with the
+   old number; render back at the first width and the first record is found again. Assert on the
+   child environment directly — a script that reports whether the variable is set — because the
+   failure being guarded against is the variable being *present and wrong*, and no assertion
+   about the rendered row can see that. A test that only checks the value when it is set will
+   pass against an implementation that never clears it.
 10. **Perf regression**: median render latency stays under the v1 measurement of ~12.6ms with
    zero command items configured, and the added cost of N cached command items is a lookup.
    Measure with the existing bench harness, including its self-calibration.
@@ -3005,6 +3023,72 @@ The v1 lesson was expensive and is now policy:
     command deletes or overwrites a backup file, and that a hand-edited `settings.json` is
     reported rather than clobbered. This is the one area where a bug destroys something the
     user cannot rebuild, so it is tested against the filesystem in a temp HOME, not mocked.
+12. **`--check` never spawns a process; `--preview` always does** (§9.1.1). One config, one
+    `command` item whose script touches a marker file. `--check` leaves no marker; `--preview`
+    leaves one. This is bullet 9's marker technique again, and it is the *only* way to state the
+    property: a `--check` that executed the config's commands would produce identical stdout, an
+    identical exit code, and identical diagnostics. Nothing in the observable result
+    distinguishes the safe implementation from the unsafe one, so the assertion has to look
+    outside the result. Every §12 command runs `--check` on a config a model has just written,
+    which is what makes this bullet the difference between safe and merely intended.
+13. **The four config-assertion cases, on both paths** (§9.2.1). The matrix is `{no --config,
+    --config <path>} × {no file there, file there but unparseable}`, run against the check path
+    and the render path. Check path: silent defaults for the first cell, exit 2 with
+    `config-unreadable` for the other three. Render path: **exit 0 in all four**, silent defaults
+    for the first, and one plain row naming the reason for the other three. Assert the row's
+    *content* — that it names the path and the parse failure — not merely that some row was
+    emitted, because the defect this exists to prevent is a plausible statusline rendering from
+    defaults while the user's config sits unread.
+14. **Every `--json` exit path emits the envelope** (§9.6). Drive `--json` to exit 0, 1, 2 and 3
+    and parse each stdout as JSON. A suite that only exercises the success path certifies a flag
+    that silently falls back to prose in exactly the cases where a programmatic caller most needs
+    to branch. On the failure envelopes assert `diagnostics` is **absent**, and write that
+    assertion as "the key is not present" — `JsonElement`'s ergonomics make an absent key and an
+    empty array equally easy to read as "nothing wrong", which is the whole reason the
+    distinction is specified.
+15. **Every colour literal this project recommends is proven to parse** (§6.2.1). One
+    table-driven test over every colour spelling that appears in an accepted-values list, in a
+    `--check` message's repair advice, or in `--colors` output, asserting each parses through the
+    same code path the renderer uses. An unparseable colour does not raise — it renders as no
+    colour — so a spelling that does not exist can survive in documentation and in repair advice
+    indefinitely. `color207` did exactly that here, inside the diagnostic whose entire job was to
+    warn that a colour would not appear.
+16. **The version drift test** (§9.7): the assembly's informational version equals
+    `plugin.json`'s. It must be shown failing first, which costs nothing — it already fails. The
+    `.csproj` declares no `<Version>`, so MSBuild supplies `1.0.0` while `plugin.json` says
+    `0.1.0`.
+17. **Notes never reach the exit code and never mix with diagnostics** (§9.8.1). A `--preview
+    --json` of a config that degrades at the given width — content clipped, a pane dropped —
+    carries `notes[]`, no diagnostic about the degradation, and exit 0. The inverse is the other
+    half of the test: a config with a real fault carries the diagnostic and no note standing in
+    for it.
+
+### 10.1 A test that passes on a blank surface is not testing content
+
+Bullets 2, 3, 4 and 6 are all assertions about width. Every one of them is satisfied by a surface
+on which every item resolved to nothing. The rows are still equal in width, still under the cap,
+still position-independent; the `fill` sibling still receives the exact remainder; the anchor's
+measured content width plus its chrome still equals its resolved width, because zero plus chrome
+is a perfectly consistent answer. **A pane tree that renders entirely empty passes the rectangle
+invariant flawlessly.**
+
+That is the §7.1 render-wrong class arriving in the test suite instead of in the output. The
+suite's strongest assertions are structural; structure survives the loss of all content; and the
+failure this project is most exposed to — a provider returning nothing because the payload
+changed shape, an item id quietly unresolved, a cache handing back an empty string — moves the
+surface from correct to blank without moving a single width.
+
+So **every layout test carries a blank-surface control**: the same tree, every item forced empty,
+asserting both that the width invariants still hold *and* that the two runs are distinguishable —
+at minimum one assertion that the populated run's ANSI-stripped content differs from the blank
+run's. A suite in which those two runs produce the same rows would not notice the difference in
+production either.
+
+Bullet 3 already carries the right instinct in requiring the rectangle invariant be shown to fail
+against a deliberately broken compositor before it is trusted. The two controls are not
+substitutes and passing one says nothing about the other: **a broken compositor is a control for
+the padding the assertion measures; a blank surface is a control for the content the assertion
+does not measure.** Every width assertion in this document needs both.
 
 ## 11. Phasing
 
@@ -3016,9 +3100,16 @@ The v1 lesson was expensive and is now policy:
 3. **Phase 3** — splits: sizing, gutters, per-pane borders, `valign`, multi-row blocks.
    **Acceptance is §2.9**, eyeballed live.
 4. **Phase 4** — item registry + `command` providers, cache, TTL, timeouts.
-5. **Phase 5** — the CLI surface: `--check` (with `--json`), `--preview`, `--items`.
+5. **Phase 5** — the CLI surface. **§9 is the list**; this line does not repeat it, because it
+   already got this wrong once — it named three flags when §9 specifies five, and the two it
+   omitted are the two §12's commands need in order to offer the user a choice rather than
+   guess at one.
 6. **Phase 6** — the authoring surface (§12): the backup ledger first, then `migrate`, `revert`,
    and `edit`.
+7. **Phase 7** — the MCP tools (§12.6), stateless, over the same binary Phase 6's commands drive.
+   Last by the user's own ordering: the slash commands establish what the operations *are*, and
+   the tools then expose operations that already exist rather than defining them a second time in
+   a second surface.
 
 Phase 6 depends on Phase 5 and not the other way round: §12's commands are prompts driving the
 binary, so every one of them is guesswork until `--items` and `--check --json` exist to be

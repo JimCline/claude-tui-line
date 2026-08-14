@@ -1241,6 +1241,62 @@ is wrong and §6.2.1 is the authority.
   than the project's own documentation claims.** Here the code was ahead of the docs, and reading
   it turned a feature-gap into a documentation-gap.
 
+### §10 walked — the suite's strongest assertions all pass on a blank surface
+
+§10 was eleven bullets written before the CLI existed, so the first job was the six missing
+bullets (12–17): `--check` spawns no process while `--preview` does, the four config-assertion
+cases on both paths, `--json` parsed at all four exit codes, every recommended colour literal
+proven to parse, the version drift test, and notes staying out of both `diagnostics` and the exit
+code. Each is one of tonight's rulings given something that can fail.
+
+The find is **§10.1**, and it is about the eleven bullets that were already there. Bullets 2, 3, 4
+and 6 are all width assertions, and **every one of them is satisfied by a surface on which every
+item resolved to nothing.** Rows still equal in width, still under the cap, still
+position-independent; the `fill` sibling still gets the exact remainder; the anchor's measured
+content width plus chrome still equals its resolved width, because zero plus chrome is a perfectly
+consistent answer. A pane tree rendering entirely empty passes the rectangle invariant flawlessly
+— and the rectangle invariant is described in this document as the one assertion that catches
+ragged padding, height mismatch and overflow together.
+
+That is §7.1's render-wrong class arriving in the test suite rather than in the output, which
+makes it worse than the instances of it fixed earlier tonight: the suite is the instrument that is
+supposed to detect the class. The failures this project is most exposed to — a provider returning
+nothing because the payload changed shape, an item id quietly unresolved, a cache handing back an
+empty string — all move the surface from correct to blank **without moving a single width**.
+
+So every layout test now carries a blank-surface control: same tree, every item forced empty,
+asserting the invariants still hold *and* that the two runs are distinguishable. Bullet 3 already
+required the rectangle invariant be shown to fail against a deliberately broken compositor, which
+is the right instinct pointed at the other half of the problem — **a broken compositor is a
+control for the padding the assertion measures; a blank surface is a control for the content the
+assertion does not measure.** Passing one says nothing about the other, and the document had only
+ever asked for one.
+
+Two smaller repairs, both to bullets that existed:
+
+- **Bullet 8** tested command providers against five real scripts but asserted nothing about the
+  resulting state. Empty output, nonzero exit and timeout all render as no text, so an assertion
+  phrased against the output cannot tell §4's `absent` from its `unavailable` — while §2.11.2's
+  collapse rule reads exactly that distinction. The suite would have scored the
+  collapse-on-timeout defect as passing.
+- **Bullet 9** covered the value cache and knew nothing about §5.0.1's separate widths store. Added
+  the three-render sequence, with the assertion made against the *child's environment* rather than
+  the rendered row, because the failure being guarded against is `CLAUDE_TUI_LINE_PANE_WIDTH` being
+  present and wrong — which nothing about the row can see.
+
+### §11 touched ahead of its own walk
+
+Two one-line defects of the same class already fixed elsewhere tonight, not worth leaving in place
+to preserve a walk boundary:
+
+- **Phase 5 enumerated the CLI surface as three flags**, where §9 specifies five. A second
+  registry, and it had already gone stale — the two it omitted (`--colors`, `--version`) are the
+  two §12's commands need in order to offer the user a choice rather than guess at one. The line
+  now cites §9 instead of repeating it, and says why.
+- **Phase 7 was missing entirely.** §12.6 specifies the MCP tools and the tracker has carried them
+  as a task since they were requested, so the phasing section and the task list disagreed about how
+  many phases this project has.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
