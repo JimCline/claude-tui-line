@@ -1117,11 +1117,25 @@ Rules, each closing a silent failure:
   markup — including closing any span the cut lands inside. A truncation that severs a colour
   span mid-way and emits an unclosed SGR bleeds colour into the border. This is the one
   genuinely new implementation hazard here and needs its own test.
-- **A literal is bound to its adjacent value and disappears with it.** When a value part
-  resolves to empty, the literal part next to it — the one after it if there is one, otherwise
-  the one before — is dropped too. `agent:` does not survive an absent agent, and ` ✓` does not
-  survive an absent PR. This is §4.1's "the literal text bound to it goes too", with array
-  adjacency doing the job the format string's adjacency does there.
+- **A literal is bound to its adjacent values and disappears with them.** A literal part is
+  dropped when **any value part adjacent to it resolved to empty**, evaluated against the
+  *original* array positions rather than against what earlier removals left behind. `agent:` does
+  not survive an absent agent, and ` ✓` does not survive an absent PR. This is §4.1's "the literal
+  text bound to it goes too", with array adjacency doing the job the format string's adjacency
+  does there.
+
+  > This rule previously read "the one after it if there is one, otherwise the one before", which
+  > left a hole in the failure it claims to close. A value wrapped in a literal pair —
+  > `[{"text":"("},{"from":"pr"},{"text":")"}]` — drops `)` and keeps `(`, so an absent PR renders
+  > a bare `(` on the statusline. That is the **render-wrong** class, the same one defect 14 sits
+  > in: not an absence the user can notice, but visible output that is simply incorrect, with no
+  > diagnostic because nothing failed. Looking both ways is also the simpler implementation, since
+  > it never needs to know whether a *following* literal exists in order to decide about a
+  > preceding one.
+  >
+  > Evaluating against original positions is what keeps this order-independent. Deciding each
+  > literal against the array as earlier drops have already mutated it would make the result depend
+  > on traversal direction, which is the same objection this section raises against nesting.
 - **If every value part is empty, the item renders nothing** and collapses per §2.4. A compound
   of only literals is a constant, which is legal and occasionally what someone wants.
 - **Item-level `color` is the default** for parts that do not set one.

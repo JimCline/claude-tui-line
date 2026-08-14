@@ -534,6 +534,42 @@ The transferable bit is that knowing the failure mode by name did not prevent co
 caught it was the mechanical habit — read the neighbouring section before specifying against it —
 and not the understanding.
 
+### Auditing the unimplemented specs instead of hunting more defects
+
+Five specs went to the implementor tonight and it is still on §9; finding a sixth thing for the
+queue is worth less than making sure what is already queued is right. So the next pass was over my
+own pending specs, where a gap costs nothing now and a round trip later. Two results from §3.3
+(compound items, task #6):
+
+**Clean:** `part-source-count` and `part-forbidden-key` are both in §9.6.1's registry, at the rows
+for §3.3. The registry did not lose them when it was built.
+
+**Not clean — §3.3's literal-binding rule had a hole in the exact failure it claims to close.**
+It read: when a value part is empty, drop "the literal part next to it — the one after it if there
+is one, otherwise the one before." Walk that over a value wrapped in a literal pair:
+
+```json
+[ {"text":"("}, {"from":"pr"}, {"text":")"} ]
+```
+
+An absent PR drops `)` and keeps `(`. The statusline renders a bare `(`. **That is the
+render-wrong class — the second instance after defect 14**, and the one §7's contract does not
+cover: not an absence the user might notice, but visible output that is simply incorrect, with no
+diagnostic anywhere because nothing failed.
+
+Now: **a literal is dropped when any adjacent value part is empty**, evaluated against original
+array positions. It handles the bracket pair, still handles `agent:` and ` | ` separators
+identically, and is the simpler implementation — it never needs to know whether a *following*
+literal exists in order to decide about a preceding one. Evaluating against original positions
+rather than the partially-mutated array is what keeps it order-independent, which is the same
+objection §3.3 already raises against nested parts.
+
+**Caught by walking the rule over cases rather than reading it.** The prose is persuasive; the
+counter-example takes three parts and appears the moment you try one. Worth remembering that a
+rule stated as closing a failure is a claim to test, not a claim to accept — the same posture
+§9.4's stale warnings needed, applied to a rule that was never true rather than one that stopped
+being true.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
