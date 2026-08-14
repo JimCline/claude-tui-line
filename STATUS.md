@@ -4147,6 +4147,65 @@ Independently verified via task-gopher both pre-merge on the worktree (1263/1263
 own older base) and post-merge on `main` (1265/1265, build 0 warnings/0 errors). Landed as merge
 commit `070cc7c` (branch tip `ac4b634`), pushed.
 
+### #43: §1.1.2 docs⊆registry subset check (`--accepted --json`)
+
+Problem: README and SPEC-V2-FRAMEWORK.md quote literal accepted-value tokens (`"rounded"`,
+`"vertical"`, etc.) in prose and tables with nothing tying them back to the registry `--accepted
+--json` (#42) exposes — a doc can drift to naming a token the parser no longer accepts, or lose a
+key's row entirely, with nothing to catch it. §1.1.2 itself left the extraction mechanism as
+NEEDS-EVIDENCE: a naive doc-wide scan for backtick-quoted literals sweeps JSON example fences
+(`"overflow": "wrap"` appears dozens of times as illustrative example, never as an assertion) with
+no way to tell the two apart.
+
+Design (cdtui-architect, `SPEC-1.1.2-resolve-extraction-rule.md`): mark the README's pane-keys
+table with an in-band `<!-- pane-token-table: ... -->` comment, the same self-describing-anchor
+pattern `check-examples.sh` rule C already uses on README.md:168 — scan only marked tables, never
+prose, never fenced blocks. Within a marked table: a backtick-fenced token is a key name if bare,
+a checkable value if additionally double-quoted — a convention the table's rows already followed
+unprompted, so extraction needed zero heuristics and zero hand-listing. A row's key column may
+name more than one key (`minSize`/`maxSize`); every quoted value in that row must be accepted by
+every key it names. The checkable set per key is `accepted` only, not `accepted ∪ alsoAccepted` —
+`alsoAccepted` is a prose description (`AcceptedCommand.cs:8`, rendered via `FormatAccepted`), not
+a token list, so unioning it in would mean comparing tokens against an English sentence. Keys with
+`accepted: null` (currently only `size`) are skipped and named as skipped, not silently passed.
+
+Fix: new `tools/check-doc-tokens.sh` (189 lines) implements the above, wired into `check-all.sh`
+alongside `check-docs.sh`/`check-examples.sh`. README changes: added the marker; retitled the
+table's "accepted values" column heading to "notes" (that heading was an equality claim the table
+never made — only some rows enumerate exhaustively); moved `border.style`'s six literals out of a
+now-deleted prose sentence and into the table as their own row, so they're checked for free;
+added a blockquote sentence pointing at `--check` as the actual completeness authority (the
+existing blockquote there only promised to report *unrecognised* values, a narrower claim than the
+retitled heading needs). SPEC-V2-FRAMEWORK.md: replaced the two closed NEEDS-EVIDENCE items with
+a section stating the resolved extraction rule, added verification items 7-11, and converted the
+`split`/`colorSystem` member lists that were hand-copied in prose into `§2.3`/`§6.2` citations
+(matching `distribute`'s existing citation) — removing the redundant copies is load-bearing for
+the design, not cosmetic: the checkable-table approach only stays honest once the SPEC stops
+carrying its own separately-driftable copy of the same literals.
+
+Deliberately left uncovered, named in the spec rather than silently skipped: the overflow ASCII
+sketch (`Overflow   wrap | truncate | overflow`) isn't a table and isn't marked — no mechanism
+scans it. `height` (added since #45) has no README row at all yet; subset semantics permits the
+omission so the check must not (and does not) fail on it, but it's a real doc gap — tracked
+separately as task #55, not folded into #43.
+
+Judgment call (implementor-flagged, not acted on): the original dispatch assumed README already
+documented `--accepted --json` following an existing pattern used for `--check`/`--items`/
+`--preview`/`--colors`. No such pattern exists anywhere in README — the only occurrence of those
+four flags is a stale "not built yet" blockquote at README.md:58. That premise was wrong going in;
+adding `--accepted`'s own README documentation is left as a follow-up rather than invented here
+without direction.
+
+Verified red-path as well as green: injecting an unaccepted literal into a table row flipped the
+check to exit 1 with the correct file:line; injecting a real-but-omitted-by-brevity token kept it
+at exit 0 with the count rising by one, confirming subset (not equality) semantics; removing the
+marker flipped it to exit 1 rather than silently reporting clean having compared nothing.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1258/1258)
+and post-merge on `main` (1265/1265, build 0 warnings/0 errors, `check-all.sh` all four checks
+green including `check-doc-tokens`: 18 tokens checked, 0 disagree). Landed as merge commit
+`9be1e23` (branch tip `947c2d0`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
