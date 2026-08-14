@@ -174,6 +174,18 @@ public static class ItemValueResolver
             ?? Enumerable.Empty<IdCandidate>()),
     };
 
+    // An `@name` colour reference (§6.3) validates against the `colors` table's own keys, not
+    // against an item id — a separate table from ReferenceExtractors, rather than a Kind on
+    // IdCandidate, so that type never has to mean "an id or a colour-token name depending on
+    // which Kind this is."
+    internal static readonly IReadOnlyList<Func<ScanContext, IEnumerable<ColorTokenReference>>> ColorTokenExtractors = new Func<ScanContext, IEnumerable<ColorTokenReference>>[]
+    {
+        ctx => ctx.ColorExprs
+            .Select(t => (t.Path, TokenRef: t.Expr as ColorResolution.ColorExpr.TokenRef))
+            .Where(t => t.TokenRef is not null)
+            .Select(t => new ColorTokenReference(t.TokenRef!.Name, t.Path)),
+    };
+
     private static IReadOnlyList<string> CollectIds(
         List<ScanEntry> items,
         List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs,
@@ -264,10 +276,12 @@ public static class ItemValueResolver
             {
                 references.Add(new IdReference(ruleFrom, path + "/from", ReferenceForm.ColorFrom));
             }
-            else if (expr is ColorResolution.ColorExpr.TokenRef tokenRef)
-            {
-                colorTokenReferences.Add(new ColorTokenReference(tokenRef.Name, path));
-            }
+        }
+
+        var ctx = new ScanContext(items, colorExprs, tokens);
+        foreach (var extractor in ColorTokenExtractors)
+        {
+            colorTokenReferences.AddRange(extractor(ctx));
         }
 
         if (tokens is not null)
