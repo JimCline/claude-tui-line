@@ -818,6 +818,50 @@ its four outer edges render exactly as today. The golden parity gate covers only
 no-`surface` single-pane config and is therefore unaffected by this section — if it moves, that
 is a defect in the reserve decomposition, not an expected consequence.
 
+### 2.11 An empty pane collapses — but only the kind of empty that is knowable before sizing
+
+Defect 12: a pane holding nothing still draws its border, so a surface split into "git things"
+and "model things" shows an empty box eating twenty columns the moment you `cd` out of a
+repository. The box is not the bug; claiming the width is.
+
+**A pane becomes empty two ways, and conflating them does not terminate.**
+
+- **Structurally empty** — `items: []`, or every item in it resolved to no value. §5 resolves
+  every value *before* sizing begins, so this is knowable in a pre-pass, from the resolved
+  dictionary alone, with no width in hand.
+- **Emptied by degradation** — §2.8's ladder dropped its trailing items, or §2.3's over-constrained
+  loop dropped the pane's contents to make the surface fit. This is a *function of the width* and
+  is only knowable inside the sizing loop.
+
+**Collapse applies to the first and never to the second**, and the reason is convergence rather
+than taste. Collapsing a degradation-emptied pane frees its width; the freed width lets §2.8
+un-drop the items it just dropped; the un-dropped items un-empty the pane; the pane reclaims its
+width; the surface is over budget again and the ladder drops them once more. That is a cycle with
+no fixpoint, and §2.3's convergence argument — every rung strictly reducing — is exactly what it
+breaks. A pane the ladder emptied keeps its border. If the right answer there is to remove the
+pane entirely, that is a rung the ladder should own, decided with the width in hand, not a
+side-effect of a collapse rule reaching into the loop.
+
+**What collapsing does**, for the structural case:
+
+- The pane occupies **no width** and draws **no border**, whatever its `size` says. A `size: "24"`
+  pane with nothing in it still collapses — a fixed-width empty box is the defect in its purest
+  form, not an exemption from it.
+- **The parent drops the corresponding boundary with it.** §2.10's cost is a function of the child
+  count, so a collapsed child means `N − 1`, not `N` with one child rendered blank. Leaving the
+  gutter or divider behind is how a collapse turns into a visible seam with nothing on either side
+  of it.
+- **A split whose children all collapse collapses itself**, resolved bottom-up in the same pre-pass.
+  One pass suffices because emptiness only ever propagates upward.
+- **If the root collapses, the surface emits nothing** — zero rows, not an empty box and not a
+  blank line. There is genuinely nothing to say, and §7's exit-0-with-valid-stdout still holds.
+
+**Only `items: []` is a diagnostic, and the runtime case is not.** §9.4 warns about a pane with no
+items because an author wrote an empty pane and probably did not mean to. A pane whose items are
+all valueless outside a repository is working exactly as designed, gets no diagnostic, and could
+not get one anyway: `--check` does not resolve values (§9.8), so the two cases are not even
+distinguishable from where the validator stands.
+
 ## 3. Item model
 
 An item resolves to a **block**: zero or more rows. Zero rows means "suppressed" — the existing
@@ -889,8 +933,9 @@ screen.
 
 A referenced id that names nothing must be distinguishable from one that names a real item,
 because silently dropping the link makes a typo and a working config produce identical output.
-`--check` rejects a `link` template naming an unknown id; at render time the link is dropped
-per the best-effort rule below, but that path is the fallback, not the diagnosis.
+`--check` **reports** a `link` template naming an unknown id — as a `warning`, per §9.4.1, since
+the item still renders its text and only the decoration is lost. At render time the link is
+dropped per the best-effort rule below, but that path is the fallback, not the diagnosis.
 
 **Zero-width is the whole problem.** `\e]8;;URL\e\\text\e]8;;\e\\` costs no columns and is
 roughly 40–80 characters, so anything that measures it as text puts the pane border that many
