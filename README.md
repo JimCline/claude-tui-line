@@ -24,7 +24,22 @@ when the terminal gets narrow.
 
 ## Install
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+Either way, you need the [.NET 10 SDK](https://dotnet.microsoft.com/download) — this compiles
+from source rather than shipping a binary.
+
+### As a plugin
+
+```
+/plugin marketplace add JimCline/claude-tui-line
+/plugin install claude-tui-line@claude-tui-line
+/claude-tui-line:setup
+```
+
+`setup` checks your toolchain, builds into the plugin's data directory, **backs up whatever
+statusline you already have** before touching anything, writes the new `statusLine` setting, and
+shows you a rendered preview.
+
+### By hand
 
 ```bash
 git clone https://github.com/JimCline/claude-tui-line.git

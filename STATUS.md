@@ -28,16 +28,23 @@ not by itself enough; this project has twice had a green suite over a broken ins
 
 ## In flight
 
-- **Defect 11** (§5's resolution set) — implementor reports it fixed; **held, not committed**, and
-  the fix is the prime suspect for defect 13 below. Its three files (`ItemValueResolver.cs`,
-  `LeafContent.cs`, `HyperlinkTests.cs`) were deliberately kept out of `8306620` and remain
-  uncommitted in the working tree. The fix itself looks right: `CollectIds` restructured into a
+- **Defect 11** (§5's resolution set) — fixed and **reviewed against the diff**; held out of
+  `8306620` while it was the suspect for defect 13, and **cleared of that** (defect 13 turned out
+  to be the test's own racy counter — see the table). Its three files (`ItemValueResolver.cs`,
+  `LeafContent.cs`, `HyperlinkTests.cs`) are still uncommitted in the working tree, now only
+  because the implementor is mid-change on the defect-13 fix; the tree as it stands builds clean
+  and passes **1069/1069, exit 0**, verified in a scratch copy rather than in place. The fix is
+  right: `CollectIds` restructured into a
   `ReferenceExtractors` array with one lambda per §5 reference form, so adding §4.2's argv
   placeholder or §3.3's compound parts is an append rather than an edit — that array is now the
   single definition of what ids a config references, and **`--check` must reuse it rather than
   grow a second config walk**. Colour-token `from` was checked and is *not* affected, closing the
   question STATUS previously left open at defect 11: the link resolver was the only broken form.
-- **Defect 13** — the reason defect 11 is held. See the defect table.
+- **Defect 13** — diagnosed here as a racy test counter, fix with the implementor. See the
+  defect table. One consequence of defect 11 worth a spec decision, unrelated to 13: a `link`
+  naming `{remote-url}` now genuinely resolves `remote-url`, which shells out to git. That is
+  the fix working as intended, but it makes an item that is opt-in *for cost reasons* reachable
+  without the user placing it. §3.2 may need to say so.
 
 Notes carried forward from `min-rows`, now in **Done and verified**: implementation is
 `PaneDistribute` → `ResolveVerticalMinRows` → `SolveMinRows` → `MinWidthForRowCount` →
@@ -115,9 +122,11 @@ defect is the link resolver specifically, and whatever mechanism makes derived `
 unplaced is a model to copy rather than replace. Colour-token `from` untested — check before
 assuming which side it lands on |
 | 12 | **An empty pane still renders its borders** | `{"items":[{"item":"repo"}]}` in this repo emits 674 bytes — top and bottom border, no content row. Collides with SPEC.md:353 *"no segments ⇒ zero output even with border enabled."* Separately, `repo` yielding nothing here may be correct de-duplication (repo name and directory name are both `claude-tui-line`) — that part is unconfirmed **Ruled** — §2.4 now carries it. SPEC.md:353 survives, applied at two levels: an empty *surface* emits zero bytes; an empty `content`/`fill` pane collapses with its gutter; an empty `fixed`/`percent` pane keeps extent and border, because the user named a number and §2.3's principle of not overruling explicit sizing applies here too. Queued behind defect 11. Whether `repo` yielding nothing here is correct de-duplication is still unconfirmed and tracked separately |
-| 13 | **min-rows packer invocations jump 45 → 314 under the defect-11 fix** — a 7x regression, caught by `MinRowsDistributeTests.Columns112_LiveConfig_PackerInvocationCountStaysBounded` (bound `1..300`) | Suite goes 1067/1067 → 1068/1069. Isolated by bisection: a clean checkout of `8306620` alone is **green at 1067/1067**, so min-rows is not the cause; the three uncommitted defect-11 files are. **Leading hypothesis: OSC 8 bytes are being counted as width inside the *sizing* path.** Defect 1 fixed that in the render path and was verified against rendered bytes there — but `RowCountAt` → `PaneRenderer.RenderLeaf` is a different caller, and before defect 11 the §3.2 worked-example link never resolved, so no OSC 8 ever reached the sizer on this config. Magnitude fits: a full GitHub URL is far longer than the branch name it wraps, and inflated content raises `maxT`, which `SolveMinRows` scans linearly. **If true the layout is wrong, not merely slow** | Open — with the implementor. Fix the measurement, not the bound, and **not** the search: bisecting `t` and memoizing `RowCountAt` are both available and both deliberately deferred, because either would mask a 7x regression by making the search cheap enough to hide it |
+| 13 | **`Columns112_LiveConfig_PackerInvocationCountStaysBounded` reads a racy process-global counter** — it reported 314 packer invocations against a `1..300` bound where a clean tree reported 45 | **Diagnosed: a test defect, not a sizer regression — there was never a 45 → 314 jump to explain.** `MinRowsPackerInvocationCount` (`SizeResolver.cs:324`) is a plain `static int`, incremented un-interlocked at `:501` by *every* min-rows render in the assembly; the test zeroes it at `MinRowsDistributeTests.cs:153` and reads it at `:155`. The repo has no `xunit.runner.json`, no `[CollectionDefinition]` and no `DisableTestParallelization`, so xUnit's default holds and test classes run **in parallel** — the test measures its own packer calls *plus whatever else was in flight*. 45 was a quiet scheduling window, 314 a busy one; defect 11's two new end-to-end `HyperlinkTests` perturbed the schedule, which is why it surfaced then. Being un-interlocked it can under-count as well as over-count | Diagnosed here, fix with the implementor: mark the counter `[ThreadStatic]` — sound *because* §5 resolve-once-per-render makes `SolveMinRows` synchronous, so the thread that zeroed the counter is the thread that reads it, and that precondition goes in a comment — plus a non-parallel `[CollectionDefinition]` for the instrumented class as belt-and-braces |
 
-Noted for later, filed rather than done: `SolveMinRows` scans `t` linearly from 1 to `maxT` while its own comment states `feasible(T)` is monotone — the property that licenses bisection. And `RowCountAt` rebuilds `CandidateSegments` on every probe, though §5 guarantees values are constant for the render, so `rows_i(w)` is pure within a render and every repeat probe is provably redundant. Both are real, neither is urgent at 45 calls, and **both stay unbuilt until defect 13 is understood.**
+**The OSC-8-in-the-sizer hypothesis was wrong and is closed.** It predicted the sizing path counted escape bytes as width, which would have made the *layout* wrong rather than merely slow. Tested directly: two configs identical except one item carrying `link`, rendered through the built binary at COLUMNS 112, 90 and 70, compared byte-for-byte after stripping OSC 8 then CSI (that order — stripping CSI first leaves the URI payload looking like text). **Identical at all three widths**: same row counts, same pane widths, same bytes. Defect 1's fix holds in the sizing path as well as the render path. Recorded because the reasoning was sound and the conclusion still false — `RowCountAt` → `PaneRenderer.RenderLeaf` genuinely is a caller defect 1 was never checked against; that just wasn't where this went wrong.
+
+Noted for later, filed rather than done: `SolveMinRows` scans `t` linearly from 1 to `maxT` while its own comment states `feasible(T)` is monotone — the property that licenses bisection. And `RowCountAt` rebuilds `CandidateSegments` on every probe, though §5 guarantees values are constant for the render, so `rows_i(w)` is pure within a render and every repeat probe is provably redundant. Both were embargoed while defect 13 looked like a regression they could mask; with no regression to mask **the embargo is lifted**. They remain optimizations rather than fixes, so they land as their own change with their own before/after numbers — not folded into defect 11.
 
 ## Not started
 
@@ -159,6 +168,16 @@ Still needed **before making it public**:
   `AssemblyName`). It documents only what exists: no CLI flags are described, because `Program.cs`
   has none yet. The silent-acceptance defects (3–6) are disclosed in a note rather than papered
   over.
+- ~~Plugin scaffolding~~ — **done, but unexercised.** `.claude-plugin/plugin.json` and
+  `.claude-plugin/marketplace.json` (the plugin *is* the repo root, so its marketplace entry uses
+  `"source": "./"`), plus `commands/setup.md` at the plugin root — **not** inside
+  `.claude-plugin/`, which holds only the two manifests. Both schemas were confirmed against the
+  Claude Code docs rather than guessed. `/claude-tui-line:setup` checks for .NET 10, publishes
+  into `${CLAUDE_PLUGIN_DATA}/bin`, **backs up `settings.json` and any script it points at before
+  writing anything and stops if the backup fails**, edits `settings.json` in place preserving
+  other keys, then renders a preview. **Nothing here has actually been installed end-to-end** —
+  the manifests parse by inspection only. `/plugin marketplace add` against this repo cannot be
+  tried until it is public, so this stays unverified until then.
 - Genericize `/Users/jimcline/...` — it appears in `CAPTURE.md:9`, `bench/fixture.json:2`,
   `tests/.../fixtures/full.json:2`, and three test files. Not sensitive, but it is a username
   in a public tree. **Changing the fixture cwd risks the golden-parity baseline** — the
