@@ -13,7 +13,7 @@ namespace ClaudeTuiLine.Tests;
 /// </summary>
 public class SizeResolverFixpointTests
 {
-    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null);
+    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null, PaneBorderEdges.All);
     private static readonly StatusInput Input = new();
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
 

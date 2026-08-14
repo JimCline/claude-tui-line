@@ -15,7 +15,19 @@ public enum PaneSplit
 /// <see cref="Style"/> means the pane renders no border, the same convention
 /// <see cref="ResolvedConfig"/> uses at the surface level.
 /// </summary>
-public sealed record PaneBorder(ColorResolution.ColorExpr Color, BoxBorder? Style);
+public sealed record PaneBorder(ColorResolution.ColorExpr Color, BoxBorder? Style, PaneBorderEdges Edges);
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §2.10: which of a pane's own four border edges actually draw. Static
+/// config, resolved once at config-load time from the pane's own <c>edges</c>/shorthand
+/// declaration or an ancestor's subtree-scoped shorthand (§2.10.1 rule 1) — unlike
+/// <see cref="PaneBorder.Color"/>, never value-derived at render time.
+/// </summary>
+public sealed record PaneBorderEdges(bool Top, bool Right, bool Bottom, bool Left)
+{
+    public static readonly PaneBorderEdges All = new(true, true, true, true);
+    public static readonly PaneBorderEdges None = new(false, false, false, false);
+}
 
 /// <summary>SPEC-V2-FRAMEWORK.md §3.1: where a pane's content sits when shorter than its siblings.</summary>
 public enum PaneValign

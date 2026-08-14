@@ -61,6 +61,7 @@ public class GoldenParityTests
         var topLevel = new ResolvedConfig(
             new ColorResolution.ColorExpr.Literal("grey"),
             borderRequested ? BoxBorder.Rounded : null,
+            PaneBorderEdges.All,
             ChromeReserve: 3,
             ColorSystem: ColorSystemSupport.Standard,
             Colors: new Dictionary<string, ColorResolution.ColorRule>());

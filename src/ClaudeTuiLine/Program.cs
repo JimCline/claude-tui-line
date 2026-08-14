@@ -865,6 +865,7 @@ static (ResolvedConfig TopLevel, Pane RootPane) BuildFallbackConfig()
     var fallbackTopLevel = new ResolvedConfig(
         new ColorResolution.ColorExpr.Literal("grey"),
         BoxBorder.Rounded,
+        PaneBorderEdges.All,
         ConfigLoader.DefaultChromeReserve,
         ColorSystemSupport.Standard,
         new Dictionary<string, ColorResolution.ColorRule>());
@@ -872,7 +873,7 @@ static (ResolvedConfig TopLevel, Pane RootPane) BuildFallbackConfig()
         PaneSplit.None,
         Array.Empty<Pane>(),
         "auto",
-        new PaneBorder(fallbackTopLevel.BorderColor, fallbackTopLevel.Style),
+        new PaneBorder(fallbackTopLevel.BorderColor, fallbackTopLevel.Style, fallbackTopLevel.Edges),
         null,
         ConfigLoader.DefaultEllipsis,
         null,

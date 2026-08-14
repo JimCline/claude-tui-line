@@ -14,6 +14,7 @@ public class PaneTests
     private static readonly ResolvedConfig TopLevel = new(
         new ColorResolution.ColorExpr.Literal("grey"),
         BoxBorder.Rounded,
+        PaneBorderEdges.All,
         ChromeReserve: 3,
         ColorSystem: ColorSystemSupport.Standard,
         Colors: new Dictionary<string, ColorResolution.ColorRule>());
