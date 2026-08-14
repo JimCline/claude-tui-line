@@ -25,16 +25,29 @@ never uses, and report the resulting failure as a build error rather than a tool
 ## 2. Build the binary
 
 Build into the plugin's own data directory so it survives plugin updates and never collides with
-a working tree the user may also be building in:
+a working tree the user may also be building in.
+
+**Check that `CLAUDE_PLUGIN_DATA` is actually set before using it in a path**, and fall back if it
+is not:
 
 ```bash
+BIN_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/claude-tui-line}/bin"
 dotnet publish "${CLAUDE_PLUGIN_ROOT}/src/ClaudeTuiLine/ClaudeTuiLine.csproj" \
-  -c Release -o "${CLAUDE_PLUGIN_DATA}/bin"
+  -c Release -o "$BIN_DIR"
 ```
 
-The result is `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`. Confirm it exists and is executable
-before going further. Report the build's exit code; if it is nonzero, show the error lines and
-stop.
+The guard is not defensive padding. Unset, `"${CLAUDE_PLUGIN_DATA}/bin"` expands to **`/bin`**, and
+the command becomes a release build published into the system binary directory — which either fails
+on permissions or, with a privileged shell, succeeds. Step 4 would then write
+`"command": "/bin/claude-tui-line"` into settings.json and step 5 would confirm it renders. An unset
+variable in a path expansion does not announce itself; it quietly names a different, real,
+usually-worse directory. Use `$BIN_DIR` everywhere below rather than re-expanding the variable, so
+there is one place this can be wrong.
+
+The result is `$BIN_DIR/claude-tui-line`. Confirm it exists and is executable before going further,
+and report which directory it went to — if the fallback was used, the user should hear that from
+you rather than discover it. Report the build's exit code; if it is nonzero, show the error lines
+and stop.
 
 ## 3. Back up whatever statusline is already configured
 
@@ -66,15 +79,15 @@ Edit `~/.claude/settings.json` to set:
 {
   "statusLine": {
     "type": "command",
-    "command": "<absolute path to ${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line>",
+    "command": "<the absolute path to $BIN_DIR/claude-tui-line>",
     "refreshInterval": 1
   }
 }
 ```
 
-Expand `${CLAUDE_PLUGIN_DATA}` to a real absolute path — settings.json does not interpolate plugin
-variables, so the literal would be written through and Claude Code would run a command that does
-not exist. Step 5 is what catches that, and only if you follow it as written.
+Expand it to a real absolute path — settings.json does not interpolate shell or plugin variables,
+so a literal `${CLAUDE_PLUGIN_DATA}` or `$BIN_DIR` is written through verbatim and Claude Code runs
+a command that does not exist. Step 5 is what catches that, and only if you follow it as written.
 
 Write the file per **"Writing `settings.json`"** in `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`:
 only that key, atomically, everything else preserved.

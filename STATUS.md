@@ -926,6 +926,30 @@ wholesale-copy temptation that is strongest exactly when a user asks to go back.
 
 That is every command and every doc walked.
 
+### The manifests, and an unset variable that names `/bin`
+
+`plugin.json` and `marketplace.json` had never been walked, and a broken manifest means the plugin
+does not install at all — the earliest possible failure. Both are sound: names match across the
+two, `source: "./"` is right for a marketplace living in the repo it ships, and the `commands/`
+pointer resolves.
+
+The walk did settle one thing worth verifying rather than assuming: **`CLAUDE_PLUGIN_DATA` is
+real.** `setup` leans on it entirely, and the whole "works today" claim rests on it existing.
+Confirmed from an official Anthropic plugin that both uses it and documents it as the plugin's
+persistent data directory, surviving plugin updates. It is much newer than `CLAUDE_PLUGIN_ROOT`
+(two files against 112 across the installed marketplaces), which is why it was worth checking.
+
+**And checking it found the sharper problem.** Unset, `"${CLAUDE_PLUGIN_DATA}/bin"` expands to
+**`/bin`**. So on any Claude Code that does not set it, step 2 was a release build published into
+the system binary directory — failing on permissions, or succeeding under a privileged shell —
+after which step 4 writes `"command": "/bin/claude-tui-line"` and step 5 cheerfully confirms it
+renders. An unset variable inside a path expansion does not announce itself; it silently names a
+different, real, usually worse directory. Now guarded with `:-$HOME/.claude/claude-tui-line`,
+resolved once into `$BIN_DIR`, and the fallback is reported to the user rather than used quietly.
+
+Same family as the expansion defect in step 5, and it is the reason that one was worth fixing:
+both are the install writing a path nothing downstream ever re-checks.
+
 ### Open, and honest about it
 
 - **The colour system has tests for none of what makes it a colour system.** Narrowed from
