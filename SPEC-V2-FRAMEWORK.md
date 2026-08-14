@@ -4442,14 +4442,24 @@ what was asked for. That is the property §12.6 actually needs and the one no un
 
 ### 11.1 This list is not the authority on what is outstanding
 
-Phases 2, 3 and 4 each enumerate the features they cover, and every one of those enumerations is
-now stale — for the ordinary reason, which is that the spec kept growing after the phase list was
-written and nothing linked the two. §2.8's `height: "content"`, §2.10's per-edge borders and
-`border.collapse`, §2.11's collapse rule, §3.2's hyperlinks, §3.3's compound items, §4.2's argv
-placeholders, §5.0.1's widths store and §5.1's probe caching are all specified, and **no phase
-mentions any of them.** Read literally, Phase 4 is "item registry + `command` providers, cache,
-TTL, timeouts" and is therefore finished, while three of those eight sections are unbuilt work
-inside its boundary.
+Phases 2, 3 and 4 each *used to* enumerate the features they covered, and every one of those
+enumerations had gone stale — for the ordinary reason, which is that the spec kept growing after
+the phase list was written and nothing linked the two. §2.8's `height: "content"`, §2.10's
+per-edge borders and `border.collapse`, §2.11's collapse rule, §3.2's hyperlinks, §3.3's compound
+items, §4.2's argv placeholders, §5.0.1's widths store and §5.1's probe caching were all specified,
+and **no phase mentioned any of them.** Read literally, Phase 4 was "item registry + `command`
+providers, cache, TTL, timeouts" and therefore finished, while three of those eight sections were
+unbuilt work inside its boundary.
+
+> **Discharged.** The list above was rewritten to the boundary form this section rules for, and
+> every one of the eight now falls inside a stated boundary: §2.8 within Phase 2's "§2.1 through
+> §2.8", §2.10 and §2.11 named outright in Phase 3, and §3.2, §3.3, §4.2, §5.0.1 and §5.1 within
+> Phase 4's "the whole of §3, §4 and §5" — which goes on to name the cache, the widths store,
+> derived and compound items, and argv placeholders as inside it. The critique is kept in the past
+> tense rather than deleted, because the reasoning is the reusable part and the failure recurs
+> every time a list of features outlives the document it summarises. What must not survive is its
+> *present* tense: a reader who acts on "no phase mentions any of them" would re-fix a list that
+> is already correct.
 
 The proof that this list is not load-bearing is that §3.2 shipped anyway. Hyperlinks were
 specified, built, tested and merged without ever being assigned a phase, and nothing anywhere
