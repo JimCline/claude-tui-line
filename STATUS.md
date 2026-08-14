@@ -3139,6 +3139,38 @@ No new spec section: §1 already rules this, and `SPEC:164` is the catch-all for
 an output. Eleven existing applications of it — generalizing it a twelfth time would be the
 duplication it forbids.
 
+## §9.5 asserts an arrangement instead of specifying one (§9.5.1)
+
+Picked §9.5 by structure, not by suspicion: seventeen lines, no subsections, the shortest section in
+§9 — and its title is a declarative implementation claim, which is the "uncontested half handed over
+in a phrase" shape in its purest form. All three claims fail against the code.
+
+Its central argument is also inverted. Two walks that drift *disagree*, and a disagreement is
+findable; one shared walk that falls behind the config surface makes the resolver and the checker
+wrong in the same direction and in agreement. `--check` passes, the id resolves to nothing, §7
+renders it absent. Sharing is still right — it is just not the safety property §9.5 claims it is,
+and the concentrated risk needs a guarantee the section never gives.
+
+Confirmed against `ItemValueResolver.cs` before writing (three code facts, no speculation):
+
+- **`ReferenceExtractors` is `private static`** (`:138`), only caller in the same file. `--check`
+  literally cannot reuse it. The heading states as fact what the access modifier forbids — and this
+  is the dangerous kind of gap, because an implementer finds the shared table unreachable and the
+  second walk trivial exactly when the choice is being made.
+- **Type is `Func<ScanContext, IEnumerable<string>>`** — bare ids. §9.5's own next paragraph promises
+  a warning in a `link` and an error in an argv, and §9.4 names the offending key by JSON Pointer.
+  Neither survives a `string`. "The extractor answers which ids this config names; nothing more" was
+  written to keep *verdicts* out and took *provenance* out with them.
+- **No coverage test.** The invariant is the sentence "adding a reference form must remain a single
+  append", addressed to a person — and Defect 11 is proof that instruction has already been missed
+  once, which is why the section exists at all.
+
+Ruled: widen the member deliberately; yield a record of (id, construct, JSON Pointer) so the
+resolver selects the id and discards the rest; and replace the sentence with a **fail-closed** test —
+walk the config types, require every id-naming member to be either covered or explicitly exempted,
+so a new field fails the build rather than going silently unchecked. Same move as §9.4.2's
+`[JsonExtensionData]`: make the type system enumerate instead of a person remembering.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

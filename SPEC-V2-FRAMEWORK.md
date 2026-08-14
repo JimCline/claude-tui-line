@@ -3830,6 +3830,53 @@ exactly that: a `--check` that passes while the resolver drops an id, disagreein
 the one tool whose entire job is to not be silent. Adding a reference form must remain a single
 append that both the resolver and the checker inherit.
 
+#### 9.5.1 Sharing a walk makes both sides wrong together, and three things above are not true yet
+
+§9.5 is seventeen lines that assert an arrangement rather than specify one, and all three of its
+load-bearing claims fail against the code as it stands. Worse, its central argument is inverted: two
+walks that drift apart *disagree*, and a disagreement is findable. One shared walk that falls behind
+the config surface makes the resolver and the checker wrong **in the same direction, simultaneously,
+and in agreement** — `--check` passes, the id resolves to nothing, and §7 renders it as absent.
+Sharing is still right, but it is not the safety property §9.5 claims. It concentrates the risk into
+one table, and the table therefore needs a guarantee §9.5 never gives it.
+
+**`--check` cannot reuse it, because it is private.** `ReferenceExtractors` is a `private static`
+member of `ItemValueResolver` (`ItemValueResolver.cs:138`), with its only caller in the same file.
+The heading states as settled fact a thing the access modifier forbids. This matters more than a
+missing keyword usually does: an implementer building `--check` finds the shared table unreachable
+and the second walk trivial, so the arrangement this section exists to mandate loses on convenience
+at the exact moment it is being decided. Widen the member deliberately, and treat its accessibility
+as part of the ruling rather than an implementation detail beneath it.
+
+**The extractor's return type cannot carry the verdict §9.5 promises.** The declared shape is
+`Func<ScanContext, IEnumerable<string>>` — bare ids. But §9.5's second paragraph says the same
+dangling id is a warning in a `link` and an error in a `command` item's argv, and §9.4's diagnostics
+name the offending key by JSON Pointer. A `string` supports neither: by the time the checker holds
+it, the construct it came from and its position in the document are both gone. So the sentence
+*"the extractor answers which ids this config names; nothing more"* reads as a boundary and is in
+fact the defect — it was written to keep **verdicts** out of the extractor, which is correct, and it
+took provenance out with them, which is not. The extractor must not decide severity; it must report
+what severity is a function of, because it is the only code that knows. Yield a record carrying the
+id, the construct that named it, and the JSON Pointer to it. The resolver then selects the id and
+discards the rest, which is what makes sharing cheap rather than a compromise.
+
+**Nothing enforces the invariant, which is stated as an instruction to a person.** *"Adding a
+reference form must remain a single append"* is addressed to whoever adds the next one, and Defect
+11 is the proof that this instruction has already been missed once — that is the whole reason this
+section exists. There is no coverage test. Everywhere else this document confronts the same problem
+it refuses a hand-maintained list and makes the type system do the enumerating: §9.4.2 hands unknown
+keys to `[JsonExtensionData]` rather than a table of valid ones, §9.6.1 derives the code registry
+from the types, §9.6.2.2 asserts drift rather than trusting agreement.
+
+Do the same here, and note the shape carefully: a test cannot prove *"every reference-bearing field
+is covered"* without already knowing which fields those are, which is the registry it is trying to
+avoid. So invert it. Walk the config types, collect every member that could name an id, and require
+each to be **either covered by an extractor or on an explicit exemption list**. A newly added field
+is neither, so it fails the build and forces its author to classify it. That is the property worth
+buying: not that coverage is complete today, but that it **fails closed** — the next Defect 11
+announces itself at the commit that causes it rather than in a statusline that renders short. A test
+that can only pass by someone remembering something is the sentence again, compiled.
+
 ### 9.6 JSON shapes
 
 `--json` applies to `--check`, `--items`, `--preview`, and `--colors`.
