@@ -1692,12 +1692,15 @@ that does not exist.
 Two severities, and the split resolves defects 3–6 (silent acceptance):
 
 - **`error`** — the config does not do what it says. An unknown item id; an unknown value for
-  `size`, `style`, `align`, `valign`, or `overflow`; an unknown colour name; a `link` naming an
-  id that resolves to nothing; `overflow: "overflow"` on a pane inside a split (§2.6); a pane
-  whose fixed sizes cannot fit its parent.
+  `size`, `style`, `align`, `valign`, `overflow`, or `case`; an unknown colour name; `overflow:
+  "overflow"` on a pane inside a split (§2.6); a pane whose fixed sizes cannot fit its parent.
 - **`warning`** — it is satisfiable, but probably not what was meant. A pane with no items; a
-  `command` item with no `timeoutMs`; under `collapse: true`, two panes asking for different
-  colours or styles on one shared edge (§2.10). Code: `collapsed-edge-conflict`.
+  `command` item with no `timeoutMs`; a `link` naming an id that resolves to nothing; under
+  `collapse: true`, two panes asking for different colours or styles on one shared edge (§2.10).
+  Code: `collapsed-edge-conflict`.
+
+The dangling `link` moved from `error` to `warning` here, and that correction is the reason the
+next paragraph exists.
 
 That last one refines the rule rather than bending it. Two colours cannot both hold on one
 physical line, so it looks unsatisfiable — but §2.10 *defines* the resolution (first requester in
@@ -1706,6 +1709,47 @@ tree declaration order), so the config has a well-defined meaning and renders de
 warning because a written `color` was silently discarded, and §2.10 is right that this is the kind
 of thing a user otherwise spends an evening on; it is not an error because the spec sanctions the
 outcome. Under `collapse: false` it cannot arise at all — neighbours never contend for one line.
+
+#### 9.4.1 The test, in the form that actually decides cases
+
+"No defined meaning" is not enough on its own, and a ruling on the five `ReferenceExtractors`
+forms is what exposed it. §7 and §3.2.1 define a fallback for *everything* — a dangling `link`
+drops the link, a dangling derived `from` suppresses the item, a colour rule falls through to its
+`default`. If "the spec wrote down a fallback" made a thing satisfiable, nothing would ever be an
+error and we would be back at "does the renderer cope" under a new name.
+
+So the question is not whether a fallback exists. It is **what the fallback does to the thing the
+config asked for**:
+
+- **Delivered in reduced form → `warning`.** The author asked for something and got it, minus a
+  decoration. `{ "item": "git-branch", "link": "{nope}/tree/{}" }` renders `main`, unlinked. A
+  reasonable author might not even mind. This is the "some of what you typed had no effect" case.
+- **Deleted → `error`.** The author asked for something and got nothing. Nobody writes an item
+  into a config intending it never to appear, so the fallback is not a lesser version of the
+  request; it is the request's negation.
+
+Applied to the five reference forms, which is where the boundary is easiest to get wrong:
+
+| form | fallback | severity |
+|---|---|---|
+| `{ "item": "<id>" }` selector naming nothing | the item never renders | **error**, `unknown-item-id` |
+| derived `from` naming nothing | the item never renders | **error**, `unknown-item-id` |
+| derived `from` naming another derived item | the item never renders (§3.2.1) | **error**, `from-derived-source` |
+| `link` `{other-id}` naming nothing | text renders, link dropped | **warning** |
+| colour rule `from` naming nothing (inline or `colors` table) | text renders, colour falls back | **warning** |
+| `command` argv `{id}` placeholder (§4.2) | undefined — the child gets a command line nobody wrote | **error** |
+
+The two `from` forms landing in *different* buckets is the point, and the tempting mistake is to
+group by reference syntax — all five are `from`-or-`{}` lookups through one null-safe path, so
+they look alike from inside the resolver. Group by consequence instead. A colour is decoration
+over text that stands without it; a derivation is the item's *only* source of value, so losing it
+loses the item. Same code path, opposite outcomes.
+
+`from-derived-source` gets its own code rather than reusing `unknown-item-id` because the id is
+not unknown — it exists, and this construct forbids it. §3.2.1 defers chaining behind a
+topological sort, so a user who writes it has asked for something deliberately unbuilt, and a
+message saying "no item named 'agent-short'" would be a lie about a config whose real problem is
+that the item is there.
 
 **The line between them is satisfiable versus unsatisfiable — not "does the renderer cope."**
 That distinction cannot be the test, because §7 makes the renderer cope with everything: it
