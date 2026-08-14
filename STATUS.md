@@ -3450,6 +3450,52 @@ exempt, its list mixes literals with descriptions of a form.
 Open: whether the README and spec carry a third and fourth copy. §9.6.2.2 covers item examples, not
 enum tokens.
 
+### #37 scoped up: `ScanReferences` is a second walk, and the record shape found a broken diagnostic
+
+The implementor stopped before building and asked, which was right. §9.5.1 asks for three things —
+widen `ReferenceExtractors` to `internal`, give it a record-shaped yield with provenance, add a
+fail-closed coverage test — and doing exactly those three would have closed nothing. `--check`'s
+diagnostics never call `ReferenceExtractors`. They come from `ScanReferences`, an independent
+hand-rolled walk of five `foreach` blocks re-deriving the same reference forms. Not "the table has
+no consumer yet" — a second implementation that agrees with the first by accident.
+
+**Ruled: #37 includes retiring that walk.** The three asks are means; the end is one implementation
+of "where can an id appear", and shipping the means without the end ships the appearance of it.
+Fourth time this shape has come up (Defects 11 and 15, §6.6, §1.1.1).
+
+**But the walk does not get deleted until a test proves the two agree.** "Agrees by coincidence" is
+itself an assertion nobody has checked — neither implementation has ever been run against the other.
+Equivalence test first, over the §9.3.1 fixture plus `--check`'s malformed cases, asserting identical
+diagnostic sets. Green, delete and reuse the corpus; red, that is a live `--check` defect worth more
+than the refactor. Deleting first and eyeballing the diff is how a silent behaviour change ships.
+
+Three shape rulings:
+
+- **One stream, one required `Kind` discriminator** — not `ReferenceForm?` with null meaning
+  "declares". Both consumers filter the same stream, which is what makes sharing load-bearing, but a
+  nullable field that changes what the record *is* keeps tempting callers to skip the branch and an
+  exhaustive test cannot enumerate null as a case. Invariant enforced in the constructor, not
+  documented. Rejected widening `ReferenceForm` with a `Declaration` member: every existing switch
+  grows a case, and any default arm silently absorbs it — §9.4.3 biting from the other side. This
+  also makes explicit that `entry.Item.Id ?? entry.Item.Item` was **already wrong for one of its two
+  consumers** (`Id` declares, `Item` references); it never showed because only one consumer existed.
+- **Colour tokens get their own table**, not a fold-in. `@name` resolves in a different namespace, so
+  folding it in makes the `Id` field mean two things by `Kind` — the conflation just ruled against.
+  Two enumerable kinds, two registries.
+- **Fix `ScanContext.Tokens`, don't weaken the record.** Bucket 5 has only `.Values` in scope, so
+  `/colors/{name}/from` is underivable — a diagnostic that cannot name the token it is complaining
+  about. Expose pairs. A nullable pointer would let every future extractor opt out of the provenance
+  that was the point of the change. Best find in the round trip: the record shape surfaced it.
+
+**The coverage test's mechanism was the real question, and the obvious answer is wrong.** A
+hand-authored `(MemberInfo, extractor)` map is a second registry — the test would prove the map
+matches the members, not that the extractors do. Each row carries its own member instead, authored
+once as a member expression that yields both accessor and `MemberInfo`. Walked type set derived by
+reachability from the config root rather than listed, so it grows on its own; candidates are string
+and string-collection members; each must be covered or exempted **with a printed reason**. One
+measurement gate before building: report the candidate count. Tens is the honest price of failing
+closed; two hundred means the filter is wrong.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
