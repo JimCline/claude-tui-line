@@ -2747,6 +2747,71 @@ session and has no way to notice they were built from different inputs.
 is still `N - chromeReserve`; preview must not quietly render 3 columns wider than reality, or
 it will disagree with the statusline exactly at the width where wrapping starts to matter.
 
+#### 9.3.1 The payload itself
+
+§9.3 above mandates that this constant exist and be shared, and stopped there — which left the
+one part that has to be *decided*. It is decided here, as a literal, because "a fixed synthetic
+payload" is not a value and two people implementing that sentence produce two different fixtures:
+
+```json
+{
+  "cwd": "/home/you/code/acme-web",
+  "workspace": { "repo": { "owner": "acme", "name": "acme-web" } },
+  "worktree": { "name": "acme-web", "branch": "main" },
+  "pr": { "number": 128, "review_state": "APPROVED" },
+  "model": { "display_name": "Claude Sonnet 5" },
+  "effort": { "level": "medium" },
+  "thinking": { "enabled": true },
+  "output_style": { "name": "default" },
+  "context_window": {
+    "used_percentage": 34.0, "total_input_tokens": 68000, "context_window_size": 200000
+  },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 22.0 }, "seven_day": { "used_percentage": 41.0 }
+  },
+  "agent": { "name": "acme-reviewer" },
+  "vim": { "mode": "NORMAL" },
+  "session_id": "00000000-0000-4000-8000-000000000000"
+}
+```
+
+wrapped in an `ItemContext` whose machine-probed fields are canned to match: `gitBranch` = `"main"`,
+`remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` with a small non-zero
+activity count — whatever shape makes `engram` render *present*.
+
+Four rules govern it, and each one rules out a fixture someone would otherwise reasonably write.
+
+**Every field is populated, including the ones real payloads usually omit.** This is the one place
+where completeness beats realism. Real Claude Code payloads routinely carry no `pr` and no `vim`,
+so a fixture built to look like a real payload omits them — and then `--items` reports two items
+whose `example` is empty, from which a user correctly concludes those items produce nothing. An
+item with no example has no entry in the field that exists to show it. Whatever an item needs in
+order to render, the fixture has.
+
+**Redundant fields must agree with each other.** `used_percentage: 34.0` is `68000 / 200000`;
+`worktree.branch` is the same `"main"` the canned `gitBranch` reports; `workspace.repo` names the
+same repo as the canned remote URL and the worktree. Nothing enforces this — the type permits any
+combination — which is exactly why it needs writing down. A fixture with `used_percentage: 80` and
+40k of 200k tokens describes a state Claude Code cannot produce, `--preview` renders it faithfully,
+and the first person to notice spends their afternoon looking for the bug in `context`.
+
+**The values are deliberately unremarkable, and specifically are not near a threshold.** The
+tempting alternative is to sit `context` at 82% so the example visibly exercises §6's colour ladder
+— but this fixture is the baseline every user compares their real statusline against, and a
+baseline that renders alarming teaches the wrong resting state. It is also answering the wrong
+question: `--items`' `example` field answers *what does this item's text look like*, and `--colors`
+(§9.6.3) plus `--preview` are where colour behaviour is exercised. `Claude Sonnet 5` for the same
+reason — §6's model rule makes it the calm one.
+
+**The values are visibly synthetic.** `/home/you/…`, `acme`, an all-zeroes session id. §9.3 requires
+saying on stderr that a preview is invented, and stderr is the stream most likely to be discarded by
+whatever is capturing the output. The payload should still admit what it is once that notice is
+gone.
+
+A note on what this fixture is *not* for: it is not a test fixture. Tests keep constructing whatever
+inputs they need. This one is user-facing output, which is why it is specified in prose rather than
+left to whoever writes it first.
+
 ### 9.4 Exit codes and severities
 
 | exit | meaning |
@@ -3216,6 +3281,46 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
   }
 }
 ```
+
+#### 9.6.2.1 What each item reports
+
+`reports` is the only field on a row that is not derived from something. `id`, `color`, and
+`default` read straight off `ItemRegistry`, and `example` is produced by *running*
+`BuildDefaultSegment` against §9.3.1's fixture — the `"⎇ main"` in the shape above is an
+illustration of that output, not a string stored anywhere. `reports` is prose, it is written once
+here, and the sixteen strings are:
+
+| id | `reports` |
+|---|---|
+| `directory` | the working directory |
+| `git-branch` | the current branch, or nothing outside a repo |
+| `repo` | the workspace repo as `owner/name` |
+| `worktree` | the worktree's name and branch, when the session is in one |
+| `pr` | the pull request number and its review state |
+| `model` | the model's display name |
+| `model-short` | an abbreviated model name, for panes too narrow for the full one |
+| `effort` | the reasoning effort level |
+| `thinking` | whether extended thinking is on |
+| `output-style` | the active output style |
+| `context` | how much of the context window is in use. Its colour follows that percentage through the configured thresholds, so it warms as the window fills |
+| `rate-limits` | usage against the five-hour and seven-day limits. Its colour follows the *higher* of the two through the thresholds, since the nearer limit is the one that will stop you |
+| `agent` | the name of the active agent, when the session is running one |
+| `engram` | recent Engram memory activity. Its colour reflects whether the store is reachable and active rather than a magnitude, so it is a state indicator and not a gauge |
+| `vim` | the current vim mode, when vim mode is enabled |
+| `remote-url` | the git remote's URL. Opt-in rather than default because resolving it shells out to git |
+
+The three with a second sentence are the `Semantic` ones (§6). For a decorative item the colour is
+the author's choice and needs no explanation; for these three the colour *is* information, and a
+row that describes the text while leaving the colour unexplained gives an authoring tool the
+smaller half. `rate-limits` taking the higher of two windows and `engram` being a state rather than
+a magnitude are both facts you would otherwise have to read the implementation to learn, and both
+change what a sensible `thresholds` override looks like.
+
+**If the implementation disagrees with one of these strings, that is a finding, not a string to
+quietly correct.** `reports` states what the item is *for*; the builder states what it currently
+does. Where they differ, one of the two is wrong and which one is a judgement call — silently
+rewording the table to match the code converts every behavioural drift into documentation, which is
+the failure this document spends §1 on. Raise it.
 
 **Why `kinds` is a section and not a column.** The accepted keys do not vary by item id. Every
 builtin takes `format`, `color`, `overflow`, and `link`, and nothing else; what varies is *how the
