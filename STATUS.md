@@ -2571,6 +2571,43 @@ drawer and answered no; the same walk found that fixing A deletes the surface C 
 reachability question asked about one consumer is worth re-asking about every consumer of the same
 condition** — the empty-root condition had two, and only one of them was on the list.
 
+## Empty stdout is not evidence — one rule, four commands
+
+`setup.md` line 117 states the principle: *"Two commands answering the same question differently is
+worse than either being wrong alone."* Three lines later it broke it. Step 5 read "if it is empty,
+that is a symptom worth chasing", while `revert.md` step 7 ruled empty stdout **inconclusive** and
+said chasing it is its own harm — the same observation, from the same synthetic render, with
+opposite conclusions.
+
+It also contradicted *itself* within the step. Two paragraphs after "chase it", setup.md says the
+minimal payload means dependent items render absent, "otherwise a correct install reads as a
+half-broken one, and the user's first act is to debug something that is working." That is the
+argument against the sentence above it.
+
+**The unified rule, now in all four commands:**
+
+- **Nonzero exit, or anything on stderr** → a real finding, reported now.
+- **Empty stdout at exit 0** → **not evidence, in either direction.** The render used a synthetic
+  width and a minimal payload, so it is not evidence of damage (`revert`), not evidence of a match
+  (`migrate` — "two blank lines are not parity"), and not evidence of a broken baseline (`edit`).
+  Name both causes and hand the user the one-liner for their own terminal.
+
+`migrate.md` already had the other half and was never in conflict: `revert` says empty ≠ damage,
+`migrate` says empty ≠ success. Stating it as one rule is what makes them obviously the same rule
+rather than two that happen to coexist.
+
+**Setup's softening does not blunt its check**, and the reason is worth keeping: the fault step 5
+exists to catch — an unexpanded `${CLAUDE_PLUGIN_DATA}` or a wrong absolute path in settings.json —
+*cannot* present as empty stdout, because a command that does not exist does not run. The shell
+exits nonzero with "command not found" and lands in the first bucket. The bucket that got softer
+never held the quarry.
+
+**The reusable part:** a document that states a consistency principle is the highest-yield place to
+look for a violation of it, because the principle was written by someone thinking about a
+neighbouring case rather than auditing their own file. §12.1.1's "same root cause as §…" tell has a
+sibling here — *a sentence explaining why two things must agree* is a search key for the two things
+not agreeing.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

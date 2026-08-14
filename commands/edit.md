@@ -71,6 +71,12 @@ compare against you will report it as something you did.
 If it already errors or prints nothing, say so **now**, before editing. Otherwise your change gets
 blamed for a fault that predates it.
 
+Report those two as the different things they are, the way `/claude-tui-line:setup` and
+`/claude-tui-line:revert` do. A nonzero exit or output on stderr is a real fault that predates you.
+Empty stdout at exit 0 is **not evidence** — of a fault or of health — because this renders at a
+synthetic width with a minimal payload. Recording it as a broken baseline is how a working
+statusline gets reported as fixed later, when the only thing that changed was the payload.
+
 ## 4. Checkpoint
 
 Read and follow `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`, appending a **`checkpoint`** before

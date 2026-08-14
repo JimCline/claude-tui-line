@@ -117,13 +117,26 @@ out costs one step and is the only version of this check that can fail when the 
 Two commands answering the same question differently is worse than either being wrong alone, and
 this is the one that runs on every install.
 
-Show the output. If it is empty, that is a symptom worth chasing rather than reporting as success —
-check stderr and say so plainly.
+Show the output, and **split the two failures the way `/claude-tui-line:revert` does** — same
+observation, same conclusion, because this is the paragraph above's rule applied to itself:
 
-Say that the sample payload is **minimal**: real payloads carry workspace, session and usage fields
-this one does not, so items that depend on them render absent here and will appear once it is live.
-Otherwise a correct install reads as a half-broken one, and the user's first act is to debug
-something that is working.
+- **A nonzero exit, or anything on stderr** → a real finding. Say it plainly and now.
+- **Empty stdout, exit 0** → *inconclusive*, not a symptom. Two ordinary causes have nothing to do
+  with the install: this renders at 80 columns rather than the user's width, and the payload is
+  minimal. Say it produced no output, say both reasons, and hand them the one-liner to run in their
+  own terminal rather than chasing it here.
+
+**This does not weaken what step 5 is for.** The failure it exists to catch — an unexpanded
+`${CLAUDE_PLUGIN_DATA}` or a wrong absolute path written into settings.json — cannot present as
+empty stdout, because a command that does not exist does not run: the shell exits nonzero and puts
+"command not found" on stderr, landing in the first bucket. The bucket that got softer is the one
+that never held this check's quarry.
+
+Then say that the sample payload is **minimal**: real payloads carry workspace, session and usage
+fields this one does not, so items that depend on them render absent here and will appear once it
+is live. Otherwise a correct install reads as a half-broken one, and the user's first act is to
+debug something that is working — which is the same reason empty stdout is inconclusive above,
+stated for the partial case instead of the total one.
 
 ## 6. Tell them what happens next
 
