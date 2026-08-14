@@ -33,50 +33,89 @@ public class KeySuggestionTests
     }
 
     [Fact]
-    public void Suggest_NoCandidateWithinThreshold_ReturnsNull()
+    public void Suggest_NoCandidateWithinThreshold_ReturnsEmpty()
     {
-        Assert.Null(KeySuggestion.Suggest("zzzzzz", new[] { "color", "format" }));
+        Assert.Empty(KeySuggestion.Suggest("zzzzzz", new[] { "color", "format" }));
     }
 
     [Fact]
-    public void Suggest_HalfLengthBound_TooShortUnknown_ReturnsNull()
+    public void Suggest_HalfLengthBound_TooShortUnknown_ReturnsEmpty()
     {
-        Assert.Null(KeySuggestion.Suggest("ab", new[] { "color" }));
+        Assert.Empty(KeySuggestion.Suggest("ab", new[] { "color" }));
     }
 
     [Fact]
-    public void Suggest_HalfLengthBound_ExactlyAtBoundary_ReturnsNull()
+    public void Suggest_HalfLengthBound_ExactlyAtBoundary_ReturnsEmpty()
     {
         // distance 2 against a 4-char unknown: 2*2 < 4 is false, so this must not qualify.
-        Assert.Null(KeySuggestion.Suggest("abcd", new[] { "abxy" }));
+        Assert.Empty(KeySuggestion.Suggest("abcd", new[] { "abxy" }));
     }
 
     [Fact]
     public void Suggest_PrefixCandidateLongerThanUnknown_Qualifies()
     {
-        Assert.Equal("ttlSeconds", KeySuggestion.Suggest("ttl", new[] { "ttlSeconds" }));
+        Assert.Equal(new[] { "ttlSeconds" }, KeySuggestion.Suggest("ttl", new[] { "ttlSeconds" }));
     }
 
     [Fact]
     public void Suggest_PrefixUnknownLongerThanCandidate_Qualifies()
     {
-        Assert.Equal("colorSystem", KeySuggestion.Suggest("colorSystemX", new[] { "colorSystem" }));
+        Assert.Equal(new[] { "colorSystem" }, KeySuggestion.Suggest("colorSystemX", new[] { "colorSystem" }));
     }
 
     [Fact]
-    public void Suggest_TieBreak_FirstCandidateInOrderWins()
+    public void Suggest_PrefixFloor_ShorterStringBelowThreeChars_DoesNotQualify()
     {
-        // TASK-21-SPEC.md §9.2 names this example as returning "ab", but by the §5 algorithm
-        // EditDistance("aa","ab") == 1 and 1*2 < 2 is false (the half-length bound), and neither
-        // "aa"/"ab" nor "aa"/"ac" is a prefix of the other — so neither candidate qualifies and the
-        // correct result is null. Using a pair where both distance-1 candidates clear the bound
-        // instead, to actually exercise the tie-break rule the test name describes.
-        Assert.Equal("abce", KeySuggestion.Suggest("abcd", new[] { "abce", "abcf" }));
+        // min("c", "case") == 1 < 3: the prefix relation holds but the floor blocks it, and
+        // "c" is nowhere near any of these candidates by distance either.
+        Assert.Empty(KeySuggestion.Suggest("c", new[] { "case", "color", "colors", "colorSystem", "children" }));
     }
 
     [Fact]
-    public void Suggest_EmptyUnknown_ReturnsNull()
+    public void Suggest_PrefixFloor_ShorterStringExactlyTwoChars_DoesNotQualify()
     {
-        Assert.Null(KeySuggestion.Suggest("", new[] { "color" }));
+        // min("tt", "ttSeconds") == 2 < 3: below the floor, and distance 7 doesn't qualify either.
+        Assert.Empty(KeySuggestion.Suggest("tt", new[] { "ttSeconds" }));
+    }
+
+    [Fact]
+    public void Suggest_PrefixFloor_ShorterStringExactlyThreeChars_Qualifies()
+    {
+        // min("ttl", "ttlSeconds") == 3: the floor is inclusive ("at least three"), so this
+        // must still qualify — the motivating example for the floor.
+        Assert.Equal(new[] { "ttlSeconds" }, KeySuggestion.Suggest("ttl", new[] { "ttlSeconds" }));
+    }
+
+    [Fact]
+    public void Suggest_PrefixMatch_OutranksCloserDistanceMatch()
+    {
+        // "ttx" is distance 1 from "ttl" (half-length bound: 1*2 < 3 holds), so it qualifies by
+        // distance — but "ttlSeconds" qualifies by prefix, and prefix must win regardless of
+        // how much closer the distance match is.
+        Assert.Equal(new[] { "ttlSeconds" }, KeySuggestion.Suggest("ttl", new[] { "ttlSeconds", "ttx" }));
+    }
+
+    [Fact]
+    public void Suggest_WithinPrefixMatches_ShortestCandidateWins()
+    {
+        Assert.Equal(new[] { "ttlSeconds" }, KeySuggestion.Suggest("ttl", new[] { "ttlSeconds", "ttlSecondsExtra" }));
+    }
+
+    [Fact]
+    public void Suggest_GenuineTie_NamesAllCandidatesOrdinallySortedRegardlessOfInputOrder()
+    {
+        // "abce" and "abcf" are both distance 1 from "abcd" and neither is a prefix of the
+        // other or of "abcd" — a genuine tie, which must name both rather than pick one.
+        var forward = KeySuggestion.Suggest("abcd", new[] { "abce", "abcf" });
+        var reversed = KeySuggestion.Suggest("abcd", new[] { "abcf", "abce" });
+
+        Assert.Equal(new[] { "abce", "abcf" }, forward);
+        Assert.Equal(forward, reversed);
+    }
+
+    [Fact]
+    public void Suggest_EmptyUnknown_ReturnsEmpty()
+    {
+        Assert.Empty(KeySuggestion.Suggest("", new[] { "color" }));
     }
 }

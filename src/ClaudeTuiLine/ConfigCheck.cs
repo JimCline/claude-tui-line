@@ -777,8 +777,10 @@ public static class ConfigChecker
             var known = KnownKeys(typeInfo);
             foreach (var key in extra.Keys.OrderBy(k => k, StringComparer.Ordinal))
             {
-                var suggestion = KeySuggestion.Suggest(key, known);
-                var tail = suggestion is null ? "" : $" — did you mean '{suggestion}'?";
+                var suggestions = KeySuggestion.Suggest(key, known);
+                var tail = suggestions.Count == 0
+                    ? ""
+                    : $" — did you mean {FormatAccepted(suggestions.Select(s => $"'{s}'").ToArray())}?";
                 yield return new Diagnostic($"{path}/{key}", DiagnosticSeverity.Warning, "unknown-key",
                     $"unknown key '{key}' on {label}{tail}");
             }

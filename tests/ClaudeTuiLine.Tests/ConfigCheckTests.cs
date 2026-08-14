@@ -1243,11 +1243,10 @@ public class ConfigCheckTests
     [Fact]
     public void UnknownKeyOnNestedPane_Reports()
     {
-        // TASK-21-SPEC.md §9.1 item 6 names 'maxRows' as the expected suggestion, but
-        // EditDistance("maxLines", "maxRows") == 4, which clears neither the §5 distance bound
-        // (<=2) nor the prefix rule — per §5's own authority over any conflicting worked example,
-        // the algorithm governs: no candidate qualifies, so no suggestion is offered. Flagged to
-        // the Orchestrator as a spec/example discrepancy.
+        // §9.4.2: "maxLines" is a vocabulary mismatch ("Lines" vs "Rows"), not a typo or an
+        // abbreviation — EditDistance("maxLines", "maxRows") == 4 clears neither the distance
+        // bound (<=2) nor the prefix rule, and that is intended: no rule here addresses the
+        // vocabulary-confusion class, so the bare diagnostic naming no key is correct.
         var config = Parse("""{"surface":{"pane":{"split":"vertical","children":[{"maxLines":3}]}}}""");
 
         var diagnostics = ConfigChecker.Check(config);
@@ -1255,6 +1254,35 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "unknown-key" &&
             d.Path == "/surface/pane/children/0/maxLines" &&
             d.Message == "unknown key 'maxLines' on a pane");
+    }
+
+    [Fact]
+    public void UnknownKeyOnPane_GenuineTie_NamesBothCandidatesOrdinallySorted()
+    {
+        // "xalign" is distance 1 from both "align" and "valign" (neither is a prefix relation
+        // of the other), so this is a real tie over PaneConfig's actual known-key set — not a
+        // synthetic case — and both candidates must be named, ordinally sorted.
+        var config = Parse("""{"surface":{"pane":{"split":"vertical","xalign":"x"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" &&
+            d.Path == "/surface/pane/xalign" &&
+            d.Message == "unknown key 'xalign' on a pane — did you mean 'align' or 'valign'?");
+    }
+
+    [Fact]
+    public void UnknownKeyOnItem_ShortKeyBelowPrefixFloor_OmitsDidYouMean()
+    {
+        // §9.4.2 D3: "c" is a bare prefix of several known keys (case, color, colors,
+        // colorSystem, children) but the shorter string is below the three-character floor,
+        // so none of them qualify.
+        var config = Parse("""{"items":[{"c":1}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/items/0/c" &&
+            d.Message == "unknown key 'c' on an item");
     }
 
     [Fact]

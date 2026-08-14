@@ -4739,14 +4739,88 @@ suggested when it satisfies either:
 
 - Its edit distance from the unknown key is at most 2 **and** strictly less than half the unknown
   key's length. This catches transposition and single-character slips and refuses to reach.
-- One of the two is a prefix of the other. This is what catches the abbreviation class —
-  `ttl` for `ttlSeconds` — which is a different mistake from a typo and which no distance bound
-  small enough to be safe will ever reach.
+- One of the two is a prefix of the other, **and the shorter of the two is at least three
+  characters.** This is what catches the abbreviation class — `ttl` for `ttlSeconds` — which is a
+  different mistake from a typo and which no distance bound small enough to be safe will ever
+  reach.
 
-When more than one key qualifies, the smaller edit distance wins. **When none qualifies, the
-message names no key at all.** `unknown key 'zzzzzz' on an item` is a complete and useful
-diagnostic on its own; it is the code and the path doing their job, and there is no obligation to
-guess on top of it.
+  **The length floor is not decoration.** Without it the prefix rule has no bound of any kind,
+  where the distance rule has two, and the asymmetry is not a decision anyone made — the prefix
+  rule was written as an escape hatch from the distance bound and inherited none of its
+  discipline. Unbounded, `{"c": 1}` qualifies against `case`, `color`, `colors`, `colorSystem`,
+  and `children`, and the ranking below hands one of them over as *did you mean 'case'?* — the
+  confidently wrong suggestion this threshold exists to prevent, produced by the threshold itself.
+  Three is the length of `ttl`, the shortest abbreviation this section cites; below it a key is a
+  fragment with no evidence about what it was a fragment of. A half-length bound mirroring the
+  distance rule was considered and rejected: `ttl` against `ttlSeconds` is three against ten, and
+  it would fail.
+
+**When none qualifies, the message names no key at all.** `unknown key 'zzzzzz' on an item` is a
+complete and useful diagnostic on its own; it is the code and the path doing their job, and there
+is no obligation to guess on top of it.
+
+##### Ranking, when more than one key qualifies
+
+Qualification is two rules; ranking must not collapse them into one. **A prefix match outranks a
+distance match, always, whatever the distances are.** `ttl` → `ttlSeconds` is a prefix match at
+edit distance 7, and any key qualifying at distance 2 would otherwise beat it — discarding the
+prefix match in precisely the case the prefix rule was written for. The rule above says no safe
+distance bound reaches the abbreviation class; ranking a prefix match by edit distance ranks it on
+the scale that sentence declares inapplicable to it. The two rules produce incomparable
+quantities, and the ranking must compare within a class, never across.
+
+So the order is layered, and each layer is total before the next is consulted:
+
+1. **Class.** Prefix matches rank above distance matches. A prefix match and a distance match
+   therefore never tie.
+2. **Within prefix matches**, the shorter candidate wins — the one that adds least to what the
+   author actually typed.
+3. **Within distance matches**, the smaller edit distance wins.
+
+**Whatever remains tied at the top is named together, not chosen between.** `unknown key 'xy' on
+an item — did you mean 'ab' or 'cd'?` A tie is not the tool reaching too far — that is what the
+threshold above governs — it is the tool holding two equally good answers. Naming one of them is a
+coin flip presented as advice, and naming neither discards information the tool has. This binds
+for ties of three or more as well, with no cap: a cap would be an arbitrary number, and falling
+silent above it would make the diagnostic worse exactly as the ambiguity gets worse.
+
+**Sorting is ordinal, and the spec says so because the language default is wrong here.** Tied
+candidates are ordered with `StringComparer.Ordinal`. .NET's `OrderBy(k => k)` on strings uses
+`Comparer<string>.Default`, which is culture-sensitive — so the obvious implementation of "sorted"
+varies with the machine's locale and reintroduces exactly the build-to-build variability this rule
+exists to remove, inside the fix for it. `ConfigCheck.cs:778` already sorts the unknown keys
+themselves this way; this is the same discipline one level in.
+
+**The suggestion list is rendered by `ConfigCheck.FormatAccepted`,** the joiner
+`unknown-enum-value` already uses (`ConfigCheck.cs:464–469`): `a`, `a or b`, `a, b, or c`. Reusing
+it is not a convenience — a second joiner three lines from the first is §1's defect in miniature,
+and reusing it makes `unknown-key` read in the same voice as the other diagnostic a user meets in
+the same run.
+
+**This changes no JSON shape.** The suggestion is interpolated into the diagnostic's message
+string at `ConfigCheck.cs:781`; `Diagnostic` carries a path, a severity, a code, and a message, and
+has no suggestion field anywhere in the codebase. §9.6's diagnostic shape is untouched, and this
+rule must not be taken as licence to add a structured field for it.
+
+##### One class this diagnostic knowingly does not reach
+
+This section opens with three motivating typos. `colour` → `color` is caught by distance;
+`ttl` → `ttlSeconds` is caught by prefix; **`maxLines` → `maxRows` is caught by neither, and that
+is intended.**
+
+`maxLines` is not a typo. `Lines` and `Rows` are the same concept in different vocabulary, and the
+edit distance between them is 4 — reachable only by a bound loose enough to turn `{"zzzzzz": 1}`
+into *did you mean 'color'?*, which is the outcome the threshold exists to prevent. Vocabulary
+confusion is a third mistake class, alongside the typo and the abbreviation, and neither candidate
+rule addresses it.
+
+The correct behaviour for `maxLines` is therefore the bare diagnostic: `unknown key 'maxLines' on
+a pane`, naming no key. That is the paragraph above doing its job, not a gap in it.
+
+**This is recorded so nobody fixes it.** The tempting repair is to loosen the distance bound until
+`maxLines` is reached, which trades this section's stated principle for one example. If the
+vocabulary class is ever worth catching, it needs a mechanism of its own — a synonym relation is
+not a distance — and that is a new rule to be specified, not a constant to be raised.
 
 #### 9.4.3 Why none of §9.4.1 was implementable as the code was shaped
 
