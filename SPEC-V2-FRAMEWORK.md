@@ -2345,6 +2345,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `collapse-not-surface-level` | `border.collapse` declared on a pane — the compositor resolves one grid for the whole surface, so a per-pane value has no defined meaning | error | 2.10.1 |
 | `border-inside-on-leaf` | `"border": "inside"` on a leaf pane — a leaf has no interior, so this silences its border entirely | warning | 2.10.1 |
 | `color-down-converted` | a hex or 256-palette literal under a `colorSystem` that cannot render it — it will be approximated to the nearest of the sixteen | warning | 6.2 |
+| `leaf-only-key-on-split` | `overflow` or `ellipsis` declared on a split — only leaf panes consult them and they do **not** inherit, so the declaration does nothing. Exactly those two keys; `align`/`valign` are not in scope for this code | warning | 2.6 |
 | `pane-no-items` | a `content` or `fill` pane declaring no items **and no explicit `minSize`** — it collapses, so the declaration did nothing. **Not** `fixed`/`percent`, nor a `content`/`fill` pane with a `minSize`: all three hold their extent and are legitimate spacers (§2.11.1) | warning | 9.4 |
 
 **Tool-protocol codes** — a different channel, and consumers must not confuse the two. These
