@@ -2031,6 +2031,20 @@ Proven to fail before being trusted: against a fixture carrying a stale `⎇ mai
 `~/code/acme-web`, and an Engram string missing its verb glyph, it reports all three and exits 1.
 With no binary, or with an empty item list, it exits 2 — never a clean report it did not earn.
 
+**Reviewing it caught a bug in it.** `dotnet run` writes restore and build chatter to *stdout*, not
+stderr, so the fallback path would have handed `jq` MSBuild output with the JSON glued to it. Local
+testing used a stub binary and never went near that path. Fixed by quieting the build and keeping
+everything from the first line that opens the object — deliberately not `tail -1`, which works only
+while the serializer emits one line and would break silently-to-the-reader the day anyone sets
+`WriteIndented`.
+
+**Still unverified: the `dotnet run` path has never actually run.** No binary has been built in this
+tree (the implementor holds uncommitted work in `src/` and building would race it), and CI has never
+executed at all — Actions billing is blocked, which is why `main` shows a meaningless red ✗. So the
+extraction logic is tested against both single-line and pretty-printed JSON with chatter prepended,
+but the real invocation is not. It fails loudly (exit 2) rather than passing vacuously if it is
+wrong, which is the property worth having until someone can run it.
+
 **Its first run against the real tree flagged this file, and the flag was wrong.** The passage above
 recording that `"example": "⎇ main"` had been removed is a sentence *about* a retired value, not a
 claim that it renders. Correct by the letter, wrong by the point — and a check that forbids a

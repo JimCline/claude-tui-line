@@ -67,7 +67,14 @@ if [[ -n "${CLAUDE_TUI_LINE_BIN:-}" ]]; then
     [[ -x "$CLAUDE_TUI_LINE_BIN" ]] || die "CLAUDE_TUI_LINE_BIN is set to '$CLAUDE_TUI_LINE_BIN', which is not executable."
     items_json=$("$CLAUDE_TUI_LINE_BIN" --items --json 2>/dev/null)
 elif command -v dotnet >/dev/null 2>&1; then
-    items_json=$(dotnet run --project src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release -- --items --json 2>/dev/null)
+    # `dotnet run` writes restore and build chatter to STDOUT, not stderr, so redirecting
+    # stderr alone would hand jq MSBuild output with the JSON glued to the front of it.
+    # Quiet the build, then keep everything from the first line that opens the object.
+    # Deliberately not `tail -1`: that works only while the serializer emits one line, and
+    # would break the day anyone sets WriteIndented — for a reason nobody would look for
+    # here. MSBuild does not emit a line beginning with `{`.
+    items_json=$(dotnet run --project src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release \
+        --nologo -v quiet -- --items --json 2>/dev/null | sed -n '/^[[:space:]]*{/,$p')
 else
     die "no binary. Set CLAUDE_TUI_LINE_BIN, or install the .NET SDK so this can build one."
 fi
