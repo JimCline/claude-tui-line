@@ -2145,6 +2145,58 @@ non-nullable `Color`, and `{default, dim, bold}` empirically resolve to `Color.D
 sixteen names do not. The section's "confirm this before relying on it" line is now discharged, and
 by evidence rather than by agreement.
 
+### The bare form of a command is unspecified until someone rules on it — three for three
+
+`--items`, `--colors`, and `--preview` each specified a JSON envelope and left the bare form to
+whoever implemented it first. Three sections now exist because of that (§9.6.2.2, §9.6.3.1,
+§9.3.2), and the third was caught only because the second had just been written.
+
+`--preview` was the sharp one, and I created its risk myself. Having ruled that bare `--colors`
+auto-detects and loses its colour under a pipe, I sent that to the implementor as a ruling rather
+than as the output of a test — and they were an hour from applying it, correctly and by analogy, to
+`--preview`, where it is wrong.
+
+The test §9.6.3.1 applies without naming: **a form may degrade only while some other form still
+carries the whole payload.**
+
+- `--colors`: `--json` carries the names, which are the whole payload. Degrade.
+- `--preview`: §9.8.1 pins `rows[]` as `{text, width}` — plain, deliberately, because `text` is the
+  diffable form. Degrade the bare form too and *no* form carries styling to a non-terminal caller.
+  Which is every caller that matters: `/edit`, `/migrate`, and the MCP tools all capture through a
+  harness. "Colour it by value" is among the most common `/edit` requests.
+
+Ruled: `--preview` uses **the render path's console configuration itself**, not a matching one —
+§1's rule, and it disposes of `NO_COLOR` and everything like it without the section needing to know
+what any of them do. `migrate.md` step 6 had been assuming escapes since it was written, which is
+the tell that the behaviour needed a ruling.
+
+Then the same test, applied a third time, said *unstyled* for the MCP `preview` tool (§12.6.10) —
+its consumer relays to a chat surface where escapes are noise in the middle of a sentence, so
+nothing is lost that the channel could have carried. One principle, three commands, three different
+answers, no exceptions claimed.
+
+### `preview` over MCP could not report a dropped pane at all
+
+§12.6.9 argues for four paragraphs that the tool must return `diagnostics[]`, because §7 makes a
+bad config render silently degraded and "the preview looked right" is otherwise evidence for a
+config `set_config` will reject. Every word applies to render notes; none of it was applied to
+them. §9.8.1's separation rule — a note never appears in `diagnostics` — meant the information was
+not degraded but absent.
+
+`notes[]` added, **per render rather than per response**: §12.6.3 renders at 80 and 60 by default,
+so a response-level array cannot say which width dropped the pane, which is the note's whole
+content. Diagnostics are width-independent and stay at the response level. A `maxLines` cap is
+width-independent and therefore appears in every render's list — the same three copies the CLI
+already prints across three widths, and one finding rather than three.
+
+### The wrong-citation habit paid on first use
+
+§13.3 now prescribes reading the *title* of a cited heading, not just confirming the number
+resolves. Applied once, it found two wrong citations in §9.6.3.1 — both `§2`, both for things §9's
+own bullet list says outright, neither newly written, both passing `check-citations.sh` the whole
+time. Cheapness is the property: it costs nothing, so it gets done on citations nobody suspects,
+and an unsuspected citation is the only kind this hides in.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
