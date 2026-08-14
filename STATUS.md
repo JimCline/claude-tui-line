@@ -335,7 +335,7 @@ The pass stopped being bookkeeping and started finding things.
   request, and `:141` reallocates from the reduced set, bounded at `MaxPasses = 3`. So the loop
   can once again produce a shrinking re-measurement — the thing the banner-to-text deletion had
   removed the only source of. §2.8 now says so.
-  - **Still owed, and now recorded rather than assumed:** §10.6's fixpoint tests drive the loop
+  - **Still owed, and now recorded rather than assumed:** §10 requirement 6's fixpoint tests drive the loop
     through `measureOverride`, so they certify the monotone clamp and the pass cap **against a
     stub**. Nothing yet asserts that the *real* measurement frees six columns at `COLUMNS=112`.
     A defect can be fixed and its test still be measuring something else.
@@ -1511,7 +1511,7 @@ other three.
   `content` pane at the width min-rows deliberately granted it, shrinks it to its longest wrapped
   row, and the monotone clamp makes that permanent — **the surface comes out taller than the `T`
   the search proved achievable**, with every pane still individually legal. Stated as the property:
-  exactly one width-resolution policy runs per split. Also found the seam gap this implies — §10.6's
+  exactly one width-resolution policy runs per split. Also found the seam gap this implies — §10 requirement 6's
   three fixpoint tests reach the resolver through `measureOverride`, which the min-rows path does
   not take, so none of them can run against it. Task #25, with `minWidth`'s missing upper bound
   (it is `R`, never intrinsic — a `content` pane narrower than its content is exactly what the
@@ -1606,7 +1606,7 @@ Last unwalked stretch. Every section of the spec has now been walked.
   nowhere. Frequency of citation is *negatively* correlated with the chance anyone checks. The
   single-citation dangle is the one a reader would most likely have caught.
 
-  §7 and §2.9 fixed in place. §10.6 and §4.3 plus a three-line CI check are task #28 — and the
+  §7 and §2.9 fixed in place. `§10.6` and §4.3 plus a three-line CI check are task #28 — and the
   check is the point, because all four survived many careful readings: prose citing a section reads
   correctly whether or not the section is there.
 
@@ -1686,7 +1686,7 @@ Three things worth keeping from closing the four:
   items were introduced inside §3.2's hyperlink example, reading as part of linking rather than as
   one of §9.6.2's four item kinds → promoted to a real §4.3, which is what the single citation was
   already describing.
-- **§10.6 reversed my own earlier ruling.** The first draft of §13.3 said to promote §10's bullets
+- **`§10.6` reversed my own earlier ruling.** The first draft of §13.3 said to promote §10's bullets
   to subsections rather than rewrite the citations, on the principle that bullets renumber silently
   while headings are visible when they move. The principle holds; the application was wrong —
   **§10.1 already exists as a heading and is not bullet 1**, so promoting would have given `§10.1`
@@ -1765,7 +1765,7 @@ Relocated to **v2 §14**, moved rather than copied, with §14.4 recording the ge
 
 Also fixed on the way through: `SPEC.md` now carries a status header saying which of its rulings
 still stand and that new rules do not go there; the README's Contributing section names all three
-documents and their standing; and STATUS.md's own citation of "SPEC.md §10.2" is gone — v1's §10 is
+documents and their standing; and STATUS.md's own citation of `SPEC.md §10.2` is gone — v1's §10 is
 a bare numbered list with no subsections, so `§10.2` was the same §10.N ambiguity §13.3 ruled on,
 one document over.
 
@@ -2314,6 +2314,61 @@ off — the failure mode `check-examples.sh`'s own header argues against, where 
 notch too wide costs the check itself. The fenced-key pass is nearly exact and worth revisiting
 **once Phase 5 and Phase 7 land**, because at that point its expected output is genuinely empty and
 an allowlist stops being needed. Recorded as the condition rather than the intention.
+
+### The citation check had been reading one file and reporting as though it read the project
+
+`check-citations.sh` printed "all 81 cited sections resolve" on every run since #28 closed. That
+sentence sounds like a claim about the documentation; it was a claim about
+`SPEC-V2-FRAMEWORK.md`, which was the only file it ever opened. Same shape as the two other
+findings this session and as defect 15: **an authority that does not cover what everyone assumes
+it covers.** Nobody misread the code — the report was read instead of the code, and the report was
+worded for the wider claim.
+
+Widened to every tracked markdown file. Headings still come from the spec alone, because the spec
+is the only place a section is *defined*; what changed is who may cite one. It now reports
+`all 89 cited sections resolve (9 files)` — the file count is in the line precisely so the
+next version of this failure is visible from the output.
+
+The unread files were the expensive ones. `commands/*.md` are followed by an LLM at runtime, so
+`§9.8.1` written where `§9.8` was meant sends it to read the wrong rule during somebody's real
+migration, not during a review where a wrong number is cheap. Those came back clean; STATUS.md
+did not.
+
+**Five dangling references, all in STATUS.md, all `§10.6` or `§10.2`.** §10 has exactly one
+subsection heading. Task #28 closed `§10.6` by *rewriting the spec's citations* to "§10
+requirement 6" rather than by promoting §10's bullets to subsections — and STATUS.md's own copies
+of the number were never rewritten with them, because nothing was reading STATUS.md. Two
+(`:338`, `:1514`) were live references pointing at a section deliberately never created, and are
+now "§10 requirement 6". Three (`:1609`, `:1689`, `:1768`) are this document discussing the
+dangling numbers themselves, and are now backticked — the accommodation the script's own header
+already describes for §13.3, and the same one `check-examples.sh` rule A makes for STATUS.md
+quoting a retired value.
+
+`SPEC.md` stays excluded, deliberately: it is superseded v1 under a different numbering scheme, so
+checking it would report dozens of references that are correct in their own document, and a
+permanently red check is a check nobody runs.
+
+### `tools/check-docs.sh` — one thing to run, short enough not to pipe
+
+The habit while working was `./tools/check-counts.sh | tail -2 && git commit …`. A bash pipeline's
+exit status is its **last** command's, `tail` always succeeds, and so commit `576675b` went out
+over a real failure ("STATUS.md:2292: says 35, lists 4"). That is exactly the defect
+`check-examples.sh`'s header warns about — a check reporting clean because nothing read its answer
+— committed by the person who wrote the warning.
+
+The durable fix is not remembering `set -o pipefail`. It is having one command whose whole output
+is two lines, so there is no reason to pipe it anywhere. `check-docs.sh` runs check-citations and
+check-counts, runs **all** of them even after one fails so a single pass reports every
+disagreement, and exits nonzero if any did.
+
+`check-examples.sh` is deliberately *not* in it: that one needs a built binary and lives in CI's
+`build` job after the tests for that reason. Folding it in would mean this script either fails on a
+machine mid-build or — far worse — learns to skip itself when it cannot find a binary. A check that
+can silently downgrade to a pass is the thing all three of these exist to prevent.
+
+CI was left alone. `.github/workflows/ci.yml` invokes the three checks as separate steps and
+already checks each exit status correctly; the defect was in the local invocation habit, not in the
+pipeline.
 
 ## Standing constraints
 
