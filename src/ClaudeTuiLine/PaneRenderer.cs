@@ -10,7 +10,7 @@ namespace ClaudeTuiLine;
 /// </summary>
 public static class PaneRenderer
 {
-    public static PaneBuffer RenderLeaf(IReadOnlyList<Segment> items, int? innerWidth, OverflowMode overflow, string ellipsis, bool allowFallback = true)
+    public static PaneBuffer RenderLeaf(IReadOnlyList<Segment> items, int? innerWidth, OverflowMode overflow, string ellipsis, RenderNoteCollector notes, bool allowFallback = true)
     {
         if (innerWidth is not int width)
         {
@@ -23,7 +23,16 @@ public static class PaneRenderer
         var prepared = overflow switch
         {
             OverflowMode.Truncate => items
-                .Select(s => s.Plain.Length > width ? TruncateSegment(s, width, ellipsis) : s)
+                .Select(s =>
+                {
+                    if (s.Plain.Length <= width)
+                    {
+                        return s;
+                    }
+
+                    notes.Add($"segment truncated to fit {width} columns");
+                    return TruncateSegment(s, width, ellipsis);
+                })
                 .ToList(),
             OverflowMode.Wrap => items
                 .SelectMany(s => s.Plain.Length > width ? WrapSegment(s, width) : new List<Segment> { s })

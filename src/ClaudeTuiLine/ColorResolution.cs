@@ -165,4 +165,19 @@ public static class ColorResolution
         var trimmed = spec.Trim();
         return trimmed.Length > 0 && Style.TryParse(trimmed, out var style) ? style.Foreground : (Color?)null;
     }
+
+    /// <summary>
+    /// STATUS.md's empirically-verified core sixteen: the ANSI standard palette, closed by the
+    /// standard itself rather than by this library's version. §6.2.1's minimum-colour-system check
+    /// and §9.6.3's <c>--colors</c> output both need exactly this set — one constant, two consumers,
+    /// hand-maintained here only because it cannot drift out from under a library upgrade the way
+    /// Spectre's much larger 256-name palette could.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> StandardColorNames = new HashSet<string>(
+        new[]
+        {
+            "black", "maroon", "green", "olive", "navy", "purple", "teal", "silver",
+            "grey", "red", "lime", "yellow", "blue", "fuchsia", "aqua", "white",
+        },
+        StringComparer.OrdinalIgnoreCase);
 }

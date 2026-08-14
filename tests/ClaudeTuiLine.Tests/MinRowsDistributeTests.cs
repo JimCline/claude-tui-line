@@ -83,8 +83,8 @@ public class MinRowsDistributeTests
     // under test.
     private static int RowsAt(Pane candidate, int outerWidth, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens)
     {
-        var resolved = SizeResolver.Resolve(candidate, outerWidth, Ctx, values);
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, tokens);
+        var resolved = SizeResolver.Resolve(candidate, outerWidth, Ctx, values, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, tokens, new RenderNoteCollector());
         return rendered.Buffer.Rows.Count;
     }
 
@@ -117,7 +117,7 @@ public class MinRowsDistributeTests
             bestScore = Math.Min(bestScore, Math.Max(rows1, rows2));
         }
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
         var achievedRows1 = RowsAt(left, resolved.Children[0].OuterWidth, values, topLevel.Colors);
         var achievedRows2 = RowsAt(right, resolved.Children[1].OuterWidth, values, topLevel.Colors);
         var achievedScore = Math.Max(achievedRows1, achievedRows2);
@@ -148,7 +148,7 @@ public class MinRowsDistributeTests
             bestScore = Math.Min(bestScore, Math.Max(rows1, rows2));
         }
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
         var achievedRows1 = RowsAt(left, resolved.Children[0].OuterWidth, values, topLevel.Colors);
         var achievedRows2 = RowsAt(right, resolved.Children[1].OuterWidth, values, topLevel.Colors);
         var achievedScore = Math.Max(achievedRows1, achievedRows2);
@@ -164,7 +164,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
 
         SizeResolver.MinRowsPackerInvocationCount = 0;
-        SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
         var count = SizeResolver.MinRowsPackerInvocationCount;
 
         _output.WriteLine($"min-rows packer invocations for the live two-pane config at COLUMNS=112: {count}");

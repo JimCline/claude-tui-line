@@ -27,7 +27,7 @@ public class SizeResolverFixpointTests
     {
         var root = Split(Leaf("fill"), Leaf("content"));
         return SizeResolver.Resolve(root, 50, Ctx, new Dictionary<string, string?>(),
-            (p, granted) => p.Size == "content" ? contentRequest(granted) : 0);
+            (p, granted) => p.Size == "content" ? contentRequest(granted) : 0, new RenderNoteCollector());
     }
 
     [Fact]

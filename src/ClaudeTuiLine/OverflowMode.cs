@@ -32,4 +32,11 @@ public static class OverflowModeParsing
         "overflow" => OverflowMode.Overflow,
         _ => null,
     };
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, both of which <see cref="Parse"/> maps to null. §9.4's
+    /// config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && Parse(value) is null;
 }

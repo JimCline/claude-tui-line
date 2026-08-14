@@ -35,16 +35,16 @@ public class PositionIndependenceTests
     {
         // "Root of an 80-col surface": the inner width a root pane would resolve to from an
         // 80-column surface at this fixture's chrome/border reserve.
-        var asRoot = PaneRenderer.RenderLeaf(RootItems, innerWidth: 24, overflow, "…");
+        var asRoot = PaneRenderer.RenderLeaf(RootItems, innerWidth: 24, overflow, "…", new RenderNoteCollector());
 
         // An unrelated pane at a different width, rendered in between — if RenderLeaf held any
         // shared/static state, this would corrupt the next call.
-        var unrelated = PaneRenderer.RenderLeaf(UnrelatedSiblingItems, innerWidth: 60, overflow, "…");
+        var unrelated = PaneRenderer.RenderLeaf(UnrelatedSiblingItems, innerWidth: 60, overflow, "…", new RenderNoteCollector());
 
         // "3rd child of a split inside a 200-col surface" (splits aren't wired in Phase 2, so this
         // is constructed directly): a different surrounding surface, but the SAME resolved inner
         // width for this particular child.
-        var asSplitChild = PaneRenderer.RenderLeaf(RootItems, innerWidth: 24, overflow, "…");
+        var asSplitChild = PaneRenderer.RenderLeaf(RootItems, innerWidth: 24, overflow, "…", new RenderNoteCollector());
 
         Assert.Equal(asRoot.Rows.Select(r => r.Markup), asSplitChild.Rows.Select(r => r.Markup));
         Assert.Equal(asRoot.Rows.Select(r => r.Width), asSplitChild.Rows.Select(r => r.Width));

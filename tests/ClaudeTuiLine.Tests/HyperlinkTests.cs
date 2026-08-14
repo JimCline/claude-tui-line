@@ -22,7 +22,7 @@ public class HyperlinkTests
         var markup = OscHyperlink.Wrap(url, Markup.Escape(text));
         var segment = new Segment(markup, text);
 
-        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 30, OverflowMode.Wrap, "…");
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 30, OverflowMode.Wrap, "…", new RenderNoteCollector());
 
         Assert.Equal(3, buffer.Rows.Count);
         foreach (var row in buffer.Rows)
@@ -43,7 +43,7 @@ public class HyperlinkTests
         // width=10 is below RowLayout.MinUsableWidth(20), so RenderLeaf's per-chunk wrap
         // pre-pass still runs (producing 3 self-contained link chunks, as above at width=30),
         // but RowLayout.Wrap's own fallback then collapses them onto one overwide row.
-        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Wrap, "…");
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Wrap, "…", new RenderNoteCollector());
 
         Assert.Single(buffer.Rows);
         var row = buffer.Rows[0].Markup;
@@ -80,7 +80,7 @@ public class HyperlinkTests
         var coloredMarkup = $"[green]{Markup.Escape(text)}[/]";
         var segment = new Segment(OscHyperlink.Wrap(url, coloredMarkup), text);
 
-        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 30, OverflowMode.Wrap, "…");
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 30, OverflowMode.Wrap, "…", new RenderNoteCollector());
 
         Assert.True(buffer.Rows.Count > 1, "fixture must actually wrap across multiple rows to exercise reopening");
         foreach (var row in buffer.Rows)
@@ -99,7 +99,7 @@ public class HyperlinkTests
         var text = new string('C', 20);
         var segment = new Segment(OscHyperlink.Wrap(url, Markup.Escape(text)), text);
 
-        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Truncate, "…");
+        var buffer = PaneRenderer.RenderLeaf(new[] { segment }, 10, OverflowMode.Truncate, "…", new RenderNoteCollector());
 
         Assert.Single(buffer.Rows);
         var row = buffer.Rows[0].Markup;
@@ -237,8 +237,8 @@ public class HyperlinkTests
         var ctx = new ItemContext(new StatusInput(), gitBranch: null, engram: null, remoteUrlProbe: () => url);
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values);
-        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector());
 
         var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings
@@ -310,8 +310,8 @@ public class HyperlinkTests
 
         Assert.Equal(remoteUrl, values.GetValueOrDefault("remote-url"));
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values);
-        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector());
 
         var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings

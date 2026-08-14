@@ -15,20 +15,21 @@ public static class PaneAssembler
         int innerWidth,
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
-        IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens)
+        IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        RenderNoteCollector notes)
     {
         var rawRows = pane.Items.Count == 0
-            ? RenderDefaultRows(pane, innerWidth, ctx)
-            : RenderItemRows(pane, innerWidth, ctx, values, tokens);
+            ? RenderDefaultRows(pane, innerWidth, ctx, notes)
+            : RenderItemRows(pane, innerWidth, ctx, values, tokens, notes);
 
         return rawRows.Select(row => AlignRow(row, innerWidth, pane.Align)).ToList();
     }
 
-    private static IReadOnlyList<PaneRow> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx)
+    private static IReadOnlyList<PaneRow> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx, RenderNoteCollector notes)
     {
         var segments = SegmentBuilder.Build(ctx);
         var overflow = ResolveOverflow(pane);
-        var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, pane.Ellipsis, allowFallback: false);
+        var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, pane.Ellipsis, notes, allowFallback: false);
         return buffer.Rows;
     }
 
@@ -37,7 +38,8 @@ public static class PaneAssembler
         int innerWidth,
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
-        IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens)
+        IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        RenderNoteCollector notes)
     {
         var overflow = ResolveOverflow(pane);
         var rows = new List<PaneRow>();
@@ -50,7 +52,7 @@ public static class PaneAssembler
                 return;
             }
 
-            var buffer = PaneRenderer.RenderLeaf(packedGroup, innerWidth, overflow, pane.Ellipsis, allowFallback: false);
+            var buffer = PaneRenderer.RenderLeaf(packedGroup, innerWidth, overflow, pane.Ellipsis, notes, allowFallback: false);
             rows.AddRange(buffer.Rows);
             packedGroup.Clear();
         }

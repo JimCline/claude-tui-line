@@ -63,7 +63,7 @@ public class SplitAcceptanceTests
         var surfaceWidth = SurfaceLayout.ComputeWidth(columns, topLevel.ChromeReserve);
         Assert.True(surfaceWidth is int, "the acceptance config must produce a real surface width");
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        return SizeResolver.Resolve(pane, surfaceWidth!.Value, Ctx, values);
+        return SizeResolver.Resolve(pane, surfaceWidth!.Value, Ctx, values, new RenderNoteCollector());
     }
 
     [Fact]
@@ -80,9 +80,9 @@ public class SplitAcceptanceTests
         var (topLevel, pane) = LoadAcceptanceConfig();
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
 
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors);
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
 
         Assert.All(rendered.Buffer.Rows, r =>
         {
@@ -97,9 +97,9 @@ public class SplitAcceptanceTests
         var (topLevel, pane) = LoadAcceptanceConfig();
         var surfaceWidth = SurfaceLayout.ComputeWidth("60", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
 
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors);
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
 
         Assert.All(rendered.Buffer.Rows, r =>
         {
@@ -121,7 +121,7 @@ public class SplitAcceptanceTests
         var expectedCap = surfaceWidth - pane.Gutter - fillFloor;
 
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
         var right = resolved.Children[1];
 
         Assert.True(right.OuterWidth <= expectedCap,
@@ -141,7 +141,7 @@ public class SplitAcceptanceTests
         var passOneCap = surfaceWidth - pane.Gutter - fillFloor;
 
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
         var right = resolved.Children[1];
 
         Assert.True(right.OuterWidth < passOneCap,
@@ -161,7 +161,7 @@ public class SplitAcceptanceTests
         var fillFloor = RowLayout.MinUsableWidth + PaneBorderRenderer.BorderReserve;
 
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
         var left = resolved.Children[0];
 
         Assert.True(left.OuterWidth > fillFloor,
@@ -187,8 +187,8 @@ public class SplitAcceptanceTests
         var (topLevel, pane) = LoadAcceptanceConfig();
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values);
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
 
         var surfaceRowCount = rendered.Buffer.Rows.Count;
         var rightPane = resolved.Children[1];

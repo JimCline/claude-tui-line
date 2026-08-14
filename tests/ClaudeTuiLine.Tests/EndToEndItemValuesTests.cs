@@ -51,8 +51,8 @@ public class EndToEndItemValuesTests
             pane, ctx, topLevel.Colors, rawStdinJson: null, cacheDir: Path.GetTempPath());
 
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values);
-        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector());
 
         var plainText = string.Join('\n', rendered.Buffer.Rows.Select(r => Markup.Remove(r.Markup)));
 

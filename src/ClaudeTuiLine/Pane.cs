@@ -27,12 +27,22 @@ public enum PaneValign
 
 public static class PaneValignParsing
 {
-    public static PaneValign Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static PaneValign? ParseCore(string? value) => value?.Trim().ToLowerInvariant() switch
     {
+        "top" => PaneValign.Top,
         "middle" => PaneValign.Middle,
         "bottom" => PaneValign.Bottom,
-        _ => PaneValign.Top,
+        _ => null,
     };
+
+    public static PaneValign Parse(string? value) => ParseCore(value) ?? PaneValign.Top;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, which also defaults to <see cref="PaneValign.Top"/>. §9.4's
+    /// config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && ParseCore(value) is null;
 }
 
 /// <summary>SPEC-V2-FRAMEWORK.md §3.1: horizontal alignment of a pane's content within its own width.</summary>
@@ -45,12 +55,22 @@ public enum PaneAlign
 
 public static class PaneAlignParsing
 {
-    public static PaneAlign Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static PaneAlign? ParseCore(string? value) => value?.Trim().ToLowerInvariant() switch
     {
+        "left" => PaneAlign.Left,
         "center" => PaneAlign.Center,
         "right" => PaneAlign.Right,
-        _ => PaneAlign.Left,
+        _ => null,
     };
+
+    public static PaneAlign Parse(string? value) => ParseCore(value) ?? PaneAlign.Left;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, which also defaults to <see cref="PaneAlign.Left"/>. §9.4's
+    /// config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && ParseCore(value) is null;
 }
 
 /// <summary>
@@ -67,11 +87,21 @@ public enum PaneDistribute
 
 public static class PaneDistributeParsing
 {
-    public static PaneDistribute Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static PaneDistribute? ParseCore(string? value) => value?.Trim().ToLowerInvariant() switch
     {
+        "greedy" => PaneDistribute.Greedy,
         "min-rows" => PaneDistribute.MinRows,
-        _ => PaneDistribute.Greedy,
+        _ => null,
     };
+
+    public static PaneDistribute Parse(string? value) => ParseCore(value) ?? PaneDistribute.Greedy;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched neither recognized token —
+    /// distinct from an absent field, which also defaults to <see cref="PaneDistribute.Greedy"/>.
+    /// §9.4's config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && ParseCore(value) is null;
 }
 
 /// <summary>

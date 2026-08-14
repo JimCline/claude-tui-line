@@ -36,9 +36,9 @@ public static class ItemValueResolver
         ItemContext ctx,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens = null)
     {
-        var items = new List<(PaneItem Item, bool Eligible)>();
-        var colorExprs = new List<ColorResolution.ColorExpr>();
-        Walk(root, items, colorExprs);
+        var items = new List<ScanEntry>();
+        var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
+        Walk(root, "", items, colorExprs);
 
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var id in CollectIds(items, colorExprs, tokens))
@@ -67,9 +67,9 @@ public static class ItemValueResolver
         string? rawStdinJson,
         string cacheDir)
     {
-        var items = new List<(PaneItem Item, bool Eligible)>();
-        var colorExprs = new List<ColorResolution.ColorExpr>();
-        Walk(root, items, colorExprs);
+        var items = new List<ScanEntry>();
+        var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
+        Walk(root, "", items, colorExprs);
 
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         var commandTasks = new List<(string Id, Task<string?> Task)>();
@@ -99,29 +99,37 @@ public static class ItemValueResolver
         return values;
     }
 
-    private static void Walk(Pane pane, List<(PaneItem Item, bool Eligible)> items, List<ColorResolution.ColorExpr> colorExprs)
+    // §9.4/§9.5: the JSON-Pointer path each entry was found at, alongside the same (Item, Eligible)
+    // pair Walk always tracked — production ignores Path (every call site here passes "" as the
+    // root and never reads it back), but it lets ScanReferences below reuse this exact walk instead
+    // of a second traversal of the config tree.
+    private readonly record struct ScanEntry(PaneItem Item, bool Eligible, string Path);
+
+    private static void Walk(Pane pane, string path, List<ScanEntry> items, List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs)
     {
-        colorExprs.Add(pane.Border.Color);
+        colorExprs.Add((pane.Border.Color, path + "/border/color"));
 
         var eligible = !SizeResolver.IsContentSized(pane);
-        foreach (var item in pane.Items)
+        for (var i = 0; i < pane.Items.Count; i++)
         {
-            items.Add((item, eligible));
+            var item = pane.Items[i];
+            var itemPath = $"{path}/items/{i}";
+            items.Add(new ScanEntry(item, eligible, itemPath));
             if (item.Color is { } color)
             {
-                colorExprs.Add(color);
+                colorExprs.Add((color, itemPath + "/color"));
             }
         }
 
-        foreach (var child in pane.Children)
+        for (var i = 0; i < pane.Children.Count; i++)
         {
-            Walk(child, items, colorExprs);
+            Walk(pane.Children[i], $"{path}/children/{i}", items, colorExprs);
         }
     }
 
     private readonly record struct ScanContext(
-        List<(PaneItem Item, bool Eligible)> Items,
-        List<ColorResolution.ColorExpr> ColorExprs,
+        List<ScanEntry> Items,
+        List<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? Tokens);
 
     // §5's reference forms, one extractor per form. Each returns the ids that form's config keys
@@ -147,6 +155,7 @@ public static class ItemValueResolver
 
         // An inline colour rule's explicit `from` (§6.4).
         ctx => ctx.ColorExprs
+            .Select(t => t.Expr)
             .OfType<ColorResolution.ColorExpr.Inline>()
             .Select(inline => inline.Rule.From)
             .Where(from => from is { Length: > 0 })!,
@@ -160,8 +169,8 @@ public static class ItemValueResolver
     };
 
     private static IReadOnlyList<string> CollectIds(
-        List<(PaneItem Item, bool Eligible)> items,
-        List<ColorResolution.ColorExpr> colorExprs,
+        List<ScanEntry> items,
+        List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens)
     {
         var ctx = new ScanContext(items, colorExprs, tokens);
@@ -179,6 +188,97 @@ public static class ItemValueResolver
     }
 
     /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4: every placed item, path-tagged, reusing <see cref="Walk"/> instead
+    /// of a second traversal of the pane tree. <c>--check</c>'s command-shape diagnostics (§4.1) walk
+    /// items directly rather than ids, so they do not belong on <see cref="ReferenceScan"/>.
+    /// </summary>
+    internal static IReadOnlyList<(PaneItem Item, string Path)> WalkItems(Pane root, string rootPath)
+    {
+        var items = new List<ScanEntry>();
+        var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
+        Walk(root, rootPath, items, colorExprs);
+        return items.Select(e => (e.Item, e.Path)).ToList();
+    }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4/§9.5: <c>--check</c>'s id diagnostics, derived from the exact same
+    /// reference forms as <see cref="ReferenceExtractors"/> — a form is taught to one place, not two
+    /// — but path-tagged instead of flattened, since a diagnostic needs to say where the bad
+    /// reference lives, not just that one exists somewhere. A placed entry's own declared
+    /// <see cref="PaneItem.Id"/> (command or derived) is never itself a reference to validate —
+    /// nothing looks it up, it defines it — so it is reported back separately as
+    /// <see cref="ReferenceScan.SelfDeclaredIds"/> rather than as an <see cref="IdReference"/>.
+    /// <paramref name="rootPath"/> is <c>/surface/pane</c> when a surface pane tree is configured,
+    /// or <c>""</c> for the implicit single-root-pane-from-top-level-items case (§8), whose items
+    /// live at <c>/items/N</c> instead.
+    /// </summary>
+    internal static ReferenceScan ScanReferences(Pane root, string rootPath, IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens)
+    {
+        var items = new List<ScanEntry>();
+        var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
+        Walk(root, rootPath, items, colorExprs);
+
+        var references = new List<IdReference>();
+        var colorTokenReferences = new List<ColorTokenReference>();
+        var selfDeclared = new HashSet<string>(StringComparer.Ordinal);
+        var derivedItemIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var entry in items)
+        {
+            if (entry.Item.Id is { Length: > 0 } ownId)
+            {
+                selfDeclared.Add(ownId);
+                if (entry.Item.From is { Length: > 0 })
+                {
+                    derivedItemIds.Add(ownId);
+                }
+            }
+            else if (entry.Item.Item is { Length: > 0 } selector)
+            {
+                references.Add(new IdReference(selector, entry.Path + "/item", ReferenceForm.ItemSelector));
+            }
+
+            if (entry.Item.From is { Length: > 0 } from)
+            {
+                references.Add(new IdReference(from, entry.Path + "/from", ReferenceForm.DerivedFrom));
+            }
+
+            if (entry.Item.Link is { Length: > 0 } link)
+            {
+                foreach (var placeholder in LeafContent.LinkPlaceholderIds(link))
+                {
+                    references.Add(new IdReference(placeholder, entry.Path + "/link", ReferenceForm.LinkPlaceholder));
+                }
+            }
+        }
+
+        foreach (var (expr, path) in colorExprs)
+        {
+            if (expr is ColorResolution.ColorExpr.Inline inline && inline.Rule.From is { Length: > 0 } ruleFrom)
+            {
+                references.Add(new IdReference(ruleFrom, path + "/from", ReferenceForm.ColorFrom));
+            }
+            else if (expr is ColorResolution.ColorExpr.TokenRef tokenRef)
+            {
+                colorTokenReferences.Add(new ColorTokenReference(tokenRef.Name, path));
+            }
+        }
+
+        if (tokens is not null)
+        {
+            foreach (var (name, rule) in tokens)
+            {
+                if (rule.From is { Length: > 0 } tokenFrom)
+                {
+                    references.Add(new IdReference(tokenFrom, $"/colors/{name}/from", ReferenceForm.ColorFrom));
+                }
+            }
+        }
+
+        return new ReferenceScan(references, selfDeclared, derivedItemIds, colorTokenReferences, colorExprs);
+    }
+
+    /// <summary>
     /// SPEC-V2-FRAMEWORK.md §8: computes every derived item's (<see cref="PaneItem.From"/>) value
     /// from a snapshot of <paramref name="values"/> taken before any derived result is written
     /// back, then merges all of them in afterward. This makes chaining — a derived item's
@@ -186,13 +286,14 @@ public static class ItemValueResolver
     /// than merely discouraged: regardless of declaration order, every derived item can only ever
     /// see a builtin/command value.
     /// </summary>
-    private static void ResolveDerived(List<(PaneItem Item, bool Eligible)> items, Dictionary<string, string?> values)
+    private static void ResolveDerived(List<ScanEntry> items, Dictionary<string, string?> values)
     {
         var snapshot = new Dictionary<string, string?>(values, StringComparer.Ordinal);
         var derived = new List<(string Id, string? Value)>();
 
-        foreach (var (item, _) in items)
+        foreach (var entry in items)
         {
+            var item = entry.Item;
             if (item.From is not { Length: > 0 } from || item.Id is not { Length: > 0 } id)
             {
                 continue;
@@ -231,11 +332,84 @@ public static class ItemValueResolver
         return match.Groups.Count > 1 ? match.Groups[1].Value : match.Value;
     }
 
-    // §8: any case value other than "upper"/"lower" passes the text through unchanged.
-    private static string ApplyCase(string value, string? caseMode) => caseMode?.ToLowerInvariant() switch
+    private enum CaseMode { Upper, Lower }
+
+    private static CaseMode? ParseCaseMode(string? value) => value?.Trim().ToLowerInvariant() switch
     {
-        "upper" => value.ToUpperInvariant(),
-        "lower" => value.ToLowerInvariant(),
+        "upper" => CaseMode.Upper,
+        "lower" => CaseMode.Lower,
+        _ => null,
+    };
+
+    // §8: any case value other than "upper"/"lower" passes the text through unchanged.
+    private static string ApplyCase(string value, string? caseMode) => ParseCaseMode(caseMode) switch
+    {
+        CaseMode.Upper => value.ToUpperInvariant(),
+        CaseMode.Lower => value.ToLowerInvariant(),
         _ => value,
     };
+
+    /// <summary>
+    /// True when <paramref name="caseMode"/> was present but is neither "upper" nor "lower" —
+    /// distinct from an absent value, both of which <see cref="ApplyCase"/> passes through
+    /// unchanged. §9.4's config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    internal static bool IsUnrecognizedCase(string? caseMode) => !string.IsNullOrWhiteSpace(caseMode) && ParseCaseMode(caseMode) is null;
 }
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §9.4.1: which of §5's reference forms an <see cref="IdReference"/> came
+/// from — severity groups by what a dangling reference costs the config, not by syntax:
+/// <see cref="ItemSelector"/> and <see cref="DerivedFrom"/> delete the item outright (error,
+/// <c>unknown-item-id</c>); <see cref="LinkPlaceholder"/> and <see cref="ColorFrom"/> (an inline
+/// rule's or a <c>colors</c>-table token's <c>from</c> alike) degrade to plain text or a fallback
+/// colour (warning). An <c>@name</c> colour reference is a distinct namespace — a <c>colors</c>-table
+/// key, not an item id — and is therefore not a <see cref="ReferenceForm"/>/<see cref="IdReference"/>
+/// at all; see <see cref="ColorTokenReference"/>.
+/// </summary>
+internal enum ReferenceForm
+{
+    ItemSelector,
+    DerivedFrom,
+    LinkPlaceholder,
+    ColorFrom,
+}
+
+/// <summary>
+/// One item-id reference found by <see cref="ItemValueResolver.ScanReferences"/> — always an item
+/// id, tagged with where it lives (a JSON Pointer) and which config construct it came from.
+/// <c>--check</c> (§9.4) needs both to place a diagnostic and to pick its severity, since §9.4.1
+/// makes severity a per-form question, not a single verdict for "unknown id". A <c>colors</c>-table
+/// key (<c>@name</c>) is never one of these — see <see cref="ColorTokenReference"/> — so a lookup
+/// against <see cref="ReferenceScan.SelfDeclaredIds"/>/the item registry can never be handed the
+/// wrong namespace by mistake.
+/// </summary>
+internal readonly record struct IdReference(string Id, string Path, ReferenceForm Form);
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §6.3: one <c>@name</c> colour reference found by
+/// <see cref="ItemValueResolver.ScanReferences"/>. <see cref="Name"/> is a <c>colors</c>-table key,
+/// not an item id — a structurally different type from <see cref="IdReference"/> so a dangling-name
+/// check can never be pointed at <see cref="ReferenceScan.SelfDeclaredIds"/>/the item registry by
+/// mistake; it validates against the parsed <c>colors</c> table's own keys instead.
+/// </summary>
+internal readonly record struct ColorTokenReference(string Name, string Path);
+
+/// <summary>
+/// The result of one <see cref="ItemValueResolver.ScanReferences"/> pass: every item-id reference
+/// that needs validating (<see cref="References"/>); every <c>@name</c> colour-token reference,
+/// kept separate because it validates against a different namespace
+/// (<see cref="ColorTokenReferences"/>); every id a placed entry declares as its own (never itself
+/// invalid); which of those self-declared ids belong to a <em>derived</em> item specifically, so a
+/// <see cref="ReferenceForm.DerivedFrom"/> reference landing on one of them is
+/// <c>from-derived-source</c> (§9.4.1) rather than <c>unknown-item-id</c> — the id isn't unknown,
+/// §3.2.1 just forbids naming it as a source; and the raw, path-tagged colour expressions the same
+/// walk collected — <c>--check</c>'s colour-literal diagnostics reuse <see cref="ColorExprs"/>
+/// rather than re-walking.
+/// </summary>
+internal readonly record struct ReferenceScan(
+    IReadOnlyList<IdReference> References,
+    IReadOnlyCollection<string> SelfDeclaredIds,
+    IReadOnlyCollection<string> DerivedItemIds,
+    IReadOnlyList<ColorTokenReference> ColorTokenReferences,
+    IReadOnlyList<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs);

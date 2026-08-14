@@ -54,6 +54,15 @@ public static class CommandProvider
     private static async Task<SpawnResult?> RunAsync(
         PaneItem item, IReadOnlyList<string> command, string? rawStdinJson, string? cwd, TimeSpan timeout, int? previousPaneWidth)
     {
+        // §4.1: shell:true only ever forwards command[0] to `sh -c` — an argv of more than one
+        // element under shell:true would silently discard every element after the first and run
+        // the wrong command with no signal at all. Suppress instead, the same as any other
+        // command that cannot produce a value, so §7/--check can explain why.
+        if (item.Shell && command.Count > 1)
+        {
+            return null;
+        }
+
         var psi = new ProcessStartInfo
         {
             RedirectStandardOutput = true,

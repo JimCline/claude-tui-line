@@ -370,7 +370,7 @@ public static class ConfigLoader
         return ResolveTopLevel(config);
     }
 
-    private static ResolvedConfig ResolveTopLevel(UserConfig? config)
+    internal static ResolvedConfig ResolveTopLevel(UserConfig? config)
     {
         var resolvedBorder = ResolveBorder(config?.Border, isSplitContainer: false);
         var chromeReserve = config?.Layout?.ChromeReserve ?? DefaultChromeReserve;
@@ -380,13 +380,23 @@ public static class ConfigLoader
         return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, chromeReserve, colorSystem, colors);
     }
 
-    /// <summary>SPEC-V2-FRAMEWORK.md §6.2: unrecognized/absent values fall back to "standard", the golden-parity-preserving default.</summary>
-    private static ColorSystemSupport ParseColorSystem(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static ColorSystemSupport? ParseColorSystemCore(string? value) => value?.Trim().ToLowerInvariant() switch
     {
+        "standard" => ColorSystemSupport.Standard,
         "256" => ColorSystemSupport.EightBit,
         "truecolor" => ColorSystemSupport.TrueColor,
-        _ => ColorSystemSupport.Standard,
+        _ => null,
     };
+
+    /// <summary>SPEC-V2-FRAMEWORK.md §6.2: unrecognized/absent values fall back to "standard", the golden-parity-preserving default.</summary>
+    private static ColorSystemSupport ParseColorSystem(string? value) => ParseColorSystemCore(value) ?? ColorSystemSupport.Standard;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, which also defaults to <see cref="ColorSystemSupport.Standard"/>.
+    /// §9.4's config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    internal static bool IsUnrecognizedColorSystem(string? value) => !string.IsNullOrWhiteSpace(value) && ParseColorSystemCore(value) is null;
 
     /// <summary>SPEC-V2-FRAMEWORK.md §6.3: a table entry's <c>from</c> is required and never defaulted — left null (and so silently degrading, §7) when omitted.</summary>
     private static IReadOnlyDictionary<string, ColorResolution.ColorRule> ParseColorTable(Dictionary<string, ColorRuleJsonConfig>? colors) =>
@@ -446,12 +456,22 @@ public static class ConfigLoader
             PaneDistributeParsing.Parse(cfg.Distribute));
     }
 
-    private static PaneSplit ParseSplit(string? value) => value?.Trim().ToLowerInvariant() switch
+    private static PaneSplit? ParseSplitCore(string? value) => value?.Trim().ToLowerInvariant() switch
     {
+        "none" => PaneSplit.None,
         "horizontal" => PaneSplit.Horizontal,
         "vertical" => PaneSplit.Vertical,
-        _ => PaneSplit.None,
+        _ => null,
     };
+
+    private static PaneSplit ParseSplit(string? value) => ParseSplitCore(value) ?? PaneSplit.None;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, which also defaults to <see cref="PaneSplit.None"/>. §9.4's
+    /// config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    internal static bool IsUnrecognizedSplit(string? value) => !string.IsNullOrWhiteSpace(value) && ParseSplitCore(value) is null;
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.2: <c>split</c> and <c>children</c> must agree before a pane is
@@ -494,16 +514,7 @@ public static class ConfigLoader
         BoxBorder? style = DefaultBoxBorder;
         if (!string.IsNullOrEmpty(border?.Style))
         {
-            style = border!.Style!.ToLowerInvariant() switch
-            {
-                "rounded" => BoxBorder.Rounded,
-                "square" => BoxBorder.Square,
-                "heavy" => BoxBorder.Heavy,
-                "double" => BoxBorder.Double,
-                "ascii" => BoxBorder.Ascii,
-                "none" => null,
-                _ => DefaultBoxBorder,
-            };
+            style = BorderStyleParsing.TryParse(border!.Style!, out var parsed) ? parsed : DefaultBoxBorder;
         }
 
         if (!enabled)
@@ -558,6 +569,65 @@ public static class ConfigLoader
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.2/§9.4: unlike <see cref="TryReadConfig"/> (whose blanket
+    /// missing-or-malformed → null is deliberate for the render path, §7), <c>--check</c> and
+    /// <c>--config</c> need to tell "no file here" (fine — resolves to defaults) apart from "a file
+    /// is here and it does not parse" (exit 3 — nothing could be checked). This is that read,
+    /// reused by both.
+    /// </summary>
+    public static ConfigReadResult ReadConfigForCheck(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return new ConfigReadResult(ConfigReadStatus.NoFile, null, null);
+        }
+
+        try
+        {
+            var text = File.ReadAllText(path);
+            var config = JsonSerializer.Deserialize(text, ConfigJsonContext.Default.UserConfig);
+            return new ConfigReadResult(ConfigReadStatus.Parsed, config, null);
+        }
+        catch (Exception ex)
+        {
+            return new ConfigReadResult(ConfigReadStatus.ParseError, null, ex.Message);
+        }
+    }
+}
+
+public enum ConfigReadStatus
+{
+    NoFile,
+    Parsed,
+    ParseError,
+}
+
+public sealed record ConfigReadResult(ConfigReadStatus Status, UserConfig? Config, string? ErrorMessage);
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §2.9's five named border styles plus <c>"none"</c> (no border), the same
+/// set <see cref="ConfigLoader"/>'s border resolution has always accepted — pulled out to a named
+/// parser (mirroring <see cref="OverflowModeParsing"/>/<see cref="PaneValignParsing"/>) so <c>--check</c>
+/// can ask "was this string one of the recognized ones" through the exact same switch the loader
+/// uses, rather than a second copy of the token list.
+/// </summary>
+internal static class BorderStyleParsing
+{
+    public static bool TryParse(string value, out BoxBorder? style)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "rounded": style = BoxBorder.Rounded; return true;
+            case "square": style = BoxBorder.Square; return true;
+            case "heavy": style = BoxBorder.Heavy; return true;
+            case "double": style = BoxBorder.Double; return true;
+            case "ascii": style = BoxBorder.Ascii; return true;
+            case "none": style = null; return true;
+            default: style = null; return false;
         }
     }
 }

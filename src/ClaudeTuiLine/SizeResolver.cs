@@ -16,8 +16,8 @@ public static class SizeResolver
 
     public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children);
 
-    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values) =>
-        ResolveNode(root, outerWidth, ctx, values, measureOverride: null);
+    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes) =>
+        ResolveNode(root, outerWidth, ctx, values, measureOverride: null, notes);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §10.6's three fixpoint tests need a "content" pane whose reported
@@ -27,8 +27,8 @@ public static class SizeResolver
     /// <see cref="MeasureRequest"/> for every content-kind pane in the tree; production callers
     /// never pass it, so real rendering is unaffected.
     /// </summary>
-    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int> measureOverride) =>
-        ResolveNode(root, outerWidth, ctx, values, measureOverride);
+    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int> measureOverride, RenderNoteCollector notes) =>
+        ResolveNode(root, outerWidth, ctx, values, measureOverride, notes);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.3: <see cref="RowLayout.MinUsableWidth"/> governs viability for
@@ -51,7 +51,44 @@ public static class SizeResolver
     /// <summary>SPEC-V2-FRAMEWORK.md §4: whether a pane is "pane-width eligible" for a command item's cache stamp — a <c>content</c>-sized pane never is, since its width is a function of its own content rather than an independent layout grant.</summary>
     public static bool IsContentSized(Pane pane) => ClassifySize(pane.Size).Kind == SizeKind.Content;
 
-    private static ResolvedPane ResolveNode(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride)
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.4: whether a pane's size classifies as <see cref="SizeKind.Fill"/> —
+    /// the catch-all for <c>"fill"</c>, <c>"auto"</c>, and anything unrecognized. <c>pane-no-items</c>
+    /// needs this alongside <see cref="IsContentSized"/>: a <c>fixed</c>/<c>percent</c> pane with no
+    /// items is a deliberate spacer (§2.11) and keeps its declared extent, but a <c>content</c>/
+    /// <c>fill</c> pane with no items collapses to zero, so its declaration did nothing.
+    /// </summary>
+    internal static bool IsFillSized(Pane pane) => ClassifySize(pane.Size).Kind == SizeKind.Fill;
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10: <c>reserve(p)</c> — the width a pane itself consumes for its own
+    /// border, charged wherever that pane is measured (its own <see cref="Floor"/>/request, or a
+    /// split subtracting its own border before dividing width among children). Named so every call
+    /// site shares one definition instead of repeating the same ternary.
+    /// </summary>
+    internal static int OwnBorderReserve(Pane pane) => pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.10: what a vertical split reserves for itself before dividing width
+    /// among its <paramref name="childCount"/> children — its own <see cref="OwnBorderReserve"/>
+    /// plus the gutters between children (<c>collapse: false</c>'s arithmetic, the only kind
+    /// implemented today; each child's own edges are its own <see cref="OwnBorderReserve"/>,
+    /// already folded into that child's <see cref="Floor"/>/request, not charged again here).
+    /// Named per §9.5's rule applied to arithmetic instead of references: §9.8's "can this ever
+    /// fit" check calls this exact function rather than holding a second copy that can drift from
+    /// what the allocator below actually runs.
+    /// </summary>
+    internal static int BoundaryCost(Pane split, int childCount) => OwnBorderReserve(split) + split.Gutter * Math.Max(0, childCount - 1);
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §9.8: a pane's own declared fixed-cell size, when its <see cref="Pane.Size"/>
+    /// classifies as <see cref="SizeKind.Fixed"/> — the structural checks need this exact
+    /// classification, the same one <see cref="ClassifySize"/> already runs for the allocator, not a
+    /// second parse of the same string.
+    /// </summary>
+    internal static int? FixedSize(Pane pane) => ClassifySize(pane.Size) is { Kind: SizeKind.Fixed } spec ? spec.FixedValue : null;
+
+    private static ResolvedPane ResolveNode(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes)
     {
         if (pane.Split == PaneSplit.None || pane.Children.Count == 0)
         {
@@ -61,18 +98,18 @@ public static class SizeResolver
         if (pane.Split == PaneSplit.Horizontal)
         {
             var horizontalChildren = pane.Children
-                .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride))
+                .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride, notes))
                 .ToList();
             return new ResolvedPane(pane, outerWidth, horizontalChildren);
         }
 
         var alloc = pane.Distribute == PaneDistribute.MinRows
             ? ResolveVerticalMinRows(pane, outerWidth, ctx, values)
-            : ResolveVertical(pane, outerWidth, ctx, values, measureOverride);
+            : ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes);
         var resolvedChildren = new List<ResolvedPane>(alloc.Children.Count);
         for (var i = 0; i < alloc.Children.Count; i++)
         {
-            resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride));
+            resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride, notes));
         }
 
         return new ResolvedPane(pane, outerWidth, resolvedChildren);
@@ -80,7 +117,7 @@ public static class SizeResolver
 
     // ---- vertical axis: the graded fixpoint ----
 
-    private static AllocResult ResolveVertical(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride)
+    private static AllocResult ResolveVertical(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes)
     {
         Func<Pane, int?, int> measure = measureOverride ?? ((c, w) => MeasureRequest(c, w, ctx, values));
 
@@ -89,7 +126,7 @@ public static class SizeResolver
             .Select(c => measure(c, null))
             .ToArray();
 
-        var result = AllocateWithDrop(split, initialChildren, splitOuterWidth, requests);
+        var result = AllocateWithDrop(split, initialChildren, splitOuterWidth, requests, notes);
         requests = requests.Take(result.Children.Count).ToArray();
 
         for (var pass = 1; pass < MaxPasses; pass++)
@@ -118,7 +155,7 @@ public static class SizeResolver
             }
 
             requests = nextRequests;
-            result = AllocateWithDrop(split, result.Children, splitOuterWidth, requests);
+            result = AllocateWithDrop(split, result.Children, splitOuterWidth, requests, notes);
             requests = requests.Take(result.Children.Count).ToArray();
         }
 
@@ -154,6 +191,44 @@ public static class SizeResolver
         return new SizeSpec(SizeKind.Fill, 0, 0);
     }
 
+    /// <summary>
+    /// True when <paramref name="size"/> was present but matched none of §2.3's recognized forms
+    /// (an integer, a percent, <c>"content"</c>, <c>"fill"</c>, or <c>"auto"</c>) — distinct from an
+    /// absent field, both of which <see cref="ClassifySize"/> silently falls back to
+    /// <see cref="SizeKind.Fill"/>. §9.4's config diagnostics need this distinction; the renderer's
+    /// fallback does not.
+    /// </summary>
+    internal static bool IsUnrecognizedSize(string? size)
+    {
+        if (string.IsNullOrWhiteSpace(size))
+        {
+            return false;
+        }
+
+        var trimmed = size.Trim();
+        if (int.TryParse(trimmed, out _))
+        {
+            return false;
+        }
+
+        if (trimmed.EndsWith('%') && double.TryParse(trimmed[..^1], out _))
+        {
+            return false;
+        }
+
+        return !string.Equals(trimmed, "content", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(trimmed, "fill", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(trimmed, "auto", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// §2.3/§9.4: true when <paramref name="size"/> is the <c>"auto"</c> synonym for <c>"fill"</c> —
+    /// legal and unchanged in behavior, but its plain-English reading suggests sizing to content
+    /// (what <c>"content"</c> actually does), the opposite of what it resolves to.
+    /// </summary>
+    internal static bool IsDeprecatedSizeAlias(string? size) =>
+        !string.IsNullOrWhiteSpace(size) && string.Equals(size.Trim(), "auto", StringComparison.OrdinalIgnoreCase);
+
     // §2.3 floor(p): the minimum outer width a pane can be reduced to before it is dropped.
     // A vertical split's children divide the available width, so its floor is Σ floor(children) +
     // gutters. A horizontal split's children stack and each takes the full width, so its floor is
@@ -182,7 +257,7 @@ public static class SizeResolver
         {
             SizeKind.Fixed => spec.FixedValue,
             SizeKind.Content => 0,
-            _ => RowLayout.MinUsableWidth + (p.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0),
+            _ => RowLayout.MinUsableWidth + OwnBorderReserve(p),
         };
     }
 
@@ -190,9 +265,7 @@ public static class SizeResolver
     // caller currently has — a single pass, no fixpoint, no dropping.
     private static AllocResult AllocateOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests)
     {
-        var innerAvail = Math.Max(0, splitOuterWidth - (split.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0));
-        var gutterTotal = split.Gutter * Math.Max(0, children.Count - 1);
-        var avail = Math.Max(0, innerAvail - gutterTotal);
+        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count));
 
         var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
         var grants = new int[children.Count];
@@ -285,7 +358,7 @@ public static class SizeResolver
     // §2.3's over-constrained handling: a non-fixed pane granted under 1 cell means the split
     // cannot honor everyone at once — drop the last child and recompute from step 1. Bounded: each
     // iteration strictly shrinks the child list, so this always terminates.
-    private static AllocResult AllocateWithDrop(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests)
+    private static AllocResult AllocateWithDrop(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests, RenderNoteCollector notes)
     {
         var current = children;
         var currentRequests = requests;
@@ -309,6 +382,10 @@ public static class SizeResolver
                 return result;
             }
 
+            // §9.8.2: the dropped pane is always the current list's last child, whose 1-based
+            // position in it equals current.Count before this truncation — stable across repeated
+            // drops because only the tail is ever removed.
+            notes.Add($"pane {current.Count} dropped: no width remained at {splitOuterWidth} columns");
             current = current.Take(current.Count - 1).ToList();
             currentRequests = currentRequests.Take(current.Count).ToList();
         }
@@ -369,9 +446,7 @@ public static class SizeResolver
     // every content/fill pane is a candidate for the row-count search.
     private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
     {
-        var innerAvail = Math.Max(0, splitOuterWidth - (split.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0));
-        var gutterTotal = split.Gutter * Math.Max(0, children.Count - 1);
-        var avail = Math.Max(0, innerAvail - gutterTotal);
+        var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count));
 
         var kinds = children.Select(c => ClassifySize(c.Size)).ToArray();
         var grants = new int[children.Count];
@@ -509,11 +584,13 @@ public static class SizeResolver
     {
         MinRowsPackerInvocationCount++;
 
-        var borderReserve = candidate.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
-        var innerWidth = Math.Max(0, outerWidth - borderReserve);
+        var innerWidth = Math.Max(0, outerWidth - OwnBorderReserve(candidate));
         var segments = CandidateSegments(candidate, ctx, values);
         var overflow = PaneAssembler.ResolveOverflow(candidate);
-        var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, candidate.Ellipsis, allowFallback: false);
+        // This is a probe of a candidate width during the row-count search, not a rendered row of
+        // the final surface — its own truncations are not the render's, so they get a throwaway
+        // collector rather than the one flowing to the caller's real result.
+        var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, candidate.Ellipsis, new RenderNoteCollector(), allowFallback: false);
         return buffer.Rows.Count;
     }
 
@@ -571,7 +648,7 @@ public static class SizeResolver
 
     private static int MeasureRequest(Pane pane, int? grantedOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
     {
-        var borderReserve = pane.Border.Style is not null ? PaneBorderRenderer.BorderReserve : 0;
+        var borderReserve = OwnBorderReserve(pane);
         var innerCap = grantedOuterWidth is int g ? Math.Max(0, g - borderReserve) : (int?)null;
         return MeasureInnerContentWidth(pane, innerCap, ctx, values) + borderReserve;
     }

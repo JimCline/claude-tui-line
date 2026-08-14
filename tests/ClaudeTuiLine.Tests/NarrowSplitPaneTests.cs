@@ -29,7 +29,7 @@ public class NarrowSplitPaneTests
 
         var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
         var values = new Dictionary<string, string?> { ["model-short"] = ItemRegistry.Find("model-short")!.ResolveValue(ctx) };
-        var rows = PaneAssembler.RenderLeafRows(pane, 10, ctx, values, new Dictionary<string, ColorResolution.ColorRule>());
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, ctx, values, new Dictionary<string, ColorResolution.ColorRule>(), new RenderNoteCollector());
 
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.True(r.Width <= 10, $"row '{r.Markup}' exceeds the pane's own width"));

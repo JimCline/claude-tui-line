@@ -78,7 +78,7 @@ public class MinRowsLatencyTests
         // Warm-up: JIT tiering must not leak into the measured samples.
         for (var w = 100; w <= 240; w++)
         {
-            SizeResolver.Resolve(loaded.Pane, w, Ctx, values);
+            SizeResolver.Resolve(loaded.Pane, w, Ctx, values, new RenderNoteCollector());
         }
 
         var samples = new List<double>();
@@ -86,7 +86,7 @@ public class MinRowsLatencyTests
         for (var w = 100; w <= 240; w++)
         {
             stopwatch.Restart();
-            SizeResolver.Resolve(loaded.Pane, w, Ctx, values);
+            SizeResolver.Resolve(loaded.Pane, w, Ctx, values, new RenderNoteCollector());
             stopwatch.Stop();
             samples.Add(stopwatch.Elapsed.TotalMilliseconds);
         }

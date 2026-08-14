@@ -71,7 +71,7 @@ public class GoldenParityTests
         var contentWidth = surfaceWidth is int sw ? Math.Max(0, sw - borderReserve) : (int?)null;
 
         var overflow = pane.Overflow ?? OverflowMode.Overflow;
-        var buffer = PaneRenderer.RenderLeaf(segments, contentWidth, overflow, pane.Ellipsis);
+        var buffer = PaneRenderer.RenderLeaf(segments, contentWidth, overflow, pane.Ellipsis, new RenderNoteCollector());
 
         IReadOnlyList<PaneRow> rows = contentWidth is int width
             ? Compositor.ComposeRoot(new[] { new Compositor.PaneContribution(buffer, width, HasBackground: false) })

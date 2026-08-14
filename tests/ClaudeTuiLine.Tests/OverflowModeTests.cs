@@ -18,7 +18,7 @@ public class OverflowModeTests
     {
         var items = new[] { new Segment("[red]abcdefghijklmnopqrstuvwxyz[/]", "abcdefghijklmnopqrstuvwxyz") };
 
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 10, OverflowMode.Truncate, ellipsis: "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 10, OverflowMode.Truncate, ellipsis: "…", new RenderNoteCollector());
 
         var row = Assert.Single(buffer.Rows);
         Assert.Equal(10, row.Width);
@@ -36,7 +36,7 @@ public class OverflowModeTests
         // pre-existing single-overwide-fallback-row behavior (RowLayout.cs, unmodified in Phase 2)
         // re-joins already-chunked segments back into one row, which is a separate, accepted edge
         // case (see the swept-width tests below), not what this test is exercising.
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…", new RenderNoteCollector());
 
         Assert.True(buffer.Rows.Count > 1, "expected the oversized segment to be chunked across more than one row");
         Assert.All(buffer.Rows, row => Assert.True(row.Width <= 24, $"row {row.Width} wide exceeds innerWidth 24"));
@@ -55,7 +55,7 @@ public class OverflowModeTests
             new Segment("[red]abcdefghijklmnopqrstuvwxyz0123456789[/]", "abcdefghijklmnopqrstuvwxyz0123456789"),
         };
 
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 20, OverflowMode.Overflow, ellipsis: "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 20, OverflowMode.Overflow, ellipsis: "…", new RenderNoteCollector());
         var expected = RowLayout.Wrap(items, 20);
 
         Assert.Equal(expected, buffer.Rows);
@@ -68,9 +68,9 @@ public class OverflowModeTests
         var items = new[] { new Segment($"[red]{original}[/]", original) };
         const int width = 24; // >= RowLayout's 20-column usable-width floor; see the chunking test above.
 
-        var wrap = PaneRenderer.RenderLeaf(items, width, OverflowMode.Wrap, "…");
-        var truncate = PaneRenderer.RenderLeaf(items, width, OverflowMode.Truncate, "…");
-        var overflow = PaneRenderer.RenderLeaf(items, width, OverflowMode.Overflow, "…");
+        var wrap = PaneRenderer.RenderLeaf(items, width, OverflowMode.Wrap, "…", new RenderNoteCollector());
+        var truncate = PaneRenderer.RenderLeaf(items, width, OverflowMode.Truncate, "…", new RenderNoteCollector());
+        var overflow = PaneRenderer.RenderLeaf(items, width, OverflowMode.Overflow, "…", new RenderNoteCollector());
 
         Assert.True(wrap.Rows.Count > 1); // nothing lost, spread across rows
         Assert.Single(truncate.Rows);
@@ -89,7 +89,7 @@ public class OverflowModeTests
         const string original = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ9876543210";
         var items = new[] { new Segment($"[bold red]{original}[/]", original) };
 
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…", new RenderNoteCollector());
 
         var expectedChunks = Enumerable.Range(0, (original.Length + 23) / 24)
             .Select(i => original.Substring(i * 24, Math.Min(24, original.Length - i * 24)));
@@ -105,7 +105,7 @@ public class OverflowModeTests
         const string original = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ9876543210";
         var items = new[] { new Segment($"[red]{original}[/]", original) };
 
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 24, OverflowMode.Wrap, ellipsis: "…", new RenderNoteCollector());
 
         Assert.True(buffer.Rows.Count > 1);
         Assert.All(buffer.Rows, row =>
@@ -122,7 +122,7 @@ public class OverflowModeTests
     {
         var items = new[] { new Segment("abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxyz") };
 
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 10, OverflowMode.Truncate, ellipsis: "");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 10, OverflowMode.Truncate, ellipsis: "", new RenderNoteCollector());
 
         var row = Assert.Single(buffer.Rows);
         Assert.Equal("abcdefghij", Stripped(row.Markup));
@@ -134,7 +134,7 @@ public class OverflowModeTests
         var items = new[] { new Segment("abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnopqrstuvwxyz") };
 
         // ellipsis is 3 chars wide ("..."), innerWidth is only 2 -> innerWidth <= ellipsis.Length.
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 2, OverflowMode.Truncate, ellipsis: "...");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 2, OverflowMode.Truncate, ellipsis: "...", new RenderNoteCollector());
 
         var row = Assert.Single(buffer.Rows);
         Assert.Equal("ab", Stripped(row.Markup)); // hard clip, marker dropped, no sacrificed cell
@@ -145,7 +145,7 @@ public class OverflowModeTests
     {
         var items = new[] { new Segment("abcdefgh", "abcdefgh") };
 
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 0, OverflowMode.Truncate, ellipsis: "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth: 0, OverflowMode.Truncate, ellipsis: "…", new RenderNoteCollector());
 
         var row = Assert.Single(buffer.Rows);
         Assert.Equal(string.Empty, Stripped(row.Markup));
@@ -168,7 +168,7 @@ public class OverflowModeTests
         }
 
         var items = RenderInvariantTests.FixtureWithOversizedSegment();
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth, OverflowMode.Truncate, "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth, OverflowMode.Truncate, "…", new RenderNoteCollector());
 
         Assert.All(buffer.Rows, row => Assert.True(row.Width <= innerWidth, $"width={innerWidth}: row {row.Width} wide"));
     }
@@ -183,7 +183,7 @@ public class OverflowModeTests
         }
 
         var items = RenderInvariantTests.FixtureWithOversizedSegment();
-        var buffer = PaneRenderer.RenderLeaf(items, innerWidth, OverflowMode.Wrap, "…");
+        var buffer = PaneRenderer.RenderLeaf(items, innerWidth, OverflowMode.Wrap, "…", new RenderNoteCollector());
 
         Assert.All(buffer.Rows, row => Assert.True(row.Width <= innerWidth, $"width={innerWidth}: row {row.Width} wide"));
     }

@@ -17,6 +17,7 @@ public static class PaneTreeRenderer
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        RenderNoteCollector notes,
         int? targetOuterHeight = null)
     {
         var pane = node.Source;
@@ -27,7 +28,7 @@ public static class PaneTreeRenderer
         IReadOnlyList<PaneRow> contentRows;
         if (node.Children.Count == 0)
         {
-            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens);
+            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes);
         }
         else if (pane.Split == PaneSplit.Vertical)
         {
@@ -36,7 +37,7 @@ public static class PaneTreeRenderer
             // tallest sibling's height as its own target before this loop composes them side by
             // side, rather than being padded around afterward (which would pad outside its border
             // instead of growing the border to match).
-            var natural = node.Children.Select(c => Render(c, ctx, values, tokens)).ToList();
+            var natural = node.Children.Select(c => Render(c, ctx, values, tokens, notes)).ToList();
             var childHeight = natural.Count == 0 ? 0 : natural.Max(c => c.Buffer.Rows.Count);
 
             var contributions = new List<Compositor.PaneContribution>();
@@ -48,7 +49,7 @@ public static class PaneTreeRenderer
                 }
 
                 var contribution = natural[i].Buffer.Rows.Count < childHeight
-                    ? Render(node.Children[i], ctx, values, tokens, childHeight)
+                    ? Render(node.Children[i], ctx, values, tokens, notes, childHeight)
                     : natural[i];
                 contributions.Add(contribution);
             }
@@ -60,7 +61,7 @@ public static class PaneTreeRenderer
             var rows = new List<PaneRow>();
             foreach (var child in node.Children)
             {
-                var contribution = Render(child, ctx, values, tokens);
+                var contribution = Render(child, ctx, values, tokens, notes);
                 rows.AddRange(contribution.Buffer.Rows);
             }
 
