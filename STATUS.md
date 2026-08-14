@@ -2895,6 +2895,53 @@ so the check is known to go green rather than merely known to complain.
 A red gate with a named owner and a known-green proof is a gate. A red gate nobody is fixing is
 noise, and the next person silently stops reading the whole runner.
 
+## `2.3.1` specified min-rows only for the case where an answer exists (`2.3.3`)
+
+Audited the §2 layout cluster — the largest unimplemented body in the spec and the one nobody had
+read with the "ruled the contested half, phrased the rest" lens. §2.3.1 holds up unusually well:
+the inversion, the monotonicity argument, the O(N) claim and the cost analysis are all correct. The
+defects are all in the same place, and it is the place that shape predicts — the sentences written
+after the thinking was done.
+
+`minWidth(i, T) = min { w : rows_i(w) <= T }` is a minimum over a set that can be empty, and the
+section's own worked example is the first thing to walk into it: at `T = 1` it says "`minWidth(left,
+1)` alone exceeds `R`", when by the definition three paragraphs above it does not exist. An
+implementer writing `feasible` as a sum will make it return a number, and the specific way that
+fails is `int.MaxValue`: two candidates that cannot fit sum to −2, −2 is `≤ R`, and the search
+certifies the narrowest `T` in the scan. The surface then renders taller than the `T` just proved
+achievable, every pane individually legal, nothing to report — §2.3.1's own stated failure class,
+produced by the line it did not write.
+
+The scan's ceiling is wrong too. "Bounded by the largest item count, a row holds at least one item"
+is false under §2.6, where an item wider than the pane wraps: three items with one wrapping across
+four rows is six rows. The bound is too low exactly when the terminal is narrow, which is when
+anyone wants min-rows at all. And when no `T` is feasible at any height, the section has no answer
+— ruled as a fallback to `greedy`, whose over-constrained behaviour is already defined and already
+observable through §9.8.1's `pane {n} dropped` note.
+
+Two suspicions checked and dropped rather than written up. Whether the tens of packer calls meant
+tens of shell spawns per render: they do not — the packer takes pre-resolved `Segment`s and touches
+nothing that resolves a value. And whether "the existing packer, called unchanged" was false because
+the packer returns a longest-row *width* rather than a row count: `SizeResolver.RowCountAt`
+(`SizeResolver.cs:583`) is exactly `rows_i(w)`, so the phrase is accurate. Recording both, because an
+audit that only ever finds things is not an audit — and because in each case the write-up would have
+been confident, plausible, and wrong.
+
+The second check did pin down §2.3.1's last ruling, though. `RowCountAt(Pane, int, ItemContext,
+IReadOnlyDictionary)` has no `measureOverride` parameter, while `ResolveVertical` threads one — so
+the min-rows path really does bypass the seam, exactly as §2.3.1 says, and task #25 now has a line
+number instead of a paragraph.
+
+## §2.8's rulings were real and uncitable
+
+Three `####` headings under §2.8 carried no numbers, so the ladder's ownership of both row budgets,
+the border-closing rule, and shrink-wrap could not be cited by anything — including tasks #7 and #29,
+which are the work that implements them. Numbered §2.8.1–§2.8.3. Purely additive: nothing cited
+`§2.8.x` before, so no citation could break, and `check-citations` confirms 97 still resolve.
+
+Cheap, but the shape is the same one this session keeps finding. An unnumbered heading is a ruling
+the document cannot refer to, which over time becomes a ruling the document does not have.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

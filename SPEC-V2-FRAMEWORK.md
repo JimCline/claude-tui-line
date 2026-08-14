@@ -340,8 +340,10 @@ called unchanged. It is non-increasing in `w`. Define its inverse:
 minWidth(i, T) = min { w : rows_i(w) <= T }
 ```
 
-the narrowest width at which pane `i` fits in `T` rows or fewer. Compute it by binary search over
-`[minSize_i, maxSize_i]`, which is valid precisely because `rows_i` is monotone. That is
+the narrowest width at which pane `i` fits in `T` rows or fewer — **when one exists at all; see
+§2.3.3, which rules the empty case and is reached on the worked example below at `T = 1`.** Compute
+it by binary search over `[minSize_i, maxSize_i]`, which is valid precisely because `rows_i` is
+monotone. That is
 `O(log w)` packings per pane per `T`, and it is what keeps the search over breakpoints rather
 than widths: the binary search *lands on* a breakpoint without ever enumerating the widths
 between them.
@@ -466,6 +468,51 @@ reading and the tempting fix. A gutter row is a permanent terminal row spent on 
 `refreshInterval: 1`, and §2.4 already refuses that trade for an empty pane. Panes that need
 visual separation on the vertical axis have §2.10's borders, which cost the same row and carry
 information. A feature that costs a row should be asked for by name.
+
+#### 2.3.3 `minWidth` is a minimum over a set that can be empty
+
+§2.3.1 specifies the whole algorithm for the case where an answer exists. The inversion is right,
+the monotonicity argument is right, and the cost analysis is right. What it never says is what any
+of it returns when a pane cannot be made to fit at all — and that is not a hostile edge case, it is
+the first iteration of the scan on the section's own worked example.
+
+**The empty set.** `minWidth(i, T) = min { w : rows_i(w) <= T }` is a minimum over a set with no
+members whenever pane `i` cannot fit in `T` rows at any width available to it. §2.3.1's worked
+example walks straight into it and then describes it wrongly: "`minWidth(left, 1)` alone exceeds
+`R` — infeasible". By the definition three paragraphs above, `minWidth(left, 1)` does not exceed
+`R`. It does not exist. The prose reads as though the function always returns a number that can be
+compared and summed, and an implementer writing `feasible(T)` as a sum will make it return one.
+
+Ruled: **`feasible(T)` is false the moment any candidate has no such width, and it decides that
+before it sums anything.** The empty case is a property of the candidate, not a large number, and
+it must not be laundered into arithmetic.
+
+**If a sentinel is used anyway, it may not be `int.MaxValue`.** This is the specific way the
+laundering fails. Two candidates that both cannot fit sum to −2 under 32-bit wraparound, −2 is
+comfortably `≤ R`, and `feasible(T)` returns true for the narrowest `T` in the scan. The search
+then stops at the first `T` it tries, the surplus distribution hands out an extent no pane can use,
+and the surface renders taller than the `T` the algorithm just certified — with every pane
+individually legal and nothing to report. That is §2.3.1's own stated failure class, produced by
+the one line it did not write down. A sentinel that cannot be summed into a false pass — `R + 1`,
+tested before the addition — is acceptable; the short-circuit is preferred because it cannot be
+got wrong twice.
+
+**`T` is not bounded by the largest item count.** §2.3.1 bounds the scan at "the largest item count
+in any candidate pane — around 20 in practice", reasoning that a row holds at least one item. Under
+§2.6 that is false: an item wider than the pane wraps, so a pane holding three items where one of
+them wraps across four rows has `rows_i` of six. The bound is therefore too low exactly when the
+terminal is narrow, which is the condition under which anyone wants min-rows at all. The scan runs
+to the largest `rows_i` any candidate reports **at its own `minSize`** — the tallest the surface can
+be forced to become — which is the real ceiling and is still a small number.
+
+**When no `T` is feasible.** Even with the corrected ceiling, `Σ minWidth(i, T) ≤ R` can fail at
+every `T` when the candidates' minimum widths do not fit side by side. min-rows is a policy that
+chooses among allocations that are already legal, and here there are none to choose from, so it has
+no answer to give and must not invent one. The split falls back to `greedy`, which already has
+defined behaviour for an over-constrained row — it drops panes and says so through §9.8.1's
+`pane {n} dropped` note. A second note is not added for the fallback itself: the dropped-pane note
+is the observable consequence, and a note reporting that an algorithm declined to run is a message
+about the implementation rather than about the layout.
 
 ### 2.4 Compositing — the part that must not be improvised
 
@@ -730,7 +777,7 @@ individually. Nothing about a statusline should be able to eat half the terminal
 pane got chatty — a live risk once `overflow: "wrap"` exists, since wrapping trades width for
 height. **`maxRows` is a hard ceiling: the surface never emits more rows than it allows.**
 
-#### There is no height fixpoint, and there must not be one
+#### 2.8.1 There is no height fixpoint, and there must not be one
 
 The obvious symmetry — a row-budget fixpoint mirroring §2.3's width fixpoint — does not work,
 and reaching for it is the trap this subsection exists to close.
@@ -774,7 +821,7 @@ makes the outcome depend on enumeration order in a ladder whose stated justifica
 deterministic. Reverse declaration order is already rung 2's rule and already carries the argument:
 the first-declared pane is the author's primary content and loses fidelity last.
 
-#### Clipping must close the border
+#### 2.8.2 Clipping must close the border
 
 A bordered pane clipped mid-box emits a top edge and two verticals with no bottom edge. That
 does not read as "truncated", it reads as "crashed" — the failure mode §7 exists to prevent, so
@@ -802,7 +849,7 @@ losing content instead — the author named the number, exactly as §2.4 reasons
 `percent` panes. Suppression applies where the *surface* budget, or the ladder acting on it, is
 what pushed the pane under three rows.
 
-#### A pane may shrink-wrap its height
+#### 2.8.3 A pane may shrink-wrap its height
 
 `height(vertical split) = max(height(children))` (§2.2), and every pane fills its band. A pane
 with two rows of content beside a pane with three therefore draws a three-row box with one row
