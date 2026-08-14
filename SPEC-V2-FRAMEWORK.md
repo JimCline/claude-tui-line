@@ -924,6 +924,18 @@ name and any future scraped fragment cost a config row, not a code change — th
 directly, so `insteadOf` rewrites are honored. It is a value like any other, so it is linkable,
 formattable, and testable on its own rather than being logic buried inside the branch item.
 
+**Its cost follows the reference, not the placement, and that needs saying out loud.** Resolution
+is demand-driven — §5 resolves exactly the ids in the resolution set — so `remote-url` costs
+nothing at all until something names it. But once a `link` template names it, the subprocess runs
+**every render**, which at `refreshInterval: 1` is a `git` process per second, whether or not the
+URL is ever shown. That is the feature working as designed: the whole point of the worked example
+is to reference it without displaying it. It does mean "opt-in because it shells out" is a weaker
+guard than it looks, since a `link` opts in on the user's behalf without the id appearing in any
+pane. The obligation this creates is on the provider, not the config: **a provider whose cost is a
+subprocess caches within a render and should cache across renders under a TTL**, exactly as a
+`command` item must (§4). An item is not entitled to spawn a process per second because a
+decoration referenced it.
+
 **A raw OSC 8 emitted by a `command` provider (§4) is measured the same way**, since a user's
 script can emit one directly — which is exactly how this defect was found. `Segment.Plain` is
 contracted escape-free, so sanitizing belongs where Plain is built from raw command output, not
@@ -1596,6 +1608,114 @@ capabilities, so the authoring surface asks it rather than remembering.
 `path` (JSON Pointer into the config), `severity`, `code`, and `message`. A human reads the
 prose form; a program that has just written a config reads this one and knows *which key* it
 got wrong without parsing English.
+
+### 9.1 The render path is untouched, and that is a hard constraint
+
+**No arguments ⇒ read the payload on stdin and render, byte for byte as today.** The statusline
+runs once a second; every millisecond of argument parsing is paid 86,400 times a day. Parse
+argv only far enough to notice it is empty, and take the existing path when it is.
+
+No flag may change what the no-flag path emits. A flag that alters rendering is not a CLI
+feature, it is a second renderer, and §12.6's "two adapters over one core" applies here first.
+
+### 9.2 `--config <path>` — global, and the reason the authoring surface works
+
+Overrides the §5 search order for every subcommand *and* for the render path. Absent, the search
+order is unchanged.
+
+This flag is load-bearing for §12, not a convenience. `/migrate` and `/edit` must validate and
+preview a **candidate** config without installing it, because §12.3 requires showing the user a
+result before anything is written. Without `--config` the only way to preview a config is to make
+it live, which inverts the whole safety property those commands are built on.
+
+A `--config` path that does not exist, or does not parse, is an error (§9.4) and never a silent
+fallback to the searched config. Reporting on a different file than the one named is worse than
+failing.
+
+### 9.3 Where `--preview` gets its payload
+
+`--preview` renders the same pipeline the statusline renders, so it needs the same stdin JSON.
+
+- **stdin has data** → use it. This is what `/migrate` uses to compare against the original
+  script on identical input.
+- **stdin is empty or a TTY** → use a built-in synthetic payload, **and say so on stderr**. A
+  preview built from invented values that does not admit it is invented is how a user concludes
+  an item is broken when it was never given anything to show.
+
+The synthetic payload is a fixed constant, not randomised, so two previews are comparable.
+
+`--columns N` sets the width. Absent, use `COLUMNS`, then a default of 100. The usable width
+is still `N - chromeReserve`; preview must not quietly render 3 columns wider than reality, or
+it will disagree with the statusline exactly at the width where wrapping starts to matter.
+
+### 9.4 Exit codes and severities
+
+| exit | meaning |
+|---|---|
+| 0 | success; for `--check`, no `error`-severity diagnostics |
+| 1 | `--check` found at least one `error` diagnostic |
+| 2 | usage error — unknown flag, missing argument, mutually exclusive flags |
+| 3 | the config could not be read or parsed at all, so nothing could be checked |
+
+3 is separate from 1 deliberately. "Your config has four problems" and "I could not read your
+config" call for different next actions, and a program that gets 1 will try to fix a JSON Pointer
+that does not exist.
+
+Two severities, and the split resolves defects 3–6 (silent acceptance):
+
+- **`error`** — the config does not do what it says. An unknown item id; an unknown value for
+  `size`, `style`, `align`, `valign`, or `overflow`; an unknown colour name; a `link` naming an
+  id that resolves to nothing; `overflow: "overflow"` on a pane inside a split (§2.6); a pane
+  whose fixed sizes cannot fit its parent.
+- **`warning`** — it works, but probably not as intended. A pane with no items; `minSize`
+  greater than `maxSize`; a `command` item with no `timeoutMs`.
+
+**Unknown enum values are errors even though the renderer accepts them.** That is not a
+contradiction: `--check` is diagnostic and changes no runtime behaviour, so calling a typo an
+error breaks nobody's running statusline while making it visible. The renderer keeps its fallback.
+Silence was the defect; the fix is a diagnostic, not a runtime change.
+
+`--check` reports what is **invalid or unresolvable**, never what is untidy. No diagnostics for
+formatting, ordering, or unused-but-valid keys. A checker that warns about things that work gets
+ignored, including on the day it is right.
+
+### 9.5 `--check` reuses `ReferenceExtractors`
+
+Every diagnostic about an id — an unknown item, a `from` naming nothing, a `link` placeholder
+that resolves to nothing — is derived from the **same** `ReferenceExtractors` table §5 uses to
+build the resolution set. `--check` does not get its own config walk.
+
+This is not tidiness. Defect 11 was a resolution set that had fallen behind the config surface,
+and it was invisible because nothing cross-checked it. A second walk in the checker recreates
+exactly that: a `--check` that passes while the resolver drops an id, disagreeing silently, in
+the one tool whose entire job is to not be silent. Adding a reference form must remain a single
+append that both the resolver and the checker inherit.
+
+### 9.6 JSON shapes
+
+`--json` applies to `--check`, `--items`, `--preview`, and `--colors`.
+
+```json
+{ "ok": false,
+  "diagnostics": [
+    { "path": "/surface/pane/children/1/items/0/item", "severity": "error",
+      "code": "unknown-item-id", "message": "no item named 'gitbranch'" }
+  ] }
+```
+
+```json
+{ "columns": 112, "usableColumns": 109,
+  "rows": [ { "text": "…", "width": 109 } ] }
+```
+
+`--preview --json` returns each row's text **and** its measured width, rather than printing
+widths in a gutter as the human form does — a model parsing rows should not have to strip
+decoration to get them, and the width is the number that makes overflow visible rather than
+inferred.
+
+**`code` values are a compatibility surface.** Once a code ships, its meaning is fixed; a new
+condition gets a new code rather than a widened old one. `/edit` and the §12.6 tools branch on
+these, and a code that quietly changes meaning makes every consumer wrong at once.
 
 ## 10. Testing requirements
 
