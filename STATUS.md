@@ -1987,6 +1987,35 @@ human-readable output nobody labels that way eventually becomes a second frozen 
 `AssemblyVersionInfo` accessor the implementor extracted. A consumer comparing the two must never
 see two answers — §9.7's drift test premise, one surface lower.
 
+### Then the same defect happened twice more, inside the fix for it
+
+Having written that an invented example ages like an implementation assertion, I extracted every
+string literal `SegmentBuilder` actually emits and swept the spec against it. Two of the
+disagreements it found were **mine, from the previous twenty minutes**:
+
+- §9.3.1's newly-pinned Engram value said it renders as `◉ recalled`. `BuildEngram` renders
+  `engram:3 ◉ recalled` — `◉ recalled` is the `Verb` going *in*, not the segment coming out.
+- §9.6.2.2's brand-new `--items` table showed `directory` as `~/code/acme-web`. `BuildDirectory`
+  is `Basename(cwd)`, so it renders `acme-web`.
+
+Everything older was clean — `ctx:62% (125k/200k)`, `5h:30% / 7d:85%`, `effort:high`, `PR #42`,
+`worktree:NAME(BRANCH)` all match the builders exactly. So this is not a decay problem, and it is
+not carelessness either. **Writing an illustrative value is frictionless; verifying one means
+reading a builder.** Every example therefore defaults to invented unless something forces the
+check, which is why the failure reproduced immediately in the hands of the person who had just
+finished describing it.
+
+§9.3.1 now separates the two registers explicitly: `Facts` and `Verb` are the fixture and are
+normative; `engram:3 ◉ recalled` is a description of what the builder does with them, and **if it
+ever disagrees, the builder is the fact and the clause is the finding.**
+
+**The mitigation is mechanical and now specified.** `--items`' `example` field is
+`BuildDefaultSegment` run against §9.3.1's fixture — so once the flag is wired, a check that runs
+`--items --json` and compares this document's example values against it is a document-versus-*code*
+check. That is precisely the class `check-citations.sh` and `check-counts.sh` cannot reach, both
+being closed-world. Third mechanical check, real target, and the case for it is three failures in
+one session rather than a hypothetical.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live

@@ -2818,14 +2818,21 @@ payload" is not a value and two people implementing that sentence produce two di
 ```
 
 wrapped in an `ItemContext` whose machine-probed fields are canned to match: `gitBranch` = `"main"`,
-`remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` of **3 recent memories**
-rendering as `◉ recalled`.
+`remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` with **`Facts` = 3** and
+**`Verb` = `"◉ recalled"`**, which `BuildEngram` renders as `engram:3 ◉ recalled`.
 
 That third value used to read "a small non-zero activity count — whatever shape makes `engram`
 render *present*", which is the same defect as the `output_style` one below wearing a milder face:
 a constraint stated as an outcome, leaving the value to whoever implements it. It is pinned now for
 the reason the whole fixture is pinned — two people implementing "whatever makes it render" produce
 two fixtures, and §9.3's entire point is that there is one.
+
+**Note what is pinned and what is described.** `Facts` and `Verb` are the fixture — inputs, and
+normative. `engram:3 ◉ recalled` is a *description of what the builder currently does with them*,
+and it is the kind of sentence §9.6.2.1 warns about: an assertion about the implementation, in a
+document that cannot check it. It is written here anyway, because a fixture whose effect nobody
+states is how the `output_style` defect survived — but if it ever disagrees with `BuildEngram`,
+**the builder is the fact and this clause is the finding.**
 
 Four rules govern it, and each one rules out a fixture someone would otherwise reasonably write.
 
@@ -3459,16 +3466,19 @@ second walk of the registry.** One id column, one example, one `reports`, in two
 
 ```
 Default items — rendered unless you remove them:
-  directory     ~/code/acme-web              the working directory
-  git-branch    main                         the current branch, or nothing outside a repo
+  directory     acme-web                            the working directory
+  git-branch    main                                the current branch, or nothing outside a repo
   …
 
 Opt-in items — rendered only where you place them:
-  model-short   Sonnet 5                     an abbreviated model name, for panes too narrow …
-  remote-url    https://github.com/acme/…    the git remote's URL. Opt-in because resolving it …
+  model-short   Sonnet 5                            an abbreviated name, for panes too narrow …
+  remote-url    https://github.com/acme/acme-web    the git remote's URL. Opt-in because …
 
 Item kinds: builtin, command, derived, compound. Run with --json for the schema of each.
 ```
+
+Those example values are the §9.3.1 fixture's, rendered — `directory` is `Basename(cwd)`, which is
+why it reads `acme-web` and not the fixture's full `/home/you/code/acme-web`.
 
 Four rulings in that, none of them about formatting:
 
@@ -3487,6 +3497,17 @@ Four rulings in that, none of them about formatting:
   or re-widened without that being a compatibility break, and §9.6's stability guarantees do not
   extend here. Stated so it does not silently become a second frozen surface — which is what
   happens to every human-readable output nobody labelled.
+
+**Once this flag exists, it is the oracle for every item example in this document — and that is
+mechanically checkable.** §9.6.2.1 says a spec example naming a specific rendered value is an
+assertion about the implementation that no document-versus-document check can verify. `--items`
+closes exactly that gap for the sixteen builtins: its `example` field is `BuildDefaultSegment` run
+against §9.3.1's fixture, so a check that runs `--items --json` and greps this document for
+example values that disagree is a document-versus-*code* check, which is the class §13.3's two
+checks cannot reach. It is worth building as the third one, and it is worth building *because* the
+alternative already failed three times in a single session (see STATUS.md) — the last two of them
+inside the edit that documented the failure. Writing an illustrative value is frictionless;
+verifying it means reading a builder. Nothing but a machine closes that gap.
 
 **`version` carries the same string `--version` prints**, read from the assembly through the one
 `AssemblyVersionInfo.InformationalVersion` accessor, never re-derived. §9.7 already makes the
