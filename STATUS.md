@@ -4255,6 +4255,60 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 and post-merge on `main` (1291/1291, build 0 warnings/0 errors, `check-all.sh` all four checks
 green). Landed as merge commit `dfa6b4e` (branch tip `b0a0c72`), pushed.
 
+### #57: §9.4.2 suggestion-ranking fixes — tie-break (D1), prefix-vs-distance (D2), prefix length floor (D3)
+
+Problem: an architect review of #21's shipped `KeySuggestion.cs` (triggered by a since-retracted,
+false spec-erratum report — see #21's entry above) surfaced three real defects in the
+edit-distance suggestion algorithm, none of which the original §9.4.2 implementation task had
+specified against:
+
+- **D1 — tie-break undefined.** `distance < bestDistance` picked the first candidate strictly
+  less than the running best, so a genuine tie fell to whichever key came first in
+  `JsonTypeInfo`'s source-gen property order — an order with no defined stability guarantee.
+  Confirmed live, not theoretical: an exhaustive edit-distance-1 mutation search over every real
+  config type's known-key set found 54 real ties on `PaneConfig` alone (e.g. `"xalign"` ties
+  `align`/`valign`).
+- **D2 — prefix rule defeated by distance ranking.** §9.4.2's prefix relation is supposed to catch
+  truncations like `ttl`→`ttlSeconds` (edit distance 7, far outside the ≤2 threshold) as a second,
+  independent qualifying rule — but `Suggest` ran both rules into the same "smaller distance wins"
+  comparison, so a distance-≤2 candidate could beat a genuine prefix match and undermine the whole
+  reason the prefix rule exists.
+- **D3 — prefix rule had no length floor.** With no minimum, `{"c": 1}` prefix-matched
+  `case`/`color`/`colors`/`colorSystem`/`children` off a single character. Confirmed reachable:
+  `{"c":1}` does reach `CheckUnknownKeys` via `UserConfig.Extra`/`[JsonExtensionData]`, now pinned
+  by a test.
+
+Rulings — D1 and D3 routed to the user (product-judgment, not mechanical), D2 resolved by the
+architect alone (a direct logical inconsistency in the spec's own stated principle, no ambiguity):
+
+- **D1**: on a genuine tie, name *all* tied candidates, no cap, joined via the existing
+  `ConfigCheck.FormatAccepted` (already used for `unknown-enum-value`), sorted with
+  `StringComparer.Ordinal` specifically — not culture-sensitive default string ordering, which
+  would reintroduce build-to-build nondeterminism.
+- **D2**: a prefix match always outranks a distance match, unconditionally. Within prefix matches,
+  the shortest candidate wins; within distance matches, the smallest edit distance wins.
+- **D3**: the prefix rule now requires `Math.Min(unknown.Length, candidate.Length) >= 3`. Not
+  `> 3` — `"ttl"` is exactly 3 characters and is the motivating example; an off-by-one here would
+  have silently broken it again.
+
+Fix: `KeySuggestion.Suggest` now returns `IReadOnlyList<string>` instead of a single `string?`;
+`ConfigCheck.cs`'s call site reuses `FormatAccepted` to join multi-candidate results into the
+diagnostic message. §9.6's diagnostic JSON shape needs no change — the suggestion is interpolated
+into the message string only (`ConfigCheck.cs` ~line 781), never a structured field, and the spec
+now explicitly prohibits adding one.
+
+Also corrected: the misleading #21-era test comments alleging a spec-example-vs-algorithm
+discrepancy. The architect confirmed §9.4.2 contains no worked examples of the suggestion
+algorithm at all — four sentences of prose, nothing more — so the prior report was investigating a
+document that doesn't exist; the comments asserting otherwise were fixed rather than left as
+durable misinformation.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree and
+post-merge on `main` (1298/1298, build 0 warnings/0 errors, `check-all.sh` all five checks green:
+check-citations 115/9 files, check-counts 10 files, check-notes 2 distinct, check-examples
+16 items/10 files, check-doc-tokens 18 tokens/0 disagree). Landed as merge commit `209ace6`
+(branch tip `7da31bb`), pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
