@@ -4356,3 +4356,89 @@ The single-citation dangle, `§4.3`, is the one a reader would most likely have 
   tries to follow it. Comparing the set of cited numbers against the set of heading numbers is
   three lines of shell and belongs in CI beside the §9.7 version-drift check, which exists for
   the same reason: two things that must agree, and no symptom when they stop.
+
+## 14. Building, and the difference between a build and a deploy
+
+**Relocated from SPEC.md §10 requirement 2.** Nothing here is new; it was already normative, and
+it was already being enforced by repetition in session messages rather than by anyone reading it.
+It moved because of where it was: v1's acceptance criteria, in a document `README.md` does not
+point contributors at. §13.3 established that content sitting under the wrong heading is a
+distinct fault from content having no heading, and that its fix is relocation. This is the same
+fault one document wider — content sitting in the wrong *document* — and it is the more dangerous
+form, because a reader following the README's single pointer to this file has no way to discover
+that a safety rule about their build lives somewhere else. See §14.4.
+
+### 14.1 One command produces the artifact
+
+```
+dotnet publish src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release -o publish
+```
+
+Exactly one command, with no separate copy step. This was previously written as "copy step or
+`-o publish`", offering two equally valid methods, and that ambiguity is what allowed the deployed
+artifact to drift: the SDK-default output lands in
+`src/ClaudeTuiLine/bin/Release/net10.0/osx-arm64/publish/`, the live statusline runs
+`publish/claude-tui-line`, and nothing kept them in sync. The two diverged silently, and every
+parity result during v1 Phases 1–3 was measured against an artifact the user does not run.
+
+**A deploy step that depends on a human remembering to copy a file is not a deploy step.**
+
+### 14.2 Identity is a hash, never a timestamp
+
+Because the drift in §14.1 was invisible, identity is established by SHA-256. A newer mtime on the
+deployed binary does not mean it came from the current source — mtime records when a file was
+written, and the whole failure mode is a file that was written from stale input. Any claim that
+something is "shipped and verified" names the hash it was verified against.
+
+### 14.3 Producing the artifact and deploying it are different acts, and only the second is restricted
+
+`publish/` is what the user's live statusline executes, so writing there replaces something of the
+user's *while it is running*. That is a deploy, and it requires approval. It is not the
+implementor's to run, and no peer message can authorize it.
+
+Development and verification build to the SDK-default output instead
+(`src/ClaudeTuiLine/bin/Release/net10.0/osx-arm64/publish/`). That is where an implementor or a
+reviewer exercises the binary, measures latency, and reproduces a hash — freely, with no approval,
+because nothing the user runs is touched.
+
+This does not reintroduce §14.1's drift. That drift came from *two* ways to produce the deployed
+artifact, one of which was a human remembering to copy a file. There is still exactly one command
+that writes `publish/`, it is still the one printed in §14.1, and identity is still established by
+hash — the only thing added is who may run it. A build nobody deployed cannot diverge from a
+deploy, and the hash comparison of §14.2 is precisely how you confirm it didn't.
+
+AOT trim and analysis warnings from Spectre.Console must be inspected rather than accepted in
+bulk: warnings affecting only unused features (tables, live display, exception rendering) are
+acceptable and get listed in the implementation report; warnings on markup or rendering paths are
+defects.
+
+### 14.4 Why this section's existence is itself the finding
+
+The audit that produced this section went looking for a *stale* document — the ordinary
+two-authorities risk, where a contributor reads v1 and applies superseded rules. That is not what
+`SPEC.md` is. It is cited as live authority from this file in four places (§6b for per-render
+config reload, `SPEC.md:353` for the empty-surface rule, §6 for `Plain.Length` as the width
+metric, and Phase 1 as a prerequisite), so it is not superseded and must not be archived.
+
+The real defect was the opposite shape, and worse. **A load-bearing safety rule was reachable only
+through a document nobody is pointed at.** The rule was never wrong, never stale, and never
+disputed; it was simply not where its readers are. It survived because it was restated by hand in
+session after session, which reads like the rule working and is actually the rule being carried
+by something that does not persist.
+
+Two things generalise:
+
+- **"Is this document stale?" is the wrong audit question.** It only finds authorities that
+  disagree. Ask instead: *what does this document say that no reader of the current one will ever
+  see?* A superseded rule announces itself the moment two readers compare notes. An unreachable
+  one has no symptom at all — everyone who knows it keeps following it, and everyone who doesn't
+  never learns there was something to follow.
+- **A rule enforced by repetition is not enforced.** If a constraint has to be restated in every
+  session for the work to come out right, the restating is load-bearing and the document is not.
+  The test is whether a competent stranger reading only what the README points at would arrive at
+  the same behaviour.
+
+`tools/check-citations.sh` cannot catch this class. It verifies that citations *within* this
+document resolve, which is a closed-world check; this defect is about what is missing from the
+world entirely. Cross-document reachability is not mechanically checkable in three lines of shell,
+which is exactly why it is written down here instead.

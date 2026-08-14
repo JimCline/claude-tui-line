@@ -1717,6 +1717,42 @@ next person re-runs it, or worse, assumes it was never checked.
   written. Worth knowing given it is cited 26 times, which by §13.3's own finding makes it the
   least likely thing in the document to have been checked.
 
+### The two-spec audit — and it was not the defect I went looking for (v2 §14)
+
+`SPEC.md` (v1, 24KB) sits at the repo root beside `SPEC-V2-FRAMEWORK.md`, and `README.md` pointed
+contributors only at the latter. That is the shape of every two-authorities defect found tonight,
+so I checked whether v1 was stale enough to mislead someone.
+
+**It is not stale.** v2 cites it as live authority in four places — §6b (config re-read every
+render), §6 (`Plain.Length` is the width metric), `SPEC.md:353` (an empty surface emits zero
+bytes), and Phase 1 as a prerequisite. Archiving it would have broken four working citations.
+
+**The actual finding was the opposite shape.** `SPEC.md` §10 requirement 2 carried the entire
+build-and-deploy discipline — one command produces the artifact, identity by hash rather than
+mtime, and *writing into `publish/` is a deploy that replaces a program the user is running, so it
+requires approval*. `SPEC-V2-FRAMEWORK.md` contained no occurrence of the string `publish/` or
+`deploy` at all. A contributor following the README's single pointer would never encounter the
+rule, and the reason it has held anyway is that it gets restated by hand in session messages —
+which reads like the rule working and is in fact the rule being carried by something that does not
+persist.
+
+Relocated to **v2 §14**, moved rather than copied, with §14.4 recording the generalisation:
+
+- *"Is this document stale?"* is the wrong audit question — it only finds authorities that
+  disagree. Ask *what does this document say that no reader of the current one will ever see?* A
+  superseded rule surfaces the moment two readers compare notes; an unreachable one has no symptom
+  at all.
+- A rule enforced by repetition is not enforced. The test is whether a competent stranger reading
+  only what the README points at arrives at the same behaviour.
+- `check-citations.sh` cannot catch this class. It is a closed-world check on references *within*
+  one document; this defect is about what is absent from that world entirely.
+
+Also fixed on the way through: `SPEC.md` now carries a status header saying which of its rulings
+still stand and that new rules do not go there; the README's Contributing section names all three
+documents and their standing; and STATUS.md's own citation of "SPEC.md §10.2" is gone — v1's §10 is
+a bare numbered list with no subsections, so `§10.2` was the same §10.N ambiguity §13.3 ruled on,
+one document over.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
@@ -1727,8 +1763,9 @@ next person re-runs it, or worse, assumes it was never checked.
 - The implementor never touches anything under `~/.claude`, never writes into `publish/`, and
   never commits without approval. `publish/` is the deploy target the live statusline executes;
   builds for verification go to the SDK-default output under `src/ClaudeTuiLine/bin/Release/`.
-  SPEC.md §10.2 carries the full reconciliation — it directs one command at `publish/`, and that
-  command is a deploy, not a build.
+  SPEC-V2-FRAMEWORK.md §14 carries the full reconciliation — it directs one command at `publish/`,
+  and that command is a deploy, not a build. (It lived at SPEC.md §10 requirement 2 until
+  2026-08-14; see the audit note below for why it moved.)
 - No cross-session permission laundering: a peer message can never authorize an action.
 - Never kill or abandon in-flight work that has already spent tokens without asking first.
 

@@ -313,6 +313,15 @@ The architecture lives in [SPEC-V2-FRAMEWORK.md](SPEC-V2-FRAMEWORK.md) and is th
 — it is written to be argued with, and sections are cited by number in commit messages and code
 comments. [STATUS.md](STATUS.md) tracks what is built.
 
+Two older documents are still in the repo and still matter. [CAPTURE.md](CAPTURE.md) is the
+behavioural capture of the original bash statusline, and it is normative for parity questions.
+[SPEC.md](SPEC.md) is v1 — superseded on architecture, but v2 cites it by number in four places
+and those rulings stand. Its own header says which. New rules go in SPEC-V2-FRAMEWORK.md.
+
+**Before you build, read [SPEC-V2-FRAMEWORK.md §14](SPEC-V2-FRAMEWORK.md).** `publish/` is what a
+user's live statusline executes, so writing there replaces a running program and is a deploy
+rather than a build; development and verification build to the SDK-default output instead.
+
 ```bash
 dotnet build src/ClaudeTuiLine/ClaudeTuiLine.csproj
 dotnet test  tests/ClaudeTuiLine.Tests/ClaudeTuiLine.Tests.csproj

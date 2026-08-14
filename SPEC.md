@@ -1,6 +1,21 @@
 # SPEC — claude-tui-line: .NET rebuild of the Claude Code statusline
 
-Status: ready for implementation.
+> **Status: v1 — implemented, and superseded for architecture by
+> [SPEC-V2-FRAMEWORK.md](SPEC-V2-FRAMEWORK.md), which is the current source of truth.**
+>
+> This document is **not** archived, because parts of it are still cited as live authority from
+> v2 — §6b (config is re-read on every render), §6 (`Plain.Length` is the width metric), line 353
+> (an empty surface emits zero bytes), and Phase 1 (the `chromeReserve` width fix) as a
+> prerequisite. Those rulings stand.
+>
+> Everything about *structure* here describes one hardcoded statusline with 14 built-in segments,
+> which v2 replaced with a pane tree and an item registry. Where the two differ on architecture,
+> v2 wins and this file is history. Where v2 cites this file by number, this file is normative.
+>
+> **New rules do not go here.** §10 requirement 2 used to carry the build-and-deploy discipline;
+> it now lives at v2 §14, because a rule reachable only from a document nobody is pointed at is
+> not a rule. v2 §14.4 explains that finding.
+
 Behavioral contract: **CAPTURE.md in this directory is normative.** This spec adds the design
 decisions, project structure, and acceptance criteria; where behavior is concerned, CAPTURE.md
 wins and this spec only records deviations from it (listed in §8).
@@ -356,43 +371,18 @@ Table-driven where possible; every test feeds fixtures, no test shells out excep
 ## 10. Acceptance criteria
 
 1. `dotnet test` green.
-2. `dotnet publish -c Release` (AOT) succeeds; binary at `publish/claude-tui-line`, produced
-   by **exactly one command, with no separate copy step**:
+2. `dotnet publish -c Release` (AOT) succeeds; binary at `publish/claude-tui-line`.
 
-   ```
-   dotnet publish src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release -o publish
-   ```
+   **The build-and-deploy discipline that used to be written out here now lives at
+   [SPEC-V2-FRAMEWORK.md](SPEC-V2-FRAMEWORK.md) §14** — the one command that produces the
+   artifact, identity by hash rather than timestamp, the separation of building from deploying,
+   and the rule that writing into `publish/` requires approval because it replaces something the
+   user is running.
 
-   This was previously written as "copy step or `-o publish`", offering two equally valid
-   methods. That ambiguity is what allowed the deployed artifact to drift: the SDK-default
-   output lands in `src/ClaudeTuiLine/bin/Release/net10.0/osx-arm64/publish/`, the live
-   statusline runs `publish/claude-tui-line`, and nothing kept them in sync. The two diverged
-   silently and every parity result during Phases 1–3 was measured against an artifact the
-   user does not run. A deploy step that depends on a human remembering to copy a file is not
-   a deploy step.
-
-   Because the drift was invisible, **identity is checked by hash, never by timestamp** — a
-   newer mtime on the deployed binary does not mean it came from the current source. Any claim
-   that something is "shipped and verified" names the SHA-256 it was verified against.
-
-   **Producing the artifact and deploying it are different acts, and only the second is
-   restricted.** `publish/` is what the user's live statusline executes, so writing there
-   replaces something of the user's while it is running — that is a deploy, and it requires
-   approval. Development and verification build to the SDK-default output instead
-   (`src/ClaudeTuiLine/bin/Release/net10.0/osx-arm64/publish/`), which is where an implementor
-   or a reviewer exercises the binary, measures latency, and reproduces a hash.
-
-   This does not reintroduce the drift above. The drift came from *two* ways to produce the
-   deployed artifact, one of which was a human remembering to copy a file. There is still
-   exactly one command that writes `publish/`, it is still the one printed above, and identity
-   is still established by hash — the only thing added is who may run it. A build nobody
-   deployed cannot diverge from a deploy, and a hash comparison between the two is precisely
-   how you confirm it didn't.
-
-   AOT trim/analysis warnings from
-   Spectre.Console must be inspected: warnings affecting only unused features (tables, live
-   display, exception rendering) are acceptable and get listed in the implementation
-   report; warnings on markup/rendering paths are defects.
+   It moved rather than being copied: two documents stating the same rule is the defect this
+   project has spent the most effort removing, and the copy that nobody is pointed at is the one
+   that goes stale. v2 §14.4 records why it was unreachable here in the first place — this
+   document is not what `README.md` sends a contributor to read.
 3. `bench/fixture.json` piped to the binary emits colored rows; `cat -v` shows the §3 SGR
    codes; visually comparable to `bash ~/.claude/statusline-command.sh` on the same input
    (COLUMNS set identically). Bash-parity comparisons run with the border disabled via a
