@@ -23,7 +23,10 @@ public static class PaneBorderRenderer
     /// bordered pane whose row budget falls under 3 cannot close its box, so it drops the top and
     /// bottom edge rows entirely (reclaiming both for content) rather than drawing blank chrome in
     /// their place — unlike <paramref name="suppressed"/>, this changes row count, not just glyphs.
-    /// Left/right verticals still wrap each content row, independently suppressed or not.
+    /// Left/right verticals still wrap each content row, independently suppressed or not. The
+    /// caller is responsible for establishing that <paramref name="contentRows"/> is non-empty (or
+    /// that the box cannot be drawn regardless) before passing true — reclaiming edge rows with no
+    /// content to reclaim them for erases the pane instead of shrinking it.
     /// </param>
     public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<PaneRow> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false, bool omitEdges = false)
     {

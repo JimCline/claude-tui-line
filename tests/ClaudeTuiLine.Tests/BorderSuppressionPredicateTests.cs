@@ -1,3 +1,4 @@
+using Spectre.Console;
 using Xunit.Abstractions;
 
 namespace ClaudeTuiLine.Tests;
@@ -262,5 +263,146 @@ public class BorderSuppressionPredicateTests
         Assert.Equal(2, excludeAwareReserve);
         Assert.True(SizeResolver.ShouldSuppressBorder(middlePane, 21 - excludeAwareReserve),
             "grant 21's exclude-aware pre-suppression inner width (19) is under MinUsableWidth");
+    }
+
+    // ---- SPEC-2.8.2-height-suppression-empty-content.md §4 (task #80): height suppression
+    // requires a beneficiary. A bordered pane with zero content rows must render an empty 2-row
+    // box (there is room and nothing to gain by dropping it), not vanish — reclaiming the edge
+    // rows only makes sense when there is content to reclaim them for. Below a 2-row budget the
+    // box genuinely cannot be drawn, so suppression there is unchanged. Rendered end-to-end
+    // through PaneTreeRenderer.Render, as #73b's tests did — the claim is about emitted output.
+
+    private static readonly PaneBorder EmptyBordered = new(new ColorResolution.ColorExpr.Literal("grey"), BoxBorder.Rounded, PaneBorderEdges.All);
+    private static readonly PaneBorder EmptyBorderless = new(new ColorResolution.ColorExpr.Literal("grey"), null, PaneBorderEdges.All);
+    private static readonly IReadOnlyDictionary<string, ColorResolution.ColorRule> EmptyTokens = new Dictionary<string, ColorResolution.ColorRule>();
+    private static readonly IReadOnlyDictionary<string, string?> NoValues = new Dictionary<string, string?>();
+
+    // An empty Items list is "author configured no items" to PaneAssembler (falls back to
+    // rendering the default segment set) — not the same thing as zero content rows. A configured
+    // item whose id has no entry in NoValues resolves to nothing, which is the actual
+    // zero-content-row case §4 is testing.
+    private static readonly PaneItem UnresolvedItem = new(null, null, null, null, Id: "unresolved");
+
+    private static Pane EmptyLeaf(PaneBorder border, int? maxRows = null, int? minSize = null) =>
+        new(PaneSplit.None, Array.Empty<Pane>(), "content", border, OverflowMode.Truncate, "…", maxRows, new[] { UnresolvedItem }, MinSize: minSize);
+
+    // §4 item 1, the headline case: no maxRows, no ClipRows (natural-height path), zero content
+    // rows. Must be shown to FAIL (emit 0) on unmodified main before the fix — confirmed via E1.
+    [Fact]
+    public void Render_NaturalHeight_BorderedPaneWithZeroContentRows_EmitsEmptyBoxNotNothing()
+    {
+        var pane = EmptyLeaf(EmptyBordered);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector());
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(2, contribution.Buffer.Rows.Count);
+    }
+
+    // §4 item 2 / §1.2: same as item 1, but with an explicit MinSize set — the case PaneCollapse
+    // (§2.11.2) is forbidden to remove per ConfigCheck.cs:784's "author said so; always wins"
+    // rule. Height suppression never consults collapse at all, so pre-fix this pane vanished
+    // exactly like an unprotected one — this is why §1 is a defect and not a feature, not merely
+    // a missing case in an otherwise-sound heuristic.
+    [Fact]
+    public void Render_NaturalHeight_MinSizeProtectedPaneWithZeroContentRows_Survives()
+    {
+        var pane = EmptyLeaf(EmptyBordered, minSize: 5);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector());
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(2, contribution.Buffer.Rows.Count);
+    }
+
+    // §4 item 3 / §1.1's variant: ClipRows: 2, zero content rows. The case most likely to be
+    // missed by a fix aimed only at :159 (the natural-height branch).
+    [Fact]
+    public void Render_ClipRowsTwo_ZeroContentRows_EmitsEmptyBoxNotNothing()
+    {
+        var pane = EmptyLeaf(EmptyBordered);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector()) with { ClipRows = 2 };
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(2, contribution.Buffer.Rows.Count);
+    }
+
+    // §4 item 4: ClipRows: 1, zero content rows. Unchanged behaviour — the box genuinely does not
+    // fit in a 1-row budget, so 0 rows out is still correct. Guards against over-correcting §3.1.
+    [Fact]
+    public void Render_ClipRowsOne_ZeroContentRows_StillEmitsNothing()
+    {
+        var pane = EmptyLeaf(EmptyBordered);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector()) with { ClipRows = 1 };
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(0, contribution.Buffer.Rows.Count);
+    }
+
+    // §4 item 5: ClipRows: 0. Unchanged.
+    [Fact]
+    public void Render_ClipRowsZero_StillEmitsNothing()
+    {
+        var pane = EmptyLeaf(EmptyBordered);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector()) with { ClipRows = 0 };
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(0, contribution.Buffer.Rows.Count);
+    }
+
+    // §4 item 6, the highest-value regression test in the list: ClipRows: 1 with one content row.
+    // §1.1's whole reason for existing — a careless fix requiring contentRows.Count > 0 AND
+    // budget >= 2 would break this: exactly one row of content, no edges, budget spent entirely
+    // on content rather than chrome.
+    [Fact]
+    public void Render_ClipRowsOne_OneContentRow_SpendsWholeBudgetOnContentNoEdges()
+    {
+        var item = new PaneItem(null, null, null, null, Id: "a");
+        var values = new Dictionary<string, string?> { ["a"] = new string('X', 20) };
+        var pane = EmptyLeaf(EmptyBordered) with { Items = new[] { item } };
+        var resolved = SizeResolver.Resolve(pane, 10, Ctx, values, new RenderNoteCollector()) with { ClipRows = 1 };
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Single(contribution.Buffer.Rows);
+        Assert.Contains("X", contribution.Buffer.Rows[0].Markup);
+    }
+
+    // §4 item 7: ClipRows: 2 with two content rows. Unchanged — 2 content rows, no edges.
+    [Fact]
+    public void Render_ClipRowsTwo_TwoContentRows_SpendsWholeBudgetOnContentNoEdges()
+    {
+        var items = new[] { new PaneItem(null, null, null, null, Id: "a"), new PaneItem(null, null, null, null, Id: "b") };
+        var values = new Dictionary<string, string?> { ["a"] = new string('X', 20), ["b"] = new string('X', 20) };
+        var pane = EmptyLeaf(EmptyBordered) with { Items = items };
+        var resolved = SizeResolver.Resolve(pane, 10, Ctx, values, new RenderNoteCollector()) with { ClipRows = 2 };
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(2, contribution.Buffer.Rows.Count);
+        Assert.All(contribution.Buffer.Rows, r => Assert.Contains("X", r.Markup));
+    }
+
+    // §4 item 8 (ownDeclaredTiny still wins, unchanged by this task) is already covered by
+    // HeightLadderTests.Render_OwnDeclaredTinyMaxRows_KeepsBorderAndDropsContentInstead — that
+    // test's pane has maxRows: 2 with a ClipRows: 2 budget, so heightSuppressed is false on both
+    // the pre- and post-fix code (ownDeclaredTiny short-circuits it), and omitEdges collapses to
+    // heightSuppressed's own false regardless of this task's beneficiary clause. Not duplicated
+    // here.
+
+    // §4 item 9: an unbordered pane with zero content rows emits 0 rows before and after — Wrap
+    // returns contentRows unchanged whenever border.Style is null, never reaching omitEdges.
+    [Fact]
+    public void Render_Unbordered_ZeroContentRows_StillEmitsNothing()
+    {
+        var pane = EmptyLeaf(EmptyBorderless);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector());
+
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+
+        Assert.Equal(0, contribution.Buffer.Rows.Count);
     }
 }
