@@ -1,4 +1,110 @@
-# Report: SPEC-47 fallback-pane diagnostic
+# Report: SPEC-47 fallback-pane diagnostic (final — post Revision 4)
+
+Branch `task-47-fallback-diagnostic`, worktree
+`/Users/jimcline/git/repos/claude-tui-line-task-47-fallback-diagnostic`, based on local `main`@`8437c37`.
+Two commits:
+- `2e2c16b` — pure relocation (§5.0.2): `LoadRenderConfig`/`ComposeResolutionFailureReason`/
+  `ComposeUnreadableReason`/`BuildFallbackConfig` moved from `Program.cs` top-level-statement local
+  functions into `internal static class ConfigResolution` (new file
+  `src/ClaudeTuiLine/ConfigResolution.cs`). No signature/behavior change in this commit.
+- `775a5d7` — behavioral change + tests: `FallbackResult` guard (§4.3), null-`configPath` rung 3
+  (§3.3), newline-stripped resolution-failure reason (§5.1 test 3), and all new/modified tests.
+
+This supersedes the Revision-1 report below the `---` line; that content is kept only as history —
+Fix (A)'s original diagnostic-`PaneItem` design it describes was withdrawn in Revision 2.
+
+## What shipped
+
+- **`ConfigResolution.FallbackResult(string? configPath, string reason, int protectedLength)`**
+  (§4.3): `reason` is non-nullable with no default. All three `LoadRenderConfig` fallback paths
+  (parse error, asserted-missing file, resolution-throw catch) now route through it — the old
+  catch-all that returned a `null` `UnreadableReason` no longer compiles as written; the type itself
+  enforces the coupling. `ConfigResolution.cs:63-67`.
+- **`ConfigResolution.ComposeResolutionFailureReason(Exception ex)`** — `"config could not be
+  resolved: {message}"`, message run through `StripNewlines` first (`ConfigResolution.cs:77-81`)
+  since `Exception.Message` is not guaranteed newline-free and the diagnostic is a one-row channel.
+- **`ConfigUnreadableMessage.Format`** (§3.3): `path` parameter is `string?`. Rungs 1-2 wrapped in
+  `if (path is not null)`; a null path enters rung 3 (pathless) directly — no sixth rung.
+  `width!.Value` at the reason-budget line got one added `!` (CS8629) since the compiler can no
+  longer flow-prove `width` non-null once rungs 1-2 are conditional. `ConfigUnreadableMessage.cs:23-55`.
+- **`Program.cs:35`** — call site updated to `ConfigResolution.LoadRenderConfig(explicitConfigPath)`.
+- **`Program.cs:43`** — `configPath!` null-forgiving operator dropped; `Format` accepts null now.
+
+## §5.2 gap — struck by design, not by omission
+
+Tests 1/2 (force `ResolveTopLevel`/`ResolveRootPane` to throw) remain unwritten. Per §5.0.1's
+reachability-vs-controllability ruling: the Revision-4 relocation into `ConfigResolution` fixed
+*reachability* (tests can now call `LoadRenderConfig` directly, which they do — see below) but not
+*controllability* (nothing can make `ResolveTopLevel`/`ResolveRootPane` throw for any real
+`UserConfig` — that's §1.3's dormant-invariant point, unchanged by the move). No fault-injection
+hook was added — categorically rejected, §5.0.0/§7.
+
+The three §5.2 self-closing requirements, done:
+- (a) Gap named explicitly, at its current location: the untested lines are
+  `ConfigResolution.cs:47-49` (the `try` body: `ResolveTopLevel`, `ResolveRootPane`, and the
+  success-path return) and the `catch (Exception ex)` block at `ConfigResolution.cs:54-57`.
+- (b) Comment on the catch block citing §5.2 — present, `ConfigResolution.cs:51-53`.
+- (c) No action needed now; the first future `throw` added under either resolver makes this
+  block reachable-and-testable in the same commit, per §1.3/§5.2.
+
+## §5.1 tests — final state
+
+| # | What | Where | Status |
+|---|------|-------|--------|
+| 3 | `ComposeResolutionFailureReason` strips newlines | `ConfigResolutionTests.cs` | written, passes |
+| 4 | `Format(null, reason, width)` → rung 3, no placeholder, no throw | `ConfigUnreadableMessageTests.cs::NullPath_EntersRung3Directly_NoPlaceholderNoException` | written, passes — **this is E2's proof; reported explicitly per Revision 4** |
+| 5 | CLI subprocess coverage of parse-error/missing-file paths | `PreviewCliTests.cs` (existing, unchanged) | confirmed sufficient, left as-is per Revision 4 constraint (not converted) |
+| 6 | Width-degradation sweep, resolution-failure-shaped reason, all 5 rungs | `ConfigUnreadableMessageTests.cs::ResolutionFailureReason_DegradesThroughAllFiveRungs_AsWidthNarrows` | written, passes |
+| 7 | `LoadRenderConfig` reachable-tier: parse error, asserted missing file | `ConfigResolutionTests.cs` (2 tests) | written, passes |
+| 8 | `FallbackResult` output matches `BuildFallbackConfig`'s unchanged shape | `ConfigResolutionTests.cs::FallbackResult_ResolvedConfigAndPaneMatchMainsUnchangedOutput` | written, passes — this is the one test Revision 3 struck that the refactor genuinely restores |
+| 9 | `tools/check-all.sh` | — | run, see below |
+
+New file: `tests/ClaudeTuiLine.Tests/ConfigResolutionTests.cs` (6 tests). Modified:
+`tests/ClaudeTuiLine.Tests/ConfigUnreadableMessageTests.cs` (+2 tests).
+
+## Verification run
+
+- `dotnet build src/ClaudeTuiLine -c Release` — exit 0, no errors/warnings.
+- `dotnet test tests/ClaudeTuiLine.Tests -c Release --filter
+  "FullyQualifiedName~ConfigResolutionTests|FullyQualifiedName~ConfigUnreadableMessageTests"` —
+  **17/17 passed**, 0 failed, 0 skipped. Smoke-test scope only, per dispatch ("full verification is
+  cdtui-worker's job"); did not run the full suite.
+- `tools/check-all.sh` — **exit 1**, but both failures are pre-existing and unrelated to this diff:
+  1. `check-citations`: 13 undefined section citations across various SPEC files (§1.3, §10.11,
+     §12.4.x, §12.5.x, §12.8.x, §12.9, §4.4, §5.0, §5.2-5.5, §7.2, §7.5, §8.1-8.9, §9.0) — several of
+     these numbers match SPEC-47's own subsection scheme, so this may be SPEC-47 citing its own
+     subsections (e.g. `§5.0`) without a matching heading; flagging rather than fixing, since editing
+     spec-doc headings is not this diff's scope and I didn't diagnose which file(s) hold the bad
+     citations.
+  2. `check-doc-tokens`: `README.md:162` cites `border` as a literal token not present in the
+     `--accepted --json` registry.
+  Neither touches a file this diff changed (`ConfigResolution.cs`, `ConfigUnreadableMessage.cs`,
+  `Program.cs`, the two test files). Reporting up rather than fixing, since diagnosing/fixing either
+  is outside SPEC-47's scope and I have not verified whether these two failures pre-date this branch
+  or were introduced by unrelated work already on `main`@`8437c37`.
+
+## Fix (A) structural guarantee — code-review-only, not test-assertable
+
+§4.3's core claim — "no caller can obtain a fallback pane without also supplying a reason" — is a
+type-level guarantee (`reason` non-nullable, no default), not a runtime behavior. It can't be
+asserted by a test (there's no code path left that would demonstrate its absence); it's provable
+only by reading `FallbackResult`'s signature and confirming all three `LoadRenderConfig` call sites
+route through it (they do — `ConfigResolution.cs:27,34,56`). Flagging for the Reviewer to check by
+inspection rather than by a claimed test.
+
+## What the Reviewer should look hardest at
+
+- `ConfigUnreadableMessage.cs`'s `width!.Value` at the reason-budget line (line 47) — confirm
+  reachability still guarantees non-null `width` now that rungs 1-2 are behind `if (path is not
+  null)`.
+- The commit split: confirm `2e2c16b` is genuinely behavior-preserving (diff should be pure code
+  motion + the 3 `using`/CS0103 fixes) and all behavioral changes are isolated to `775a5d7`.
+- The two `check-all.sh` failures above — confirm they predate this branch (e.g. `git stash` this
+  diff and re-run on `8437c37`) before treating them as out-of-scope.
+
+---
+
+# Report: SPEC-47 fallback-pane diagnostic (Revision 1 — historical, superseded)
 
 Branch `task-47-fallback-diagnostic`, worktree
 `/Users/jimcline/git/repos/claude-tui-line-task-47-fallback-diagnostic`, based on local `main`@`8437c37`
@@ -20,110 +126,14 @@ Branch `task-47-fallback-diagnostic`, worktree
 - §3.4: did **not** rename `UnreadableReason`/`ComposeUnreadableReason` — per spec, noted as
   follow-up only.
 
-E2's answer (from evidence-gathering): `ConfigUnreadableMessage.Format` at
-`ConfigUnreadableMessage.cs:20`, path was non-nullable `string`; the five rungs are a single
-linear fallthrough chain with no existing entry point into rung 3 — confirmed by reading the
-method directly. The `if (path is not null)` wrapper around rungs 1-2 is what creates that entry
-point; verified by rebuild (see below), not just by inspection, since the flow-analysis interacts
-with the existing `width!.Value` null-forgiving uses inside the method (one additional `!` was
-needed at the reason-budget line once the two path rungs moved inside a conditional — CS8629,
-fixed, rebuilt clean).
+## Fix (A) — withdrawn by Revision 2, see current report above
 
-## Fix (A) — NOT implemented, blocked by E1
+E1 found no literal-text-carrying `PaneItem` construction exists; `Format`-with-null-`Item` renders
+nothing. Revision 2 replaced the original diagnostic-`PaneItem` design with §4.3's `FallbackResult`
+type-level guard — implemented, see above.
 
-E1 asked whether a literal-text `PaneItem` can be constructed as `Format` set with `Item` null,
-and said explicitly: *"If no literal-only construction exists anywhere → report that, because it
-means a pane item may always require a resolvable `Item`, and (A) needs a different shape."*
+## §5 — resolved by Revisions 3/4, see current report above
 
-That is what the evidence came back as. Two searches:
-
-1. Every `new PaneItem(...)` in `src/` and `tests/` (28 matches) — the only production
-   construction is `Config.cs:830-846`'s `ToPaneItems`, which passes `i.Item`/`i.Format` straight
-   from parsed JSON; no literal-only construction exists anywhere in the codebase.
-2. Traced how `PaneItem.Item`/`.Format` are actually consumed, in `LeafItems.cs`'s
-   `ResolveDisplay` (`:55-64`) and `ApplyFormat` (`:178-179`):
-   ```csharp
-   private static Segment? ResolveDisplay(PaneItem item, string? key, string? value, ItemContext ctx)
-   {
-       if (item.Format is not null)
-       {
-           return value is null ? null : SegmentBuilder.BuildItemSegment(ApplyFormat(item.Format, value), null);
-       }
-       ...
-   }
-   public static string ApplyFormat(string? format, string value) =>
-       (string.IsNullOrEmpty(format) ? "{}" : format).Replace("{}", value);
-   ```
-   `Format` is a `{}`-placeholder template applied to a *resolved* value — confirmed independently
-   by `SPEC-V2-FRAMEWORK.md:5209` (§9.5.1): *"A format string substitutes `{}` with the item's own
-   value and nothing else."* When `item.Format is not null` but `value is null` (which is what a
-   null `Item` produces — nothing to resolve), `ResolveDisplay` returns **null**: the item is
-   suppressed, not rendered as literal text. `Format`-with-null-`Item` does not work; it renders
-   nothing.
-
-So §4.3's presumed construction (`Format` set, `Item` null) does not produce visible text — it
-produces silence, which is the exact failure mode (A) exists to prevent. This is a genuine gap in
-the spec, not an ambiguity I can resolve by picking the "obviously intended" alternative: making a
-`PaneItem` carry literal text requires either a new field on the record, a new `Item`
-kind/provider that always resolves to a fixed string, or some other shape §4 doesn't specify, and
-choosing among those is a design decision, not an implementation one.
-
-**Stopping here per contract rather than guessing.** §3 (Fix B) is complete, builds clean, and is
-ready for verification. §4 (Fix A) needs the Architect to pick a construction shape before I write
-code for it — recommend routing E1's finding back for a design decision.
-
-## Build
-
-`dotnet build src/ClaudeTuiLine -c Release` — exit 0, no errors (verified after fixing one
-CS8629 introduced by the §3.3 restructuring).
-
-## Blocked: §5 tests 1/2/3/4/6 need a seam that doesn't exist
-
-§5 test 1 says to force `ResolveTopLevel`/`ResolveRootPane` to throw via "a test seam or a
-deliberately-invalid injected `UserConfig`." Neither option is available today:
-
-- **No injected `UserConfig` can force a throw.** §1.3 already established (and I re-confirmed)
-  that nothing reachable from a user config value throws in either method — everything defaults or
-  null-coalesces. That's *why* the bug is dormant.
-- **No test seam exists, and the architecture makes adding one non-trivial.** `LoadRenderConfig`,
-  `ComposeResolutionFailureReason`, `ComposeUnreadableReason`, and `BuildFallbackConfig` are all
-  local functions inside `Program.cs`'s top-level-statements file — they're implicitly private to
-  that scope; local functions can't carry access modifiers, so `InternalsVisibleTo` (already wired
-  for `ClaudeTuiLine.Tests`, confirmed at `AssemblyInfo.cs:3`) doesn't reach them regardless. The
-  only prior test coverage of this diagnostic path (`PreviewCliTests.cs`) shells out to the built
-  CLI binary as a subprocess — which also can't force the throw, for the same §1.3 reason.
-
-Making tests 1/2/3/4/6 executable requires **one of**:
-1. A fault-injection hook added to `Config.cs`'s `ResolveTopLevel`/`ResolveRootPane` (or something
-   they call) — production code shape change purely for testability, not described anywhere in §3
-   or §4.
-2. Restructuring `LoadRenderConfig` and its siblings out of `Program.cs`'s top-level statements
-   into a proper `internal` class member so tests can call them directly and inject a throwing
-   dependency — also a structural change beyond §3's diff.
-3. Accepting weaker coverage: test `ComposeResolutionFailureReason`'s message shape and
-   `ConfigUnreadableMessage.Format`'s new null-path rung-3 entry (§3.3) as isolated units (both
-   *are* reachable — `ConfigUnreadableMessageTests.cs` already covers `Format` directly), but never
-   exercise the actual `catch` block at `Program.cs:894` end-to-end.
-
-I did not pick one — this is a testability/architecture call, not something §3's literal diff
-answers, so no new test file was written this pass. Option 3's reachable slice (`Format`'s new
-null-path rung-3 entry, isolated from the `catch` block) is the one piece I could write without a
-decision — I held off on writing even that alone so the whole §5 pass lands together once you pick
-1/2/3, rather than in two disjointed commits. Let me know which and I'll write the rest
-immediately; this is the only thing left before a full §5 pass and cdtui-worker verification.
-
-## Not yet run
-
-No test suite run yet — smoke-test only per dispatch ("Smoke-test only — full verification is
-cdtui-worker's job"). No commit made pending your read of the Fix (A) gap — let me know whether to
-commit Fix (B) alone on this branch now or wait.
-
-## What the Reviewer/cdtui-worker should look hardest at
-
-- `ConfigUnreadableMessage.cs`'s restructured `Format`: confirm the `width!.Value`/`width.Value`
-  null-forgiving uses are all still sound now that rungs 1-2 are conditionally skipped (I re-derived
-  this by hand — reachability of line 47 requires `width` non-null via the pathless-`Fits`-false
-  branch, but worth a second look).
-- Test 4 (§5) — the null-`configPath` test — is not yet written; it's the one the spec says
-  "fails hardest if §3.3 is skipped." No tests were added at all in this pass since I stopped at
-  the E1 gap before reaching §5's full suite; only a build-level smoke check was done.
+Original blocker (no test seam for `ResolveTopLevel`/`ResolveRootPane`) resolved via Option 2
+(relocation into `ConfigResolution`) for reachability; tests 1/2 stay struck per §5.2 since
+controllability is a separate, unresolved axis. See current report above for final test disposition.
