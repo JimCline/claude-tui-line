@@ -4937,6 +4937,13 @@ covering SPEC-3.1 §8's verification items 1-9. Verified via `cdtui-worker`:
 build+full suite (1359/1359, then 1367/1367 post-merge)+`check-all.sh` clean
 pre- and post-merge. Landed as merge commit `c4b93d2` (pushed).
 
+
+### #73: border-suppression predicate fix (§1-§4)
+
+Merged to main (commit 2a7def0). Fixes SizeResolver.ShouldSuppressBorder to guard on innerWidth>=MinUsableWidth instead of the prior outer-width-based check; DropFloor now computes preSuppressionInnerWidth using its own excludes. PaneTreeRenderer.cs:43 now passes innerWidth instead of node.OuterWidth. New tests/ClaudeTuiLine.Tests/BorderSuppressionPredicateTests.cs covers SPEC-2.3-suppression-predicate.md §8 items 1,2,3,5,6. Full suite 1372/1372 green, verified independently by cdtui-worker pre- and post-merge.
+
+Item 7 (§8) — whether a suppressed border's content reclaims the reserved column space, or the current outer-minus-reserve design stands as documented — is still open, routed to the architect alongside #74 (same PaneBorderRenderer.Wrap exit sites). Task #73 stays in_progress until that's ruled.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
