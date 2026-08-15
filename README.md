@@ -153,6 +153,22 @@ Pane keys:
 | `border.style` | `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or `"none"` |
 | `items` | the items to render, for a leaf pane |
 
+`split` names the dividing line, not the arrangement of children along it. `"vertical"` panes are
+divided by a vertical line — children sit side by side, first child leftmost — the shape in the
+example above. `"horizontal"` panes are divided by a horizontal line — children stack top to
+bottom, first child topmost:
+
+```json
+{
+  "split": "horizontal",
+  "gutter": 1,
+  "children": [
+    { "size": "content", "items": [ { "item": "model" } ] },
+    { "size": "fill",    "items": [ { "item": "directory" } ] }
+  ]
+}
+```
+
 `size: "content"` measures the pane's own text and asks for exactly that much. `distribute:
 "min-rows"` is the interesting one: rather than letting each pane grab what it wants in order, it
 searches for the width split that makes the *whole statusline* as short as possible.
