@@ -1788,6 +1788,29 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "placeholder-derived-source" && d.Path == "/items/1/command" && d.Severity == DiagnosticSeverity.Error);
     }
 
+    // §12.8.5 hole #2: an argv placeholder naming a compound item passed --check and silently
+    // substituted nothing before this fix, the same "self-declared id" hole as from-compound-source.
+    [Fact]
+    public void ArgvPlaceholderNamingCompoundItem_ReportsPlaceholderCompoundSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+                new() { Id = "cmd", Command = new List<string> { "tool", "{agent-badge}" } },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "placeholder-compound-source" && d.Path == "/items/1/command" && d.Severity == DiagnosticSeverity.Error);
+    }
+
     [Fact]
     public void ArgvPlaceholderNamingAnotherCommandItem_ReportsPlaceholderCommandSource()
     {

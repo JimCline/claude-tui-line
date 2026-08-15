@@ -134,6 +134,11 @@ public static class ConfigChecker
                 yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-derived-source",
                     $"'{reference.Id}' is a derived item; an argv placeholder may not name a derived item");
             }
+            else if (reference.Form == ReferenceForm.ArgvPlaceholder && scan.CompoundItemIds.Contains(reference.Id))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-compound-source",
+                    $"'{reference.Id}' is a compound item; an argv placeholder may not name a compound item");
+            }
             else if (reference.Form == ReferenceForm.ArgvPlaceholder && string.Equals(reference.Id, reference.OwnerId, StringComparison.Ordinal))
             {
                 yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-self-reference",
