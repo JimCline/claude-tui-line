@@ -4727,6 +4727,63 @@ resolution passes an explicit path/override instead of relying on ambient
 `HOME`. `ConfigTests.cs` also carries no `[Collection]` attribute, so its own
 methods already run sequentially. No merge — working tree left clean, no diff.
 
+### #69: ItemCache.cs temp-path collision risk — investigated, not real today
+
+Checked whether `ItemCache.cs` sharing fixed temp paths across concurrent CLI
+subprocesses could corrupt or lose writes, the same shape as #68. Confirmed no
+code change needed: `Write`/`WriteWidth` already stage to a GUID-suffixed temp
+file in the cache dir, then `File.Move(..., overwrite: true)` — an atomic
+rename since .NET 6, not an in-place write — and `TryRead`/`TryReadWidth`
+treat any failure as a cache miss rather than an error, per §7. Cache
+filenames are per-key (hash of id+argv+cwd+width/env), so concurrent writers
+to different keys never collide on a target file, and concurrent writers to
+the same key each stage independently and race only on the final rename —
+documented-intentional last-write-wins at the granularity the value actually
+has.
+
+New test: `ItemCacheConcurrencyTests.cs` (32 concurrent writers to the same
+key never produce a torn/mixed read; 32 concurrent first-writers to distinct
+keys under a not-yet-existing cache dir all succeed) — passes against
+unmodified `ItemCache.cs`. `ItemCache.cs` itself left byte-for-byte unchanged.
+
+Merged cleanly alongside #27 (see below). Verified via `cdtui-worker`:
+pre-merge full suite clean (1337/1337), post-merge full suite clean covering
+both #69 and #27 together (1343/1343), `check-all.sh` clean. Landed as merge
+commit `0309fea` (pushed as part of `9f68ea9`).
+
+### #27: §2.4.1/§2.6 — ellipsis marker now honors the pane's own inner width
+
+§2.4.1 (per-row trim condition for a stacked composite sibling's per-row
+background) needed no fix: `PaneContribution.HasBackground` is hardcoded
+`false` at every construction site in the codebase, and no config/item type
+anywhere exposes a background-color property, so the failure mode §2.4.1
+describes has no live caller today. Flagged as forward-looking only — will
+need revisiting if/when background-color config lands.
+
+§2.6 (vertical ellipsis budget) had a real gap: `PaneAssembler.ClipRows` had
+no `innerWidth` parameter, so a narrow pane's marker-only row could exceed
+the pane's own inner width — contradicting the rule that the marker is
+budgeted against inner width on both axes, mirroring
+`PaneRenderer.TruncateSegment` on the horizontal axis. Fixed by threading
+`innerWidth` through; when the ellipsis string is empty or `>=` innerWidth,
+the marker is dropped entirely and every `cap` row keeps real content instead
+of wasting the last row on an unbudgeted marker.
+
+Open question routed to `cdtui-architect`, not resolved here: whether
+`ClipRows`'s full-row-replacement approach (dropping the last surviving row's
+own content entirely rather than splicing the marker into its trailing
+cells) satisfies §2.6's "ends with the marker" language, or whether a true
+splice is required — blocked on `PaneRow` carrying no plain-text field to
+splice against today (only opaque `Markup`). Not blocking this merge; a
+follow-up task if the architect rules a splice is required.
+
+New tests in `HeightLadderTests.cs` (marker-too-narrow-for-innerWidth,
+empty-ellipsis), plus the existing ellipsis test confirmed still green (no
+regression on the common case). Merged cleanly on top of #69's merge (only
+`PaneAssembler.cs` + `HeightLadderTests.cs` touched, no conflict). Verified
+via `cdtui-worker`: pre-merge full suite clean (1337/1337), post-merge
+covered together with #69 above. Landed as merge commit `9f68ea9` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
