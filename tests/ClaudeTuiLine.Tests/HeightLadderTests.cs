@@ -88,6 +88,34 @@ public class HeightLadderTests
         Assert.Equal(uncapped.Count, capped.Count);
     }
 
+    // ---- PaneAssembler.RenderLeafRows: §2.6 marker width budget on the vertical axis ----
+
+    [Fact]
+    public void RenderLeafRows_MaxContentRowsClips_EllipsisNotWiderThanInnerWidth_KeepsCapRowsOfContentInstead()
+    {
+        var items = Enumerable.Range(0, 5).Select(i => Item($"i{i}")).ToList();
+        var values = items.ToDictionary(i => i.Id!, i => (string?)Filler(20));
+        var pane = Leaf(NoBorder, OverflowMode.Truncate, items);
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 1, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 3);
+
+        Assert.Equal(3, rows.Count);
+        Assert.All(rows, row => Assert.NotEqual("…", row.Markup.TrimEnd()));
+    }
+
+    [Fact]
+    public void RenderLeafRows_MaxContentRowsClips_EmptyEllipsis_KeepsCapRowsOfContentInstead()
+    {
+        var items = Enumerable.Range(0, 5).Select(i => Item($"i{i}")).ToList();
+        var values = items.ToDictionary(i => i.Id!, i => (string?)Filler(20));
+        var pane = Leaf(NoBorder, OverflowMode.Truncate, items) with { Ellipsis = "" };
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 3);
+
+        Assert.Equal(3, rows.Count);
+        Assert.All(rows, row => Assert.NotEqual(string.Empty, row.Markup.TrimEnd()));
+    }
+
     // ---- PaneTreeRenderer: height suppression under 3 rows (§2.8.2) ----
 
     [Fact]

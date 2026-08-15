@@ -29,21 +29,31 @@ public static class PaneAssembler
 
         if (maxContentRows is int cap && rawRows.Count > cap)
         {
-            rawRows = ClipRows(rawRows, cap, pane.Ellipsis);
+            rawRows = ClipRows(rawRows, cap, pane.Ellipsis, innerWidth);
         }
 
         return rawRows.Select(row => AlignRow(row, innerWidth, pane.Align)).ToList();
     }
 
-    // §2.8.1 rung 4 / §2.8.2: drops rows past cap, replacing the last survivor with a plain
+    // §2.8.1 rung 4 / §2.8.2 / §2.6: drops rows past cap, replacing the last survivor with a plain
     // ellipsis marker row. A full-row replacement rather than a partial trailing-cell splice like
     // PaneRenderer's width-axis TruncateSegment, because row-axis clipping runs after rows are
     // already composed into opaque PaneRow markup, with no markup-safe splice point at this layer.
-    private static IReadOnlyList<PaneRow> ClipRows(IReadOnlyList<PaneRow> rows, int cap, string ellipsis)
+    //
+    // §2.6: the marker is budgeted against innerWidth exactly as it is on the horizontal axis —
+    // an empty ellipsis, or one that does not fit within innerWidth, is a hard clip spending no
+    // cell/row on the marker, so all cap rows are kept as real content instead of cap-1 plus a
+    // marker-only row.
+    private static IReadOnlyList<PaneRow> ClipRows(IReadOnlyList<PaneRow> rows, int cap, string ellipsis, int innerWidth)
     {
         if (cap <= 0)
         {
             return Array.Empty<PaneRow>();
+        }
+
+        if (ellipsis.Length == 0 || ellipsis.Length >= innerWidth)
+        {
+            return rows.Take(cap).ToList();
         }
 
         var kept = rows.Take(cap - 1).ToList();
