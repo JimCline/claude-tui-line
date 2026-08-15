@@ -63,6 +63,16 @@ by default, so the escape hatch survives any number of changes. See
 ```bash
 git clone https://github.com/JimCline/claude-tui-line.git
 cd claude-tui-line
+```
+
+Run `tools/install.sh` to do the rest in one shot — it builds the CLI (and the MCP server),
+prints a freshness check comparing the binary against your checked-out commit, and prints the
+`settings.json` block below with the real path already filled in. Safe to rerun any time you pull
+new commits.
+
+Or do it by hand, the steps the script mechanizes:
+
+```bash
 dotnet publish src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release -o publish
 ```
 
