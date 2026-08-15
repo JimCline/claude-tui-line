@@ -2444,52 +2444,42 @@ This distinction is not new machinery. §5's TTL cache already has to know the d
 what is cacheable, and §9.4.1's two-tier severity already separates "reported nothing" from
 "failed". What is new is that the collapse pre-pass must read it.
 
-#### 2.11.3 The config-error fallback pane collapses, and takes the error report with it
+#### 2.11.3 The config-error fallback pane is never reached — collapse has nothing to do with it
 
-`SafeLoadAll` (`Program.cs:490`) builds the pane used when the config cannot be loaded, and it
-satisfies **every** qualifier this section and its subsections narrowed collapse down to:
+`ConfigResolution.LoadRenderConfig` (`ConfigResolution.cs:15-58`) has three places that need the
+fallback pane, and each is a distinct failure:
 
-- `Array.Empty<PaneItem>()` — structurally empty, not emptied by degradation (§2.11) and not
-  holding an unavailable item (§2.11.2). It is the genuine `items: []` case.
-- size `"auto"`, which §2.4 defines as a deprecated alias for `fill` — collapse-eligible.
-- no `minSize`, so §2.11.1 does not hold it open.
-- `PaneSplit.None` with no children, so it is the **root**.
+- an asserted `--config` (or a config found by the §5 search order) that fails to parse
+  (`ConfigResolution.cs:24-28`);
+- an asserted `--config` naming a file that does not exist (`ConfigResolution.cs:34`);
+- the config parsed fine but `ConfigLoader.ResolveTopLevel`/`ResolveRootPane` threw while resolving
+  it (`ConfigResolution.cs:45-57`) — SPEC-47 §3's addition; the first two already reported a reason
+  before SPEC-47, this third one previously did not.
 
-Which lands on §2.11's last bullet: *"If the root collapses, the surface emits nothing — zero rows."*
+All three return through `ConfigResolution.FallbackResult` (`:63-67`), whose `reason` parameter is
+required, not optional (SPEC-47 §4.3): there is no way to obtain the fallback pane built by
+`BuildFallbackConfig` (`:103-122`, still `Array.Empty<PaneItem>()`, still structurally empty — that
+is unchanged) without also supplying a diagnostic reason for it, and `BuildFallbackConfig` itself is
+private to `ConfigResolution` — nothing outside this file can reach it any other way.
 
-**So implementing Defect 12 makes an unreadable config render nothing at all.** Today it renders a
-bordered empty box. That box is Defect 12's complaint and it is genuinely wrong — but it is also
-the only evidence the user gets that anything happened. Zero rows is indistinguishable from a
-working statusline with nothing to say, from claude-tui-line not being installed, and from the
-`statusLine` key having been removed. §7.1's third outcome is output that is wrong rather than
-absent; this is the fourth and worse one — absent *and* silent, on precisely the input where the
-user most needs a reason.
+`Program.cs:40-45` reads that reason before any rendering happens: if it is non-null, one row is
+printed (`ConfigUnreadableMessage.Format`) and the function returns 0 — nothing below it, including
+the collapse pre-pass and the renderer, ever runs. Because all three call sites above go through
+`FallbackResult`, the fallback pane's reason is never null, so this short-circuit fires on every
+path that produces it.
 
-**The ruling is not an exemption in the collapse pre-pass.** Adding "unless it is the fallback
-pane" would work and is the wrong shape: it puts a special case in the one piece of code whose
-correctness argument (§2.11's convergence reasoning) depends on having no special cases.
+**So the fallback pane's silence is not a property of §2.11's collapse rule, and does not need to
+be.** It never reaches collapse to be judged empty or held open; `Program.cs:40-45` returns before
+the pane is ever handed to the renderer. §2.11's collapse pre-pass has no special case for it and
+needs none — nothing here is an exemption to that section's convergence reasoning.
 
-**§9.2.1 removes the condition instead.** That section already requires the render path to draw
-*the reason* a config could not be read. A pane carrying that reason is not structurally empty, so
-it never qualifies for collapse, and no exemption is needed anywhere. The bug and the feature are
-the same edit.
-
-That argument rests on the reason pane always having something in it, which **§9.2.2** is what
-makes true: its degradation ladder bottoms out at "as much of `claude-tui-line` as fits" rather than
-at nothing, so no width drives the row to zero content. Structural emptiness is in any case a
-question about whether the item exists, not about how many cells it renders — §2.11.2 already
-settles that direction — but the two arguments should agree, and this notes that they do.
-
-**Ordering, and it is a hard constraint.** §9.2.1 (task #17) must land with or before §2.11
-(task #4). If §2.11 lands first, it ships with a temporary guard holding the fallback pane open,
-deleted when §9.2.1 arrives — because the window between them is one in which **every** config
-error is silent, and that window is exactly when a user is most likely to have just edited their
-config.
-
-This also settles §6.6.1's reachability question in the other direction: once the fallback pane
-carries content, it routes through `useSplitPipeline` to the tree path and stops reaching the
-`Panel` branch at all. The branch stays live regardless, on empty `fixed`/`percent`/`minSize` panes
-which §2.4 and §2.11.1 deliberately keep open.
+**What this does not do.** The fallback pane does not carry the diagnostic. It cannot: its `Items`
+are `Array.Empty<PaneItem>()`, unchanged from before, and it is never rendered regardless. The one
+row a reader sees is printed by `Program.cs:43`, above and outside the pane entirely. The guarantee
+is not "a single mechanism protects the fallback pane" — it is the conjunction of three separate
+call sites each being unable to skip `FallbackResult`'s required reason, plus one short-circuit that
+reads whatever reason results. Losing any one of the three call sites' coupling to `FallbackResult`
+would silently reopen this defect for that path alone; the others would still be safe.
 
 ## 3. Item model
 

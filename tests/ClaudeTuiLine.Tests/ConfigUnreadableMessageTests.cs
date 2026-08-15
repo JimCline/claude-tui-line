@@ -66,6 +66,46 @@ public class ConfigUnreadableMessageTests
     }
 
     [Fact]
+    public void NullPath_EntersRung3Directly_NoPlaceholderNoException()
+    {
+        const string reason = "config could not be resolved: something specific broke";
+        var pathless = $"claude-tui-line: {reason}";
+
+        var result = ConfigUnreadableMessage.Format(null, reason, pathless.Length);
+
+        Assert.Equal(pathless, result);
+        Assert.DoesNotContain("null", result);
+    }
+
+    [Fact]
+    public void ResolutionFailureReason_DegradesThroughAllFiveRungs_AsWidthNarrows()
+    {
+        const string path = "/Users/x/deeply/nested/workspace/config/my-rather-long-config-file-name.json";
+        const string reason = "config could not be resolved: Object reference not set to an instance of an object.";
+        var full = $"claude-tui-line: {path}: {reason}";
+
+        var rung1 = ConfigUnreadableMessage.Format(path, reason, full.Length);
+        Assert.Equal(full, rung1);
+
+        var pathless = $"claude-tui-line: {reason}";
+        var rung2 = ConfigUnreadableMessage.Format(path, reason, full.Length - 20);
+        Assert.NotEqual(full, rung2);
+        Assert.EndsWith(": " + reason, rung2);
+        Assert.Contains("…", rung2);
+
+        var rung3 = ConfigUnreadableMessage.Format(path, reason, pathless.Length);
+        Assert.Equal(pathless, rung3);
+
+        var rung4 = ConfigUnreadableMessage.Format(path, reason, 40);
+        Assert.Equal(40, rung4.Length);
+        Assert.StartsWith("claude-tui-line: ", rung4);
+        Assert.EndsWith("…", rung4);
+
+        var rung5 = ConfigUnreadableMessage.Format(path, reason, 10);
+        Assert.Equal("claude-tui", rung5);
+    }
+
+    [Fact]
     public void Rung4_ReasonTruncatedWithEllipsis_WhenPathlessRowStillTooLong()
     {
         const string path = "/Users/x/my.json";
