@@ -4621,6 +4621,25 @@ for #65, not re-filed. `check-all.sh`: 115 citations resolve, all counts
 match, notes pinned, 20 doc tokens checked, 0 disagree. Pushed —
 `main` is now at `0266d03`.
 
+### #26: §2.5.1 (one spawn per render; content panes export no width) — both rules already held
+
+Verified rather than fixed: both halves of §2.5.1 already hold structurally.
+Spawning happens exactly once per render — `Program.cs`'s `ItemValueResolver.
+ResolveAsync` runs before `SizeResolver`'s multi-pass fixpoint even starts, so
+there's no code path that could re-spawn across passes; a fill/fixed pane's
+width comes from the *previous* render's stamped value via `ItemCache`, the
+spec's sanctioned stale-but-safe caching. Content-sized panes never get
+`PANE_WIDTH`: `ItemValueResolver.cs:141`'s eligibility check
+(`!SizeResolver.IsContentSized(pane)`) short-circuits before the widths cache
+is even consulted. Closed two real gaps: no test pinned that an ineligible
+pane's env var stays unset even with a stale width sitting in the cache under
+the same key (added); §2.5.1 was cited three times elsewhere but never at the
+actual decision point (`ItemValueResolver.cs:141`) — added the citation there.
+
+Merged cleanly (no conflicts). Verified via `cdtui-worker` pre-merge (1330/1330)
+and post-merge on `main` (1335/1335, `check-all.sh` clean). Landed as merge
+commit `0d6cf62` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
