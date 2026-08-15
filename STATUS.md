@@ -4834,6 +4834,18 @@ catch. Both sections cross-reference each other's now-wrong claims, so
 rewriting coherently is a spec-authoring call — routed to `cdtui-architect`
 rather than guessed at. No code or spec changes made.
 
+### #76: `split` key's horizontal/vertical convention documented
+
+`"split": "horizontal"` is genuinely ambiguous by naming convention (could
+read as "panes arranged horizontally," tmux `-h`/CSS `row` style, or
+"divided by a horizontal rule," which is what this codebase actually does —
+children stack top to bottom). Architect ruling: not a bug, not to be
+changed — changing it now would silently invert every existing config.
+Documented explicitly in README.md's pane-keys section instead, with a
+worked example of each value. Doc-only, no behaviour touched. Verified via
+`cdtui-worker`: build+full suite (1349/1349)+`check-all.sh` clean pre- and
+post-merge. Landed as merge commit `7b55390` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
