@@ -68,6 +68,11 @@ public static class PaneAssembler
         for (var idx = 0; idx < units.Count; idx++)
         {
             var nextSeen = seen + units[idx].Rows.Count;
+            // Rows is never empty in practice: every RenderLeaf call site here passes a
+            // non-empty segment list, and PackRow places segments[i] unconditionally. RowLayout.
+            // Wrap does return zero rows for an empty segment list (RowLayout.cs:52-55), so a
+            // future producer that passes one would reach this guard rather than being silently
+            // treated as a straddling unit with no row to carry the marker.
             if (nextSeen >= cap && units[idx].Rows.Count >= 1)
             {
                 k = idx;
