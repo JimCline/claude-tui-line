@@ -24,6 +24,13 @@ below is written specifically to discharge that ordering: it names the seam #27 
   inconsistency in this spec, present since A2 — `SPEC-2.6` Amendment A3 did not create it, it
   surfaced it. §4 rule 1 and §6's A3 note are rewritten; §2.1 gains a pointer. **No other ruling
   changes, and A3 needs no amendment.**
+- **A5 — two citation defects in A4's §6 block, corrected. No ruling changes.** Found by re-reading
+  `SPEC-2.6` §9 line by line rather than from recollection, at a second architect's insistence after
+  the #27/A3 near-miss. A4 said A3 moves **five** methods into `SegmentTruncation.cs` — it moves
+  **six** — and cited **§9.2.2** for the single-concatenation-site statement, which is at the end of
+  **§9.2.1**. Both were wrong in the note, not in the check: **A4's conclusion re-verified and still
+  holds — no conflict between the two documents.** Recorded rather than silently patched because a
+  Reviewer validating against this spec would have tripped on both.
 
 ---
 
@@ -259,9 +266,11 @@ this section, and #75 and #27 may proceed against both documents as they now sta
 the earlier note here, which said A3 was unread and warned of a possible conflict. Checked
 specifically:
 
-- **The concatenation site.** A3 §9.2.1 introduces a `RenderUnit(Segments, Rows)` record and states
-  at its §9.2.2 that `units` is the single concatenation site. That is this section's first
-  requirement, implemented exactly.
+- **The concatenation site.** A3 §9.2.1 introduces a `RenderUnit(Segments, Rows)` record and states,
+  at the end of that same §9.2.1, that `units` is the single concatenation site; §9.6 item 10 pins it
+  again as a must-not-change. That is this section's first requirement, implemented exactly.
+  **(A5: this previously cited §9.2.2, which is the budget pass. The claim was right, the pointer was
+  one subsection off.)**
 - **Provenance.** A3 retains the exact `Segment` list handed to `RenderLeaf` alongside that unit's
   rows, and re-invokes `RenderLeaf` with it. That is this section's second requirement — and note it
   is *stronger* than what this section asked for (the rows themselves rather than a row range), which
@@ -275,10 +284,16 @@ specifically:
   reach `Wrap`, so it could not coherently also forbid `Wrap`'s signature from changing.
 
 One non-conflicting scope note, recorded because it affects sequencing rather than correctness: A3
-§9.4 creates a new `SegmentTruncation.cs` and moves five methods into it. It is a pure move with a
-sound dependency-direction argument, but A3 itself rates it Medium confidence and names a smaller
-alternative. **If #27 is time-boxed, that extraction is the part of A3 most safely deferred.** Not a
-ruling of mine — #27 is not my task — but the Orchestrator should know it is separable.
+§9.4 creates a new `SegmentTruncation.cs` and moves **six** methods into it — `TruncateSegment`
+(renamed `Truncate`), `WrapSegment` (renamed `WrapToWidth`), `SafeCutIndex`, `Restyle`,
+`RestyleSimple`, `TryGetSimpleWrap`, i.e. `PaneRenderer.cs:49-175` in full. **(A5: this previously
+said five; A3 §9.4 and its own §9.6 item 8 both list six.)** It is a pure move with a sound
+dependency-direction argument, but A3 itself rates it Medium confidence and names a smaller
+alternative (`internal` on `TruncateSegment` plus a `RowLayout → PaneRenderer` reference), and says
+in as many words that if the Reviewer or Jim prefers the smaller diff they should take it, since
+nothing else in §9 depends on the choice. **If #27 is time-boxed, that extraction is the part of A3
+most safely deferred.** Not a ruling of mine — #27 is not my task — but the Orchestrator should know
+it is separable.
 
 ---
 
@@ -431,13 +446,20 @@ decides whether #31 can merge before this task. I have not run it and will not; 
 implementor. **This is the one thing in this document that could change #31's merge decision**, so it
 should be answered before #31 is verified rather than after.
 
-**§6's A3 note — CLOSED (A4).** The diff is done and there is no conflict; see §6. The one apparent
-conflict was a defect in my own §4 rule 1, which contradicted §6 of this same document, and it is
-amended above rather than resolved against `SPEC-2.6`. **This is worth naming plainly: I wrote a
-"must not change" rule strong enough to forbid the mechanism another section of the same spec
-required. Two sections of one document disagreed for two amendments before an outside document
-surfaced it** — which is an argument for diffing a spec against itself, not only against its
-neighbours.
+**§6's A3 note — CLOSED (A4), and re-verified line by line (A5).** The diff is done and there is no
+conflict; see §6. The one apparent conflict was a defect in my own §4 rule 1, which contradicted §6
+of this same document, and it is amended above rather than resolved against `SPEC-2.6`. **This is
+worth naming plainly: I wrote a "must not change" rule strong enough to forbid the mechanism another
+section of the same spec required. Two sections of one document disagreed for two amendments before
+an outside document surfaced it** — which is an argument for diffing a spec against itself, not only
+against its neighbours.
+
+**A5's own lesson, recorded because it is the same failure one level up.** A4's conclusion was
+right, but two of its supporting citations were wrong, and they were wrong because A4 was written
+partly from recollection of `SPEC-2.6` §9 rather than wholly from its bytes. A conclusion can be
+correct and its evidence still not check out; only re-reading the source distinguishes the two. When
+a second architect asked for a real re-read rather than a confirmation, that was the right ask and it
+found both defects.
 
 **Medium-low on one thing A4 does not settle, flagged rather than guessed:** whether #27's optional
 parameters on `Wrap` are the right long-term shape, or whether the row budget eventually wants its
