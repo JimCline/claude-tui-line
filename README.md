@@ -141,16 +141,17 @@ Pane keys:
 | `children` | child panes |
 | `size` | a bare column count (`"24"`), a percentage (`"40%"`), `"content"`, or `"fill"` (also the default). `"auto"` is a deprecated alias for `"fill"` — note that it does **not** mean `"content"` |
 | `minSize` / `maxSize` | integers — clamps on the resolved width |
-| `distribute` | `"min-rows"` — size siblings to minimise total rows rather than greedily |
-| `gutter` | integer — columns between children |
+| `distribute` | `"greedy"` (default) — each sibling claims what it wants, in order; `"min-rows"` — size siblings to minimise total rows instead; `"even"` — divide the remaining width equally among siblings, ignoring their content/fill sizing |
+| `gutter` | integer, default `0` — columns between children on a **vertical** split; has no effect on a horizontal split |
 | `align` | `"left"` (default), `"center"`, `"right"` |
 | `valign` | `"top"` (default), `"middle"`, `"bottom"` |
 | `overflow` | `"wrap"`, `"truncate"`, `"overflow"` |
 | `ellipsis` | the marker used when truncating |
 | `height` | `"content"` or `"fill"` (default) — sizes the pane to its own content or lets it fill, same vocabulary as `size` on the width axis |
 | `maxRows` | integer — cap on rows this pane may occupy |
-| `border` | `enabled`, `style`, `color` |
+| `border` | `enabled`, `style`, `color`, `edges` — or, in place of the object, a bare shorthand string: `"all"`, `"outline"`, `"inside"`, `"none"` |
 | `border.style` | `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or `"none"` |
+| `border.edges` | `top` / `right` / `bottom` / `left`, each boolean, defaulting to `true` |
 | `items` | the items to render, for a leaf pane |
 
 `split` names the dividing line, not the arrangement of children along it. `"vertical"` panes are
@@ -169,7 +170,10 @@ bottom, first child topmost:
 }
 ```
 
-`size: "content"` measures the pane's own text and asks for exactly that much. `distribute:
+`size: "content"` measures the pane's own text and asks for exactly that much — its **entire**
+unwrapped width, before any cap. A pane holding a long list of items will ask for far more than any
+terminal has; `content` is for anchors whose natural size is small and meaningful (a single item or
+two), `fill` is for everything else. `distribute:
 "min-rows"` is the interesting one: rather than letting each pane grab what it wants in order, it
 searches for the width split that makes the *whole statusline* as short as possible.
 
@@ -178,6 +182,40 @@ searches for the width split that makes the *whole statusline* as short as possi
 > config first: it reports every one of these instead of swallowing them. For any key above,
 > `--check` reports the complete accepted set the moment it flags a bad value — this table is a
 > guide to that set, not the definitive list of it.
+
+The surface as a whole also takes its own `maxRows`, separate from any single pane's: `{ "surface":
+{ "maxRows": 8 } }` bounds the total rows the whole statusline may occupy, however many panes want
+more. `8` is the default.
+
+### Borders
+
+A leaf pane defaults to bordered; a split container defaults to borderless, so adding a split to a
+config never silently adds chrome. Set `border.enabled` explicitly to override either default.
+
+Instead of the `enabled`/`style`/`color`/`edges` object, `border` also accepts a bare shorthand
+string:
+
+| shorthand | effect |
+|---|---|
+| `"all"` | every edge, on just this pane |
+| `"none"` | no edges, on just this pane |
+| `"outline"` | every edge on this pane, and this instruction keeps propagating to every descendant that doesn't declare its own `border` |
+| `"inside"` | no outer edges; each direct child instead draws only the edge(s) it shares with a neighbour along the split axis — the instruction does not propagate past those direct children |
+
+A pane's own explicit `border` declaration — shorthand, `edges` object, or a plain
+`enabled`/`color`/`style` object — always wins over whatever an ancestor's `"outline"` or `"inside"`
+is propagating.
+
+By default, adjacent panes draw as two separate boxes with the gutter between them. Set
+
+```json
+{ "surface": { "border": { "collapse": true } } }
+```
+
+to make shared edges resolve to a single line both panes touch instead — this is legal **only** at
+`surface.border.collapse`; the same key anywhere else (the top-level `border`, or any pane's own
+`border`) is rejected with `collapse-not-surface-level`. Under `collapse: true`, the divider
+occupies the gutter, so `gutter` must be `>= 1` and defaults to `1` on that split.
 
 ### Items
 
@@ -214,7 +252,8 @@ Each item entry accepts:
 { "item": "context", "format": "ctx {}", "color": "aqua", "overflow": "truncate" }
 ```
 
-`format`'s `{}` is the item's value.
+`format`'s `{}` is the item's value. `maxLines` caps how many lines an item's own output may
+produce — opt-in, no cap unless set.
 
 ### Custom items
 
