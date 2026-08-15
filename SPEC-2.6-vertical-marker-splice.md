@@ -9,10 +9,14 @@ Placed in the main repo root, not the worktree, so it survives the worktree bein
 read §3.1. I have now, and it is ruled — **this task is sequenced after the §3.1 block model.** See
 §5(b), which is the one part of this file that changes what happens next.
 
-**Short answer: full-row-replacement is not spec-compliant.** §2.6 rules the question directly, in
-a paragraph written specifically to stop a reading like this one. impl2's instinct to route rather
-than guess was right, and its bug fix is correct and should land — but its characterisation of the
-gap as "not wrong, just coarser" understates it on both the spec and the behaviour.
+**Amended again (A2):** §4's seam moved from a single pane-wide `Wrap` call to the per-producer-unit
+call at §3.1's concatenation site. See the A2 block at the end of §4.
+
+**Amended again (A3) — THE IMPLEMENTABLE ALGORITHM.** A1/A2 ruled *where* the splice attaches but
+not *how* `RowLayout.Wrap` packs against a row budget. §9 rules that, end to end, at
+statement level. **§9 is normative and is what the implementor builds from.** Sections 1–8 remain
+the rationale and the acceptance criteria; where §9 contradicts an earlier section's mechanism, §9
+wins (each such point is called out in §9.0).
 
 ---
 
@@ -169,6 +173,10 @@ share a cache entry.** Whoever implements this must update §2.5.1's tuple, §10
 key together, or the seam becomes a correctness bug that only shows under caching. This is the
 highest-risk part of the change and it is not in the part anyone is looking at.
 
+> **A3 note:** the tuple grows by **two** members, not one — see §9.5. And the cache-key claim is
+> now a NEEDS-EVIDENCE item (§9.8-E2): I searched `PaneRenderer.cs` and found no cache; the tuple
+> may be spec-text-only today.
+
 **(b) AMENDED (A1) — ruled: this task is sequenced AFTER the §3.1 block model.**
 
 The first draft left this open pending §3.1's text. §3.1 (`:2494-2519`) settles it:
@@ -235,6 +243,9 @@ applied to any pane whose last row comes from a block, which no existing test wo
 8. **A pane whose last surviving row comes from a multi-row block** still gets the marker. Only
    writable once §3.1 lands, and it is the test that proves §5(b)'s re-siting was actually done.
 
+§9.7 adds four more (9–12) covering the boundary case, the zero-row unit, the null-width fallback,
+and the no-budget identity.
+
 ---
 
 ## 8. Confidence
@@ -254,3 +265,447 @@ someone has a reason to prefer flush-right, it is a small change and I would not
 inside a rendering change, and nothing in the task description points at it.
 
 **Not escalation-worthy.**
+
+---
+
+# 9. AMENDMENT A3 — the packing algorithm, ruled at statement level
+
+Added after impl2 reported that §§1–8 fix the *shape* of the change but not the *mechanism* inside
+`RowLayout.Wrap`. impl2 was right to stop: `Wrap` is a shared primitive under wide test coverage
+(`HeightLadderTests`, `OverflowModeTests`, `PositionIndependenceTests`, `HyperlinkTests`,
+`NarrowSplitPaneTests`, `GoldenParityTests`), and guessing at it was not its call to make.
+
+**This section is written against the code as it actually is on `main` (verified by reading, not
+from the report).** Line numbers below are the ones I read; three of impl2's citations are wrong and
+§9.0 corrects them, because two of the three change the answer.
+
+## 9.0 Corrections to the reported code facts
+
+| Reported | Actual |
+|---|---|
+| `ClipRows` at `RenderItemRows.cs:47-63` | **No `RenderItemRows.cs` exists.** `ClipRows` is `PaneAssembler.cs:47-63`. Lines right, file wrong. |
+| Riders applied "once per `RenderLeaf` call at `PaneAssembler.cs:53`, as a pre-check before `Wrap` runs" | **Wrong, and it changes Q3.** The rider check is `PaneAssembler.cs:54`, *inside* `ClipRows`, which runs **after** `Wrap` on the flattened rows. There is no pre-`Wrap` rider check anywhere. |
+| `RowLayout.Wrap` at `RowLayout.cs:32-81` | `RowLayout.cs:33-83`. Signature is `Wrap(IReadOnlyList<Segment> segments, int? availableWidth, bool allowFallback = true)` — **no `ellipsis` parameter today**. |
+| Packed rows are "multiple items joined by `\" | \"`" produced by `FlushGroup` | **Wrong, and it dissolves Q2.** `FlushGroup` (`PaneAssembler.cs:98`) passes a bare `List<Segment>` with no separators in it. The separator is `RowLayout`'s own private constant `SeparatorMarkup = " [dim]|[/] "` (`RowLayout.cs:10`, `SeparatorWidth = 3` at `:15`), inserted by `Wrap` only *between two placed segments*. |
+
+Confirmed as reported: `RenderLeaf` `PaneRenderer.cs:13-44` (no row budget); `TruncateSegment`
+`PaneRenderer.cs:49-80` (width-only, one `Segment`, **`private`**); `ClipRows` called from
+`RenderLeafRows` `PaneAssembler.cs:30-33` as post-processing on flattened `PaneRow`s; three producer
+call sites — `RenderDefaultRows` `:65-71` (RenderLeaf at `:69`), `FlushGroup` `:91-101` (RenderLeaf
+at `:98`), block-line loop `:116-125` (RenderLeaf at `:120`, one call per block line); none track
+provenance.
+
+## 9.1 Answers to the four questions, stated up front
+
+**Q1 — does `Wrap` need to know the budget as it packs? Yes, and the mechanism is
+one-row lookahead, not post-hoc clipping.** `Wrap` packs rows `0 … cap−2` at the **full**
+`availableWidth`, exactly as today. For the capped row (index `cap−1`) it packs a *tentative* row at
+full width purely to learn whether content remains after it. If content remains (or
+`markerRequired`), it **discards the tentative row and re-packs from the same segment position at
+`availableWidth − ellipsis.Length`**, then splices the marker onto that row's last segment. Only one
+row is ever packed twice, and only one resume position ever needs remembering — no parallel
+per-row bookkeeping, no retained segment→row map. Post-hoc clipping is explicitly rejected: it is
+the same defect class §1 already ruled out, moved down a layer.
+
+**Q2 — which segment's tail gets truncated on a packed row, and does the separator survive? The
+question does not arise.** Because the separator is `Wrap`'s own constant and is emitted only
+*between* two placed segments (`RowLayout.cs:63-67`, guarded by
+`rowWidth + SeparatorWidth + segWidth <= availableWidth`), a trailing separator is **structurally
+unrepresentable** — a row cannot end in `" | "`. The truncated segment is always the **last segment
+placed on that row**, and `TruncateSegment` stays a one-`Segment` function with no sibling rule. No
+new state on `Segment`, no separator-aware caller rule. (§9.3 gives the exact width formula, which
+is where the separator's 3 cells are accounted for.)
+
+**Q3 — do the riders move inside `Wrap`? Yes, and the copy at `PaneAssembler.cs:54` is deleted, not
+moved.** The riders decide *how much width to reserve while packing*, so they are inseparable from
+packing and must live where the packing is. But `TruncateSegment` (`PaneRenderer.cs:51-62`) already
+implements exactly the same rule; two copies would violate §6.3 and §2.6's closing sentence. Ruled:
+**extract the predicate once** (§9.4) and have both axes call it. Net result: after this change the
+rule exists in exactly one place, down from two today.
+
+**Q4 — is a third parameter needed for the boundary case? Yes.** `RenderLeaf` and `Wrap` each gain
+**two** new parameters, `int? rowBudget` and `bool markerRequired`, and they are independent.
+`rowBudget` alone means "cap the rows"; `markerRequired` means "this pane *is* truncated, so the last
+kept row carries the marker regardless of whether this unit itself had anything left over". §9.2
+gives the exact rule by which `PaneAssembler` computes both. Rejected — collapsing them into one
+parameter ("a budget always implies a marker"): it would make any future defensive cap splice a
+spurious marker, and it conflates *how many rows* with *am I the truncated tail*, which is precisely
+the distinction the boundary case is made of.
+
+## 9.2 `PaneAssembler` — provenance, and which unit owns the marker
+
+### 9.2.1 The unit
+
+A **render unit** is one `PaneRenderer.RenderLeaf` invocation. There are exactly three producers of
+units and they are already one call each: `RenderDefaultRows` (one unit), `FlushGroup` (one unit per
+flush), the block-line loop (**one unit per block line**, not one per block). Re-invocation is
+per-`RenderLeaf`-call, so this is the right granularity and no producer needs restructuring.
+
+Add, in `PaneAssembler`:
+
+```csharp
+private readonly record struct RenderUnit(IReadOnlyList<Segment> Segments, IReadOnlyList<PaneRow> Rows);
+```
+
+`Segments` is the exact list handed to `RenderLeaf`, retained so the unit can be re-invoked. This is
+the provenance that SPEC-3.1 §6 (as amended) requires, and it is the whole of it — no other
+provenance is needed.
+
+- `RenderDefaultRows` returns `IReadOnlyList<RenderUnit>` (a single-element list).
+- `RenderItemRows` returns `IReadOnlyList<RenderUnit>`; its local `rows` list (`:88`) becomes
+  `var units = new List<RenderUnit>()`. `FlushGroup` appends
+  `new RenderUnit(packedGroup.ToArray(), buffer.Rows)` **before** `packedGroup.Clear()` — the
+  `ToArray()` copy is load-bearing, `packedGroup` is mutated in place. The block-line loop appends
+  `new RenderUnit(new[] { lineSegment }, lineBuffer.Rows)` per line.
+- **`units` is still the single concatenation site** SPEC-3.1 §6 demands. Flattening moves into
+  §9.2.2; nothing else concatenates.
+
+### 9.2.2 The budget pass
+
+`RenderLeafRows` (`PaneAssembler.cs:13-36`): delete the `ClipRows` call at `:30-33` and delete
+`ClipRows` itself (`:47-63`). Replace with:
+
+```csharp
+var units = pane.Items.Count == 0
+    ? (itemsEmptied ? Array.Empty<RenderUnit>() : RenderDefaultRows(pane, innerWidth, ctx, notes))
+    : RenderItemRows(pane, innerWidth, ctx, values, tokens, notes);
+
+var rawRows = ApplyRowBudget(units, maxContentRows, pane, innerWidth, notes);
+
+return rawRows.Select(row => AlignRow(row, innerWidth, pane.Align)).ToList();
+```
+
+`ApplyRowBudget`, normatively:
+
+1. If `maxContentRows` is null → return every unit's rows concatenated in order. **No re-invocation,
+   no marker.** This is the overwhelmingly common path and it must be byte-identical to today.
+2. Let `cap = maxContentRows.Value`. If `cap <= 0` → return empty. (§6.6, unchanged.)
+3. Let `total = units.Sum(u => u.Rows.Count)`. If `total <= cap` → return every unit's rows
+   concatenated. **No marker** — nothing was truncated.
+4. Otherwise let `S_i = units[0..i].Sum(u => u.Rows.Count)` (so `S_0 = 0`). Choose
+   **`k = the smallest index such that S_(k+1) >= cap and units[k].Rows.Count >= 1`.**
+   - The `>= cap` (not `> cap`) is what selects the unit that lands *exactly* on the boundary. This
+     is the Q4 case and this comparison is the entire mechanism for detecting it.
+   - The `Rows.Count >= 1` clause is required: a unit may legally contribute **zero** rows (an empty
+     item, or the collapsed-pane case of commit `62a5741`), and a zero-row unit satisfies
+     `S_(k+1) >= cap` vacuously while having no last row to put a marker on. Skipping it is
+     mandatory, not defensive.
+   - `k` always exists, because `total > cap` and `cap >= 1`.
+5. Emit `units[0..k]`'s rows unchanged.
+6. Compute `budget = cap - S_k`. **`budget >= 1` is guaranteed** (by minimality, `S_k < cap`).
+7. Re-invoke the owning unit:
+   ```csharp
+   var reNoted = new RenderNoteCollector();          // deliberately discarded, see below
+   var owner = PaneRenderer.RenderLeaf(
+       units[k].Segments, innerWidth, ResolveOverflow(pane), pane.Ellipsis, reNoted,
+       allowFallback: false, rowBudget: budget, markerRequired: true);
+   ```
+   Emit `owner.Rows`.
+8. **Drop `units[k+1..]` entirely.** Do not emit, do not re-invoke.
+
+`markerRequired: true` is unconditional at this one call site, and that is correct: step 7 is only
+reached when `total > cap`, i.e. the pane *is* truncated. It is a parameter rather than an implied
+constant for the reason in §9.1 Q4.
+
+**Why the re-invocation's notes are discarded.** `RenderLeaf` emits notes only from its
+`OverflowMode.Truncate` branch (`PaneRenderer.cs:33`), keyed on `s.Plain.Length > width` — a
+predicate that does not read `rowBudget` or `markerRequired`. The re-invocation therefore produces
+*exactly* the notes the first invocation already added to the real collector, so discarding them is
+provably lossless and merging them would duplicate. If `RenderNoteCollector` cannot be constructed
+standalone, that is a mechanical detail — construct it however the existing call sites do, or add a
+null-object; do not change the ruling.
+
+**Explicitly out of scope:** today, notes from units whose rows are *dropped* by the cap still reach
+the caller. That is arguably wrong, it is wrong the same way today, and this task does not change
+it. Do not "fix" it here.
+
+## 9.3 `RowLayout.Wrap` — the algorithm
+
+New signature (all four originals unchanged and in place; the three additions are optional with
+defaults that reproduce today's behaviour exactly, so every existing call site compiles and behaves
+identically untouched):
+
+```csharp
+public static IReadOnlyList<PaneRow> Wrap(
+    IReadOnlyList<Segment> segments,
+    int? availableWidth,
+    bool allowFallback = true,
+    int? rowBudget = null,
+    string ellipsis = "",
+    bool markerRequired = false)
+```
+
+### 9.3.1 Two helpers, extracted from the existing loop
+
+The greedy loop at `RowLayout.cs:53-80` is refactored into a row-at-a-time packer plus a composer.
+**This refactor must be behaviour-identical when `rowBudget is null`** — same greedy rule, same
+separator, same widths. It is the single highest-regression-risk edit in the task (§9.8-E1).
+
+```csharp
+// Packs one row starting at segments[i], advancing i past everything placed.
+// The FIRST segment is placed unconditionally regardless of width — this preserves
+// RowLayout.cs:57-62's existing `if (!rowStarted)` behaviour and guarantees the
+// returned list is never empty.
+private static List<Segment> PackRow(IReadOnlyList<Segment> segments, ref int i, int width)
+{
+    var placed = new List<Segment> { segments[i] };
+    var rowWidth = segments[i].Plain.Length;
+    i++;
+    while (i < segments.Count && rowWidth + SeparatorWidth + segments[i].Plain.Length <= width)
+    {
+        rowWidth += SeparatorWidth + segments[i].Plain.Length;
+        placed.Add(segments[i]);
+        i++;
+    }
+    return placed;
+}
+
+// The arithmetic here must match PackRow's incremental accumulation exactly — see the
+// same requirement on the single-row fallback at RowLayout.cs:44.
+private static int WidthOf(IReadOnlyList<Segment> placed) =>
+    placed.Sum(s => s.Plain.Length) + SeparatorWidth * (placed.Count - 1);
+
+private static PaneRow Compose(IReadOnlyList<Segment> placed) =>
+    new(string.Join(SeparatorMarkup, placed.Select(s => s.Markup)), WidthOf(placed));
+```
+
+### 9.3.2 The body
+
+```csharp
+var rows = new List<PaneRow>();
+if (segments.Count == 0) return rows;                 // unchanged, RowLayout.cs:36-39
+
+if (availableWidth is null || (allowFallback && availableWidth < MinUsableWidth))
+{
+    // unchanged, RowLayout.cs:41-47 — see 9.3.3
+    ...
+    return rows;
+}
+
+var width = availableWidth.Value;
+var cap = rowBudget ?? int.MaxValue;
+if (cap <= 0) return rows;
+
+var spliceMarker = rowBudget is not null && SegmentTruncation.MarkerFits(width, ellipsis);
+var contentWidth = spliceMarker ? width - ellipsis.Length : width;
+
+var i = 0;
+
+// Rows 0 .. cap-2 pack at FULL width. With no budget, cap-1 == int.MaxValue-1 and this
+// loop consumes everything — which is exactly today's algorithm, unchanged.
+while (i < segments.Count && rows.Count < cap - 1)
+{
+    rows.Add(Compose(PackRow(segments, ref i, width)));
+}
+
+if (i >= segments.Count) return rows;                 // content exhausted before the capped row
+
+// ---- the capped row (index cap-1). One-row lookahead. ----
+var resume = i;
+var tentative = PackRow(segments, ref i, width);
+var overflowed = i < segments.Count;
+
+if (!overflowed && !markerRequired)
+{
+    rows.Add(Compose(tentative));                     // fits in exactly cap rows, nothing lost
+    return rows;
+}
+
+if (!spliceMarker)
+{
+    rows.Add(Compose(tentative));                     // §2.6 riders: keep cap full rows, no marker
+    return rows;
+}
+
+// Re-pack the capped row against the reduced width, then splice.
+var j = resume;
+var final = PackRow(segments, ref j, contentWidth);
+var last = final.Count - 1;
+var prefixWidth = final.Take(last).Sum(s => s.Plain.Length) + SeparatorWidth * last;
+final[last] = SegmentTruncation.Truncate(final[last], width - prefixWidth, ellipsis);
+rows.Add(Compose(final));
+return rows;
+```
+
+### 9.3.3 Why each piece is the way it is — do not "simplify" these away
+
+- **`width - prefixWidth`, not `contentWidth`, is the budget handed to `Truncate`.** This one
+  expression is what makes the algorithm correct in both directions, and it is the reason the
+  §4 sub-ruling ("marker immediately after the content") and the §2.4 shearing invariant hold
+  simultaneously:
+  - *Short final row* (the next segment didn't fit): `width - prefixWidth >= lastLen + ellipsis.Length`,
+    so `Truncate`'s `contentBudget` exceeds the segment and clips nothing — the marker lands
+    immediately after the content. §4's ruling, for free.
+  - *Final segment exactly `width` wide* (possible: `RenderLeaf` pre-clips oversized segments to
+    `width`, and `PackRow` places the first segment unconditionally, so `final` can be one segment
+    of width `width` even though `contentWidth < width`): `prefixWidth == 0`, so `Truncate` gets
+    `width`, clips to `width - ellipsis.Length`, appends the marker — row is exactly `width`.
+  - In every case the composed row is `prefixWidth + Truncate(...)`'s output, and `Truncate` never
+    exceeds its own `innerWidth` argument, so **`row.Width <= availableWidth` always**. That is §7
+    test 7, discharged by construction.
+- **`PackRow` at `contentWidth` before splicing, rather than packing at `width` and clipping after.**
+  Reserving the marker's width *while packing* is what makes the marker budgeted rather than stolen
+  from content, and it is exactly what the horizontal axis does. Packing at `width` and clipping
+  afterwards is the rejected reading of §2.6, one layer down.
+- **`final` may legally drop a segment `tentative` had held.** When two segments fit in `width` but
+  not in `contentWidth`, the second is dropped and the marker takes its cells. This is correct and
+  is what "the marker replaces the row's last cells" means. It is also the visible behaviour of the
+  `markerRequired` boundary case, where nothing overflowed but a marker is owed.
+- **`final` is never empty**, because `PackRow` places its first segment unconditionally. `last >= 0`
+  needs no guard.
+- **`contentWidth >= 1`** whenever `spliceMarker`, because `MarkerFits` requires
+  `ellipsis.Length < width`.
+- **The single-row fallback path (`RowLayout.cs:41-47`) ignores `rowBudget`, `ellipsis` and
+  `markerRequired` entirely.** Ruled deliberately: that path already abandons width budgeting by
+  design (it emits one deliberately overwide row), so spending cells on a marker against a width
+  nobody is honouring would be incoherent. It is also nearly unreachable for this task —
+  `PaneAssembler` passes `allowFallback: false` at all three producer sites, leaving only the
+  `availableWidth is null` case, where the pane produces one row and the only cap that could bite is
+  `cap <= 0`, already handled identically. **No behaviour change.** Forward the parameters anyway
+  for signature uniformity; the path discards them.
+- **`markerRequired: true` with `rowBudget: null` is ignored**, not an error. Document it on the
+  parameter; do not throw.
+
+## 9.4 The rider, extracted — and the `SegmentTruncation` move
+
+`TruncateSegment` is `private` in `PaneRenderer` and `RowLayout` now needs it. Making it `internal`
+and calling `PaneRenderer.TruncateSegment` from `RowLayout` would invert the existing
+`PaneRenderer → RowLayout` dependency. Ruled instead:
+
+**Create `/Users/jimcline/git/repos/claude-tui-line/src/ClaudeTuiLine/SegmentTruncation.cs`,
+`internal static class SegmentTruncation`, and MOVE into it, bodies unchanged:** `TruncateSegment`
+(rename → `Truncate`), `WrapSegment` (rename → `WrapToWidth`), `SafeCutIndex`, `Restyle`,
+`RestyleSimple`, `TryGetSimpleWrap` — i.e. `PaneRenderer.cs:49-175` in full. `PaneRenderer` keeps
+only `RenderLeaf` and calls `SegmentTruncation.Truncate` / `SegmentTruncation.WrapToWidth` at
+`:34` / `:38`. `RowLayout` calls `SegmentTruncation.Truncate` / `.MarkerFits`. Both dependencies now
+point at a leaf class and nothing is circular. **This is a pure move: no behavioural edit to any
+moved body beyond the two renames.**
+
+Add one member, which is the extracted rider:
+
+```csharp
+/// SPEC-V2-FRAMEWORK.md §2.6, the two riders, in one place for both axes: an empty `ellipsis`
+/// is a hard clip that spends no cell, and a marker not strictly narrower than the space it
+/// would sit in is dropped rather than allowed to consume it.
+internal static bool MarkerFits(int innerWidth, string ellipsis) =>
+    ellipsis.Length > 0 && ellipsis.Length < innerWidth;
+```
+
+and refactor `Truncate`'s own guard (`PaneRenderer.cs:56-62`) to use it:
+
+```csharp
+if (!MarkerFits(innerWidth, ellipsis))
+{
+    return Restyle(segment, segment.Plain[..SafeCutIndex(segment.Plain, Math.Min(innerWidth, segment.Plain.Length))]);
+}
+```
+
+**This is behaviour-preserving, verified case by case.** Today's guard is
+`innerWidth <= ellipsis.Length`, equivalent to `!(ellipsis.Length < innerWidth)`. The only inputs
+that change branch are `ellipsis.Length == 0` with `innerWidth > 0`, which today falls through to
+the main branch and computes `contentBudget = innerWidth`, `clipped = plain[..min(innerWidth, len)]`,
+`newPlain = clipped + "" == clipped` — **identical output** to the guard branch above. The
+`innerWidth <= 0` guard at `:51-54` is a different concern and **stays where it is, unchanged**.
+
+Net: the rider is implemented **once**, and `PaneAssembler.cs:54`'s copy is deleted with `ClipRows`.
+That is a reduction from two implementations to one, which is the §6.3 / §2.6-closing-sentence
+requirement satisfied rather than merely not-violated.
+
+## 9.5 `PaneRenderer.RenderLeaf` — signature and cache key
+
+```csharp
+public static PaneBuffer RenderLeaf(
+    IReadOnlyList<Segment> items, int? innerWidth, OverflowMode overflow, string ellipsis,
+    RenderNoteCollector notes, bool allowFallback = true,
+    int? rowBudget = null, bool markerRequired = false)
+```
+
+Both new arguments are forwarded to **both** `Wrap` call sites — the `innerWidth is null` early
+return at `:20` as well as the main one at `:43`. The null-width call forwards them even though
+`Wrap`'s fallback path discards them (§9.3.3); uniformity beats a special case.
+
+**§2.5.1's purity/cache-key tuple grows from six members to eight:**
+`(items, innerWidth, overflow, ellipsis, notes, allowFallback, rowBudget, markerRequired)`.
+Update `SPEC-V2-FRAMEWORK.md:1432`'s tuple, `:1437`'s claim that §10's test fixes all of them, and
+§10's test itself, in the same change. **Both new members must be in the key.** The sharpest reason
+is now concrete rather than hypothetical: under §9.2.2, unit `k` is rendered **twice in a single
+pane render** — once with `(null, false)` in step 1/3's measurement pass and once with
+`(budget, true)` in step 7 — and a cache that keys on the old six members would return the first
+result for the second call and silently drop every marker in the product. See §9.8-E2: I could not
+confirm such a cache exists yet.
+
+## 9.6 What must not change (additions to §6)
+
+7. **`RowLayout.Wrap` with `rowBudget: null` must be byte-identical to today**, including the
+   fallback path, the separator, and every width. Every existing caller passes no budget.
+8. **`SegmentTruncation` is a pure move.** No behavioural edit to `Truncate`, `WrapToWidth`,
+   `Restyle`, `RestyleSimple`, `TryGetSimpleWrap`, or `SafeCutIndex` beyond the `MarkerFits`
+   extraction ruled in §9.4, which is proven output-identical there.
+9. **`SafeCutIndex` stays on every cut.** The surrogate-pair rule (`PaneRenderer.cs:105-113`,
+   §13.2 / defect 16) is inherited automatically because the splice routes through `Truncate`; do not
+   add a cut anywhere that bypasses it.
+10. **`units` stays the one concatenation site** (SPEC-3.1 §6). `ApplyRowBudget` is the one place
+    that flattens it.
+11. **`RenderNoteCollector` behaviour for emitted units is unchanged**; the re-invocation's notes are
+    discarded per §9.2.2.
+
+## 9.7 Verification (additions to §7)
+
+9. **The `markerRequired` boundary case — this is the test the whole of Q4 exists for.** Two units
+   whose row counts sum to exactly `cap`, followed by a third unit with at least one row. Assert:
+   `cap` rows are emitted; the last row is unit 2's last row **with the marker spliced**; unit 3
+   contributes nothing. Then assert the negative control: remove unit 3, so `total == cap` — assert
+   the same `cap` rows are emitted with **no marker anywhere**. A `rowBudget`-only implementation
+   passes the second and fails the first, which is exactly the defect this test is placed to catch.
+10. **A zero-row unit straddling the cap.** A pane where the unit at the boundary contributes zero
+    rows (an emptied item). Assert the marker lands on the last *non-empty* unit's last row and that
+    no exception is thrown — the `Rows.Count >= 1` clause of §9.2.2 step 4.
+11. **Null `COLUMNS` with a `maxContentRows` set.** Assert the single fallback row is emitted
+    unchanged and carries no marker (§9.3.3's fallback ruling), and that `cap <= 0` still yields
+    zero rows.
+12. **No-budget identity.** The full existing suite — `GoldenParityTests`, `HeightLadderTests`,
+    `OverflowModeTests`, `PositionIndependenceTests`, `HyperlinkTests`, `NarrowSplitPaneTests` —
+    must pass unchanged. This is the regression gate on the `PackRow`/`Compose` refactor and it is
+    non-negotiable: if any golden output moves, the refactor is wrong, not the golden.
+
+## 9.8 NEEDS-EVIDENCE — two empirical questions I did not run, and what each result decides
+
+I do not execute. These are for the Implementor to resolve; neither blocks starting the change.
+
+**E1 — does the `PackRow`/`Compose` refactor preserve `Wrap` byte-for-byte?** Run the six suites in
+§9.7 test 12 **before** adding any budget logic — i.e. land the refactor as its own commit with
+`Wrap`'s public behaviour unchanged, and prove it green. *If green:* proceed to the budget logic on
+a known-good base. *If red:* the refactor diverged from the incremental arithmetic (the most likely
+culprit is `WidthOf`'s `SeparatorWidth * (count - 1)` versus the loop's accumulation, or the
+unconditional first-segment placement); fix the refactor — **do not** adjust a golden file, and do
+not proceed until green.
+
+**E2 — does a `RenderLeaf` result cache actually exist in the code today?** `PaneRenderer.cs` as I
+read it has no cache; §5(a)'s tuple may be spec-text-only. Search for a memo/cache keyed on
+`RenderLeaf`'s arguments (`grep -rn "RenderLeaf" src/` plus any `Dictionary`/`ConcurrentDictionary`
+keyed on a tuple in the render path). *If a cache exists:* its key **must** gain both new members —
+this is the §5(a)/§9.5 correctness bug, and it is the highest-severity item in the task. *If no
+cache exists:* §5(a) reduces to updating `SPEC-V2-FRAMEWORK.md:1432`/`:1437` and §10's test to the
+eight-member tuple, and the double-render in §9.2.2 is harmless.
+
+## 9.9 Confidence, and what I am NOT deciding
+
+**High** on Q1 (the one-row-lookahead mechanism), Q2 (dissolved by the actual separator handling —
+this one is a fact about the code, not a judgment), Q3 (rider extraction), and Q4 (`markerRequired`
+as an independent parameter, with §9.2.2 step 4's `>= cap` as the detector).
+
+**High** on the `width - prefixWidth` formula; I worked all three of its cases through by hand
+against `Truncate`'s actual body and they are in §9.3.3 for the reviewer to re-check.
+
+**Medium** on the `SegmentTruncation` extraction being worth its churn. It is the right dependency
+direction and it satisfies "one implementation", but it moves ~125 lines and the alternative
+(`internal` on `TruncateSegment` plus a `RowLayout → PaneRenderer` reference) is smaller and would
+work. I chose the clean seam; **if the Reviewer or Jim prefers the smaller diff, take it — nothing
+else in §9 depends on which was chosen.**
+
+**Deliberately not decided, and it is a product call, not mine:** nothing here. The one judgment I
+would surface upward is the dropped-unit notes behaviour flagged in §9.2.2 — today a pane reports
+notes for rows the user never sees. I have ruled it out of scope for #27 rather than silently
+changing it; if Jim wants it changed, it is its own task.
+
+**Not escalation-worthy.** Every fork in §9 was resolvable against the code plus §2.6's text.

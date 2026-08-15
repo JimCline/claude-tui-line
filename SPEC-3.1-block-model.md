@@ -6,9 +6,24 @@ This is the first task in the ruled sequence **§3.1 blocks → #27 marker splic
 below is written specifically to discharge that ordering: it names the seam #27 will attach to, so
 #27 becomes a mechanical change rather than a rediscovery.
 
-**Amended once (A1):** D4 was written as a product call I had made but not routed, and §9 flagged it
-as the one decision worth showing Jim before it shipped. **Jim has since confirmed D4 as written.**
-It is now a settled ruling, not an open question — see D4 and §9. Nothing else changed.
+## Amendment history
+
+- **A1** — D4 was written as a product call I had made but not routed, and §9 flagged it as the one
+  decision worth showing Jim. **Jim confirmed D4 as written.** Settled ruling, not an open question.
+- **A2** — §6's second bullet originally demanded a `Segment`-backed row list downstream of `Wrap`,
+  which does not exist. Corrected to demand *provenance* instead.
+- **A3 — THE SEQUENCE HAS CHANGED IN PRACTICE. §7 is rewritten.** #31 is implemented and holding for
+  verification (branch `task-31`, worktree `/Users/jimcline/git/repos/claude-tui-line-task-31`,
+  commit `8f34bbf`) — it lifts the one-line cap **entirely**, which I have ruled correct against
+  §4.0.1. So #31 may now land *before* this task rather than after. **That inverts the risk §7
+  originally described, and it moves D2's ownership.** Read §7 before starting; D2's note is also
+  updated.
+- **A4 — §4 rule 1 IS RELAXED. It was too strong, and it contradicted §6 of this same document.**
+  §6 requires #27 to "re-invoke that one unit with a row budget"; a row budget cannot reach `Wrap`
+  without changing `Wrap`'s signature, which rule 1 forbade in as many words. That was an internal
+  inconsistency in this spec, present since A2 — `SPEC-2.6` Amendment A3 did not create it, it
+  surfaced it. §4 rule 1 and §6's A3 note are rewritten; §2.1 gains a pointer. **No other ruling
+  changes, and A3 needs no amendment.**
 
 ---
 
@@ -61,10 +76,14 @@ For a group of single-row items, greedy fill *is* pack-then-wrap — the two are
 because no item can occupy more than one row before wrapping. The ordering rule bites in exactly
 one place: **deciding which items are blocks, which must happen before any width is consulted.**
 
-**Ruled: `RowLayout.Wrap` is unchanged and remains the single implementation of packing-and-wrapping.
-The block model is a layer above it that decides what to hand it.** Classification happens first,
-from provider output; `Wrap` is then called once per packed group and once per block line. That
-satisfies `:2507` and `:2514` completely.
+**Ruled: `RowLayout.Wrap` remains the single implementation of packing-and-wrapping, and *this task*
+does not modify it. The block model is a layer above it that decides what to hand it.**
+Classification happens first, from provider output; `Wrap` is then called once per packed group and
+once per block line. That satisfies `:2507` and `:2514` completely.
+
+**A4:** "this task does not modify it" is the claim, and it is narrower than the original wording
+("`Wrap` is unchanged"). #27 *does* modify `Wrap`, with cause — see §4 rule 1 as amended. The
+one-implementation rule is about **not forking**, not about immutability.
 
 ---
 
@@ -73,26 +92,28 @@ satisfies `:2507` and `:2514` completely.
 ### D1 — A block is an item whose rendered value contains a line break, after the §4.0.1 cap
 
 Block-ness is `lineCount > 1`, where lines come from splitting the provider's returned value, and
-where the §4.0.1 `maxLines` cap has **already** been applied. §4.0.1 (`:2958+`) fixes this ordering:
+where the §4.0.1 `maxLines` cap has **already** been applied. §4.0.1 (`:2975+`) fixes this ordering:
 the cap applies *at the provider, before §3.1 packs the block*. So this layer never sees more lines
 than the cap allows and never applies the cap itself.
 
-**Today no item can ever be a block**, because `CommandProvider.cs:160` does
-`stdout.Split('\n', 2)[0].TrimEnd('\r')` — a hardcoded one-line cap at exactly the site §4.0.1
-designates for the configurable one. See §7.
+Note §4.0.1:3001 rules **"Default: no cap"** — so in the common case there is no cap to have been
+applied, and this layer sees whatever the provider returned. That is intended, not an omission.
 
 ### D2 — Strip exactly one trailing newline before splitting. This is not optional.
 
+**A3: ownership moved — see §7.2. If #31 lands first, this rule is #31's to implement, and this
+task's job is to verify it rather than to write it.** The rule itself is unchanged.
+
 `echo foo` emits `"foo\n"`. A naive `Split('\n')` yields `["foo", ""]` — **two** lines, so the item
 becomes a block with a blank second row, and it is pushed onto its own rows away from its
-neighbours. Every well-behaved shell command would become a block the moment #31 lifts the cap.
+neighbours. Every well-behaved shell command would become a block the moment the cap is lifted.
 
 **Ruled:** strip **one** trailing `\n` (and a `\r` before it) if present, then split on `\n`, then
 `TrimEnd('\r')` each line — preserving the per-line `\r` handling `CommandProvider.cs:160` already
 does. `"foo\n"` is **one** line and is **not** a block. `"foo\n\n"` is two lines (one trailing
 newline stripped, a genuine blank line remains) and **is** a block.
 
-This is the single highest-risk detail in the task: it is invisible until #31 lands, and when it
+This is the single highest-risk detail in the task: it is invisible while the cap exists, and when it
 surfaces it will look like a packing bug rather than a parsing bug.
 
 ### D3 — Interior blank lines are preserved
@@ -155,8 +176,28 @@ wrapping, and it applies per line exactly as it does today.
 
 ## 4. What must not change
 
-1. **`RowLayout.Wrap`'s signature and body.** It stays the one implementation of
-   packing-and-wrapping. The block layer calls it; it does not fork or reimplement it.
+1. **`RowLayout.Wrap` stays the ONE implementation of packing-and-wrapping — and this task does not
+   modify it.** The block layer calls it; it does not fork it, reimplement it, or copy its greedy
+   fill anywhere else.
+
+   **A4 — this rule previously read "`RowLayout.Wrap`'s signature and body" must not change, full
+   stop. That was wrong and is retracted.** It contradicted §6 of this same document, which requires
+   #27 to re-invoke a unit *with a row budget* — a budget cannot reach `Wrap` without entering its
+   signature. The rule I meant, and the rule that now stands, is **anti-forking, not immutability**.
+   Concretely:
+
+   - **For this task (#75): `Wrap` is not touched.** Unchanged from the original rule, and
+     verification item 1's byte-parity gate is what enforces it. If an implementor of #75 finds
+     themselves editing `RowLayout.cs`, that is a spec gap to route back, not a licence this
+     amendment grants.
+   - **For #27: `Wrap` may gain optional parameters and may have its body refactored in place**,
+     provided (a) it remains the sole implementation, (b) the new parameters default to today's
+     behaviour, and (c) `Wrap` called without them is **byte-identical** to today, gated by the
+     existing suite. `SPEC-2.6` §9.3 is written to exactly this shape and is **compatible with this
+     rule as amended**.
+
+   The distinction that matters: a second copy of greedy fill is a permanent correctness hazard; an
+   optional parameter with a byte-identical default is not.
 2. **`valign` in its entirety.** §1.
 3. **§4.0.1's cap site.** This layer never applies `maxLines`; it consumes already-capped output.
 4. **`Segment`'s contract.** `Plain` stays escape-free (§3.2's rule 1). Splitting a value into lines
@@ -203,7 +244,7 @@ Two requirements follow, and both are on *this* task:
   per producer — which is how the two axes got out of step in the first place (§2.6's *"One rule,
   applied twice"*).
 - **The last row must remain re-renderable at that site.** The concatenated list may be `PaneRow`-typed
-  — `RowLayout.Wrap` composes to `PaneRow` internally and §4 rule 1 forbids changing that, so a
+  — `RowLayout.Wrap` composes to `PaneRow` internally and this task does not change that, so a
   Segment-backed row list downstream of `Wrap` does not exist and this section must not demand one
   (**A2**: it originally did; that was a defect, corrected against the #75 implementation). What this
   task must leave instead is **provenance**: at the concatenation site, each producer unit's
@@ -213,24 +254,102 @@ Two requirements follow, and both are on *this* task:
 
 This does **not** ask this task to implement any row budgeting. It asks it to not foreclose #27.
 
+**A4 — the A3 diff is DONE. Result: no conflict. `SPEC-2.6` §9 (Amendment A3) is compatible with
+this section, and #75 and #27 may proceed against both documents as they now stand.** This replaces
+the earlier note here, which said A3 was unread and warned of a possible conflict. Checked
+specifically:
+
+- **The concatenation site.** A3 §9.2.1 introduces a `RenderUnit(Segments, Rows)` record and states
+  at its §9.2.2 that `units` is the single concatenation site. That is this section's first
+  requirement, implemented exactly.
+- **Provenance.** A3 retains the exact `Segment` list handed to `RenderLeaf` alongside that unit's
+  rows, and re-invokes `RenderLeaf` with it. That is this section's second requirement — and note it
+  is *stronger* than what this section asked for (the rows themselves rather than a row range), which
+  is fine. It does **not** make the row type `Segment`-backed, so A2's correction still holds.
+- **`PaneRow` is not extended**, and `Compose` still produces `PaneRow`. `SPEC-2.6` §4's prohibition
+  holds.
+- **`Wrap`'s signature.** A3 §9.3 adds three optional parameters and refactors the body into
+  `PackRow`/`Compose`. Against §4 rule 1 *as originally written* this was a literal conflict — but
+  the defect was rule 1's, not A3's, and rule 1 is amended above rather than A3 being changed. See
+  the A4 entry in the amendment history for why: this document already required a row budget to
+  reach `Wrap`, so it could not coherently also forbid `Wrap`'s signature from changing.
+
+One non-conflicting scope note, recorded because it affects sequencing rather than correctness: A3
+§9.4 creates a new `SegmentTruncation.cs` and moves five methods into it. It is a pure move with a
+sound dependency-direction argument, but A3 itself rates it Medium confidence and names a smaller
+alternative. **If #27 is time-boxed, that extraction is the part of A3 most safely deferred.** Not a
+ruling of mine — #27 is not my task — but the Orchestrator should know it is separable.
+
 ---
 
-## 7. Relationship to #31, restated so it is not re-litigated
+## 7. Relationship to #31 — REWRITTEN (A3). The ordering has changed.
 
-`CommandProvider.cs:160`'s `Split('\n', 2)[0]` means **no item can produce more than one line
-today**. So:
+### 7.1 What changed
 
-- This task is fully implementable and testable now — a block's lines can be constructed in tests
-  without any provider change, and D1-D8 are all exercisable at the layer they live in.
-- But **nothing in production will render as a block until #31 lifts that cap.** That is expected
-  and is why the sequence is §3.1 → #27 → #31: the model and the marker must both be correct before
-  anything can reach them.
-- **#31 must not ship the provider half without this task landed**, for the reason already ruled:
-  a configurable cap on a quantity that cannot exceed 1 gives a green suite with the producer never
-  firing.
+The original sequence assumed this task lands before #31, on the reasoning that a configurable cap on
+a quantity that cannot exceed 1 yields a green suite with the producer never firing.
 
-D2's trailing-newline rule is the specific thing that will bite at the #31 boundary. Its test
-(item 4) must exist before #31 lands.
+**#31 is now implemented and holding for verification** (branch `task-31`, commit `8f34bbf`). It
+removes `CommandProvider.cs:160`'s `stdout.Split('\n', 2)[0]` **entirely** rather than preserving it
+as a default. I have ruled that correct: §4.0.1:3001 says **"Default: no cap"** in as many words, and
+§3's erratum at `:2970-2973` explicitly retires the single-line reading of `command`
+(*"the single-line reading is the one that goes"*).
+
+So #31 may land first. This task must be written to be correct in **either** order.
+
+### 7.2 D2 belongs to whichever task lands first — and that is now probably #31
+
+D2's trailing-newline strip is not a block-model refinement; it is a **precondition for the cap being
+lifted at all**. The moment `CommandProvider` stops truncating and starts splitting, `"foo\n"` yields
+two lines, and every ordinary command — `date`, `whoami`, `git rev-parse` — becomes a two-line item
+with a blank second row.
+
+**Ruled: D2 ships with the cap lift.** If #31 lands first, #31 implements D2 and this task's
+verification item 4 becomes a *regression check on work already done* rather than a new assertion.
+If this task somehow lands first, D2 ships here. Either way **D2 and the cap lift must not be
+separated**, and this is an ordering constraint with arithmetic behind it (`"foo\n".Split('\n')`
+has length 2), not a stylistic preference.
+
+### 7.3 The new risk — multi-line output reaching a renderer with no block model
+
+The original §7 warned that #31 without #75 gives a cap that never fires. With #31 removing the cap
+outright, the risk **inverts**: multi-line provider output can now reach a render path where the
+block layer does not yet exist.
+
+`RowLayout.Wrap` takes `Segment`s and has no notion of an embedded `\n`. What it does with one is
+undetermined by this spec and undetermined, as far as I can tell, by any other.
+
+**NEEDS-EVIDENCE (N1).** Route to an implementor; do not guess, and do not let this task's design
+depend on the guess:
+
+> On branch `task-31` @ `8f34bbf`, with the cap removed, render a config whose `command` item emits
+> a genuinely multi-line value (e.g. `printf 'a\nb\nc'`). Report only: the number of rows emitted,
+> and whether any row contains a literal `\n` or a control character in its `Plain` text.
+
+- **Rows = 1 with an embedded `\n` in `Plain`** → §3.2 rule 1 (`Plain` stays escape-free) is violated
+  the moment #31 merges, independently of the block model. That is a **merge blocker for #31**, and
+  the cheapest fix is for #31 to collapse or reject embedded newlines until this task lands.
+- **Rows = 3, laid out sanely** → `Wrap` already tolerates it, #31 is safe to merge alone, and this
+  task layers the block *semantics* (D4's separator suppression, D6, D7) on top of behaviour that is
+  already roughly right.
+- **Anything else** (crash, mangled width metric, rows ≠ 1 and ≠ 3) → report verbatim; it is a
+  finding in its own right.
+
+### 7.4 What still holds
+
+- This task remains **fully implementable and testable now**. A block's lines can be constructed in
+  tests without any provider change, and D1-D8 are all exercisable at the layer they live in.
+- The `height: "content"` gap §4.0.1:2990-2994 identifies — a content pane's height *is* its content,
+  so nothing bounds it once the cap is lifted — is **neither this task's nor #31's**. §4.0.1 assigns
+  it to §2.8 as a pane key that does not yet exist. Do not solve it here.
+
+  **A4 — measured, and the gap is narrower than this reads.** A `height: "content"` pane emitting 200
+  lines renders 3 rows, not 200: `surfaceMaxRows` is enforced through the §2.8.1 HeightLadder
+  *before* `height: "content"` is consulted, and `PaneHeightContentTests.cs:109-114` asserts that by
+  name. So nothing is unbounded today, and the §2.8 work is not urgent. It also means the open
+  question is **not** "what should the max be" but **"should `height: "content"` be able to grow the
+  surface at all"** — today's answer is no, asserted by a test. That is a product call, not mine.
+  Still not this task's problem either way.
 
 ---
 
@@ -249,8 +368,9 @@ D2's trailing-newline rule is the specific thing that will bite at the #31 bound
    leading separator. Assert on the exact row strings, not on a substring match.
 4. **Trailing newline is not a block** (D2). A provider value of `"foo\n"` with two neighbouring
    single-row items. Assert all three pack onto **one** row with separators between them, and that
-   no blank row is emitted anywhere in the pane. This is the test that fails loudly if D2 is skipped,
-   and it must be written even though nothing can produce `"foo\n"` until #31.
+   no blank row is emitted anywhere in the pane. **Per §7.2 this test must exist regardless of which
+   task implements the strip** — if #31 landed first it is a regression check on their work, and it
+   is still this task's job to have it.
 5. **A blank line inside a block is preserved** (D3). Value `"a\n\nb"`. Assert three rows, the middle
    one empty but padded to the pane's inner width per §2.4 rule 1.
 6. **Wrapping does not promote to a block** (D5, `:2515`). One item whose single line is three times
@@ -270,6 +390,15 @@ D2's trailing-newline rule is the specific thing that will bite at the #31 bound
     assembled in exactly one place, with each producer unit's `RenderLeaf` inputs and contributed row
     range in scope there (provenance).
     Record the file and line in the completion report so #27 can attach to it without re-deriving it.
+11. **`Plain` stays escape-free with multi-line input** (§7.3, A3). A block item's value containing
+    `\n`. Assert no emitted row's `Plain` text contains a literal `\n` or any control character —
+    §3.2 rule 1. This is the invariant N1 is probing, and it must be asserted here whether or not N1
+    comes back clean, because this task is the one that makes multi-line values routine.
+12. **`RowLayout.cs` is untouched by #75** (§4 rule 1 as amended by A4). A structural check, and it
+    exists because A4 relaxed the rule for #27 and that relaxation must not leak backwards into this
+    task. Assert this task's diff contains no change to `RowLayout.cs`. Item 1's byte-parity gate
+    would probably catch a behavioural change; this catches a behaviour-preserving refactor that
+    quietly forks the greedy fill.
 
 ---
 
@@ -279,20 +408,43 @@ D2's trailing-newline rule is the specific thing that will bite at the #31 bound
 statement that it implements §3.1.
 
 **High on §2.1**, which I consider the load-bearing insight: §3.1's ordering rule constrains
-classification, not pass structure, so `Wrap` survives intact. If an implementor reports that a real
-two-pass split is unavoidable, that is a spec gap worth routing back — it would mean I have misread
-how `Wrap` fuses the two.
+classification, not pass structure, so `Wrap` survives intact *for this task*. If an implementor
+reports that a real two-pass split is unavoidable, that is a spec gap worth routing back — it would
+mean I have misread how `Wrap` fuses the two.
 
 **High on D1, D2, D5, D6, D7, D8.** D2 and D5 are the two I would most expect to be implemented
 wrongly, and both have a dedicated verification item.
 
+**High on §7.2** (D2 ships with the cap lift). It rests on `"foo\n".Split('\n')` having length 2,
+which is arithmetic rather than judgment. Stated with its derivation deliberately: I asserted an
+ordering constraint elsewhere this session that turned out to be invented
+(`SPEC-2.3-suppression-predicate.md` §6.1, retracted), so this one is written so a reader can check
+it in ten seconds rather than take my word.
+
 **Medium on D3** (preserve interior blank lines). Defensible either way; I chose preservation because
 collapsing is a silent mutation and this path has no note channel. Cheap to reverse.
 
-**D4 — settled (A1).** This section previously flagged D4 as a product call I had made rather than
-routed, and named it the one decision worth showing Jim before it shipped. It was shown to him and
-**he confirmed it as written**. Implement it; do not route it back. The reasoning in D4 stands as
-the rationale, but the decision no longer rests on my judgment alone.
+**D4 — settled (A1).** Jim confirmed it as written. Implement it; do not route it back.
+
+**Open, and not mine to close: §7.3's N1.** What `RowLayout.Wrap` does with an embedded newline
+decides whether #31 can merge before this task. I have not run it and will not; it needs an
+implementor. **This is the one thing in this document that could change #31's merge decision**, so it
+should be answered before #31 is verified rather than after.
+
+**§6's A3 note — CLOSED (A4).** The diff is done and there is no conflict; see §6. The one apparent
+conflict was a defect in my own §4 rule 1, which contradicted §6 of this same document, and it is
+amended above rather than resolved against `SPEC-2.6`. **This is worth naming plainly: I wrote a
+"must not change" rule strong enough to forbid the mechanism another section of the same spec
+required. Two sections of one document disagreed for two amendments before an outside document
+surfaced it** — which is an argument for diffing a spec against itself, not only against its
+neighbours.
+
+**Medium-low on one thing A4 does not settle, flagged rather than guessed:** whether #27's optional
+parameters on `Wrap` are the right long-term shape, or whether the row budget eventually wants its
+own type. A4 rules only that the optional-parameter shape does not violate *this* document. The
+design merits of A3 §9.3 belong to whoever owns `SPEC-2.6`, and I have deliberately not adjudicated
+them — a second architect ruled there with more of the packing algorithm in front of them than I
+have.
 
 **Not escalation-worthy.** No security, migration, concurrency, or public-interface exposure; the
 blast radius is bounded by verification item 1's byte-parity gate; and every decision above is
