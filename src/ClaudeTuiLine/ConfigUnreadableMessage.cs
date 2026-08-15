@@ -17,19 +17,25 @@ public static class ConfigUnreadableMessage
     // degrades toward what the user cannot otherwise obtain, and a line number the parser
     // reported is not otherwise obtainable, while the Pointer and message after it are (open the
     // file).
-    public static string Format(string path, string reason, int? width, int reasonProtectedLength = 0)
+    // SPEC-47 §3.3: path is nullable because a resolution failure can occur with no configPath at
+    // all (§9.2.1 row 1). A null path enters rung 3 directly — the same pathless rendering rungs
+    // 1-2 fall through to under width pressure — rather than gaining a sixth, path-specific rung.
+    public static string Format(string? path, string reason, int? width, int reasonProtectedLength = 0)
     {
-        var full = Prefix + path + ": " + reason;
-        if (Fits(full.Length, width))
+        if (path is not null)
         {
-            return full;
-        }
+            var full = Prefix + path + ": " + reason;
+            if (Fits(full.Length, width))
+            {
+                return full;
+            }
 
-        var pathBudget = width!.Value - Prefix.Length - ": ".Length - reason.Length;
-        var elidedPath = ElidePath(path, pathBudget);
-        if (elidedPath is not null)
-        {
-            return Prefix + elidedPath + ": " + reason;
+            var pathBudget = width!.Value - Prefix.Length - ": ".Length - reason.Length;
+            var elidedPath = ElidePath(path, pathBudget);
+            if (elidedPath is not null)
+            {
+                return Prefix + elidedPath + ": " + reason;
+            }
         }
 
         var pathless = Prefix + reason;
@@ -38,7 +44,7 @@ public static class ConfigUnreadableMessage
             return pathless;
         }
 
-        var reasonBudget = width.Value - Prefix.Length;
+        var reasonBudget = width!.Value - Prefix.Length;
         if (reasonBudget >= Math.Max(1, reasonProtectedLength))
         {
             return Prefix + TruncateProtected(reason, reasonProtectedLength, reasonBudget);

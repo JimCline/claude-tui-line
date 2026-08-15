@@ -23,17 +23,15 @@ internal static class ConfigResolution
 
             if (result.Status == ConfigReadStatus.ParseError)
             {
-                var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
                 var (reason, protectedLength) = ComposeUnreadableReason(result);
-                return (fallbackTopLevel, fallbackPane, configPath, reason, protectedLength);
+                return FallbackResult(configPath, reason, protectedLength);
             }
 
             if (result.Status == ConfigReadStatus.NoFile)
             {
                 if (explicitConfigPath is not null)
                 {
-                    var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
-                    return (fallbackTopLevel, fallbackPane, configPath, "no such file", 0);
+                    return FallbackResult(configPath, "no such file", 0);
                 }
 
                 configPath = null; // §9.2.1 row 1: nothing at the searched path, and none asserted.
@@ -50,12 +48,37 @@ internal static class ConfigResolution
             var rootPane = ConfigLoader.ResolveRootPane(config, topLevel);
             return (topLevel, rootPane, configPath, null, 0);
         }
-        catch
+        // SPEC-47 §5.2: unreachable today (SPEC-47 §1.3); if anything below ResolveTopLevel/
+        // ResolveRootPane gains a throw, SPEC-47 §5.2 requires the end-to-end test that becomes
+        // writable at that point.
+        catch (Exception ex)
         {
-            var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
-            return (fallbackTopLevel, fallbackPane, configPath, null, 0);
+            return FallbackResult(configPath, ComposeResolutionFailureReason(ex), 0);
         }
     }
+
+    // SPEC-47 §4.3: reason is non-nullable and has no default — the whole mechanism. No caller can
+    // obtain a fallback pane without also supplying a reason, so the coupling that let :896's third
+    // call site fall through with a null reason is unrepresentable rather than merely conventional.
+    internal static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? UnreadableReason, int UnreadableReasonProtectedLength) FallbackResult(string? configPath, string reason, int protectedLength)
+    {
+        var (fallbackTopLevel, fallbackPane) = BuildFallbackConfig();
+        return (fallbackTopLevel, fallbackPane, configPath, reason, protectedLength);
+    }
+
+    // SPEC-47 §3.1/§3.2: names the failure class so the row is not mistaken for a parse error (the
+    // config parsed fine and resolution threw), and carries ex.Message verbatim per
+    // ComposeUnreadableReason's precedent — no stack trace, no exception type name, since the
+    // output is one row degraded under width pressure through five rungs.
+    // SPEC-47 §5.1 test 3: the output channel is one row (Program.cs's diagnostic WriteLine), and
+    // ex.Message is not guaranteed newline-free — a .NET exception message can legitimately contain
+    // one. Newlines are replaced rather than the row split, since a second line would be silently
+    // dropped by the one-row output channel this reason feeds.
+    internal static string ComposeResolutionFailureReason(Exception ex) =>
+        $"config could not be resolved: {StripNewlines(ex.Message)}";
+
+    private static string StripNewlines(string text) =>
+        text.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' ');
 
     // SPEC-V2-FRAMEWORK.md §9.2.2: "line <n>, <path within the document>: <message>", read from
     // JsonException's typed LineNumber/Path rather than scraped from Message text .NET is free to

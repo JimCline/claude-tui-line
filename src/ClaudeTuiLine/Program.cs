@@ -40,7 +40,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         if (unreadableReason is not null)
         {
             var diagnosticWidth = SurfaceLayout.ComputeWidth(Environment.GetEnvironmentVariable("COLUMNS"), chromeReserve: 0);
-            Console.Out.WriteLine(ConfigUnreadableMessage.Format(configPath!, unreadableReason, diagnosticWidth, unreadableReasonProtectedLength));
+            Console.Out.WriteLine(ConfigUnreadableMessage.Format(configPath, unreadableReason, diagnosticWidth, unreadableReasonProtectedLength));
             return 0;
         }
 
