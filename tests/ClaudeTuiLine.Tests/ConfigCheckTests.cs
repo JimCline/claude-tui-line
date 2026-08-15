@@ -107,6 +107,79 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "from-compound-source" && d.Path == "/items/0/parts/0/from" && d.Severity == DiagnosticSeverity.Error);
     }
 
+    // SPEC-87 §6.1, hole #1b: a part's `item` naming a compound id is an error, distinct from
+    // from-compound-source because a part's `item` renders an item rather than reading a value.
+    [Fact]
+    public void PartItemNamingCompoundItem_ReportsPartCompoundSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Id = "a",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Item = "agent-badge" } },
+                },
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "part-compound-source" && d.Path == "/items/0/parts/0/item" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    // SPEC-87 §6.2: a compound part naming its own compound id is caught by the same general rule,
+    // with no dedicated self-reference code needed (§3.4).
+    [Fact]
+    public void PartItemNamingOwnCompoundId_ReportsPartCompoundSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Id = "badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Item = "badge" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "part-compound-source" && d.Path == "/items/0/parts/0/item" && d.Severity == DiagnosticSeverity.Error);
+        Assert.Single(diagnostics, d => d.Path == "/items/0/parts/0/item");
+    }
+
+    // SPEC-87 §6.3: a part's `item` naming a registry or command id is legal and must not trip the
+    // new compound-source branch.
+    [Fact]
+    public void PartItemNamingRegistryOrCommandId_ReportsNoDiagnostic()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Id = "a",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Item = "directory" }, new() { Item = "cmd" } },
+                },
+                new() { Id = "cmd", Command = new List<string> { "tool" } },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Empty(diagnostics);
+    }
+
     // §12.8.3: precedence — an item carrying both `parts` and `from` reports the compound reason,
     // not from-derived-source, for the *referencing* item's own from (§4.4 rules `parts` wins on
     // the node that declares both; this checks the id being pointed AT is reported as compound).
@@ -165,6 +238,39 @@ public class ConfigCheckTests
         var diagnostics = ConfigChecker.Check(config);
 
         Assert.Contains(diagnostics, d => d.Code == "unknown-color-source" && d.Severity == DiagnosticSeverity.Warning);
+    }
+
+    // SPEC-87 §6.9-10, hole #4: a colour rule's `from` naming a compound has no single value to
+    // read (a compound has a colour per part), so it warns and falls through to the default colour
+    // rather than erroring — matching unknown-color-source's severity per §1.1's coherence rule.
+    [Fact]
+    public void ColorRuleFromNamingCompoundItem_ReportsColorFromCompoundSourceAsWarning()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Item = "directory",
+                    Color = new ColorExprJsonConfig
+                    {
+                        Rule = new ColorRuleJsonConfig { From = "agent-badge", Default = "green" },
+                    },
+                },
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Single(diagnostics);
+        Assert.Contains(diagnostics, d => d.Code == "color-from-compound-source" && d.Severity == DiagnosticSeverity.Warning);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]

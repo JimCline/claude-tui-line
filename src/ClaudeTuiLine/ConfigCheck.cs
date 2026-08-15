@@ -115,6 +115,7 @@ public static class ConfigChecker
                     ReferenceForm.LinkPlaceholder => (DiagnosticSeverity.Warning, "unknown-link-target"),
                     ReferenceForm.ColorFrom => (DiagnosticSeverity.Warning, "unknown-color-source"),
                     ReferenceForm.ArgvPlaceholder => (DiagnosticSeverity.Error, "unknown-item-id"),
+                    ReferenceForm.PartItemSelector => (DiagnosticSeverity.Error, "unknown-item-id"),
                     _ => (DiagnosticSeverity.Error, "unknown-item-id"),
                 };
                 yield return new Diagnostic(reference.Path, severity, code, $"no item named '{reference.Id}'");
@@ -138,6 +139,16 @@ public static class ConfigChecker
             {
                 yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "placeholder-compound-source",
                     $"'{reference.Id}' is a compound item; an argv placeholder may not name a compound item");
+            }
+            else if (reference.Form == ReferenceForm.PartItemSelector && scan.CompoundItemIds.Contains(reference.Id))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "part-compound-source",
+                    $"'{reference.Id}' is a compound item; a part may not name a compound, because one compound inside another is the nesting §3.3 forbids");
+            }
+            else if (reference.Form == ReferenceForm.ColorFrom && scan.CompoundItemIds.Contains(reference.Id))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Warning, "color-from-compound-source",
+                    $"'{reference.Id}' is a compound item; a compound has a colour per part and no single value for a colour rule to read");
             }
             else if (reference.Form == ReferenceForm.ArgvPlaceholder && string.Equals(reference.Id, reference.OwnerId, StringComparison.Ordinal))
             {

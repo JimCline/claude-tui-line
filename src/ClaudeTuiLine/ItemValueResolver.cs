@@ -295,7 +295,7 @@ public static class ItemValueResolver
                     .Select((part, i) => (part, i))
                     .Where(t => t.part.Item is { Length: > 0 })
                     .Select(t => new IdCandidate(t.part.Item!, $"{entry.Path}/parts/{t.i}/item",
-                        ReferenceKind.Reference, ReferenceForm.ItemSelector)))),
+                        ReferenceKind.Reference, ReferenceForm.PartItemSelector)))),
 
         // §3.3: a compound part's `from`.
         new ReferenceExtractor(
@@ -570,6 +570,7 @@ internal enum ReferenceForm
     LinkPlaceholder,
     ColorFrom,
     ArgvPlaceholder,
+    PartItemSelector,
 }
 
 /// <summary>
