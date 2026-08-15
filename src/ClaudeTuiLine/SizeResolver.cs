@@ -472,7 +472,15 @@ public static class SizeResolver
                 }
             }
 
-            if (!tooSmall || current.Count <= 1)
+            // §67a: fixed-size panes are exempt from the per-pane tooSmall check above (their
+            // grant is their declared size, never shrunk), so two fixed panes whose declared sizes
+            // alone exceed the split's budget would otherwise sail through with neither pane
+            // reporting too-small. Recomputed per iteration, not hoisted out of the loop — the
+            // gutter count (and therefore avail) falls with the child count on every drop.
+            var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, current.Count, collapse));
+            var overAllocated = result.Grants.Sum() > avail;
+
+            if ((!tooSmall && !overAllocated) || current.Count <= 1)
             {
                 return result;
             }
