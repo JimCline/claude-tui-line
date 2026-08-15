@@ -177,4 +177,19 @@ public class RowLayoutTests
         var rows = RowLayout.Wrap(Array.Empty<Segment>(), availableWidth: 79);
         Assert.Empty(rows);
     }
+
+    // SPEC-2.6-vertical-marker-splice.md §9.7 test 11: with no usable width known at all, Wrap's
+    // null-width contract (a single unwrapped row) fires before rowBudget/markerRequired are ever
+    // consulted — a caller passing maxContentRows through with COLUMNS unset must not see the
+    // budget silently truncate or splice a marker onto the single fallback row.
+    [Fact]
+    public void NullAvailableWidth_IgnoresRowBudgetEntirely_StillEmitsOneUnwrappedRow()
+    {
+        var segments = new[] { Seg("a"), Seg("b"), Seg("c") };
+
+        var rows = RowLayout.Wrap(segments, availableWidth: null, rowBudget: 1, ellipsis: "…", markerRequired: true);
+
+        var row = Assert.Single(rows);
+        Assert.Equal($"<a>{Sep}<b>{Sep}<c>", row.Markup);
+    }
 }

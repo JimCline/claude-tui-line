@@ -1446,14 +1446,17 @@ truncates, from the same items at the same inner width. The test as written asse
 agree. They must not.
 
 The implementation already knows this. `PaneRenderer.RenderLeaf` takes
-`(items, innerWidth, overflow, ellipsis, notes, allowFallback)` — the two inputs §2.5.1 names, plus
-the two that §2.6 varies by position, plus the collector. The signature is right and the sentence
-is a summary of it written by someone who was thinking about `COLUMNS`.
+`(items, innerWidth, overflow, ellipsis, notes, allowFallback, rowBudget, markerRequired)` — the
+two inputs §2.5.1 names, plus the two that §2.6 varies by position, plus the collector, plus the
+two SPEC-2.6-vertical-marker-splice.md §9 adds for the vertical-overflow marker splice. The
+signature is right and the sentence is a summary of it written by someone who was thinking about
+`COLUMNS`.
 
 Ruled: **leaf rendering is a pure function of its full input tuple — `items`, `innerWidth`,
-`overflow`, `ellipsis`, and `allowFallback` — and §10's test fixes all of them, not two of them.**
-Same tuple, same bytes, at any position in any surface at any terminal width. That is a real
-property, it is the one §2.5.1 wanted, and unlike the version it wrote down it can actually hold.
+`overflow`, `ellipsis`, `allowFallback`, `rowBudget`, and `markerRequired` — and §10's test fixes
+all of them, not two of them.** Same tuple, same bytes, at any position in any surface at any
+terminal width. That is a real property, it is the one §2.5.1 wanted, and unlike the version it
+wrote down it can actually hold.
 
 **`allowFallback` is a surface fact, computed at the root and passed down.** This is the part worth
 enforcing rather than recording. It is derived from the surface's pane count, so a leaf that

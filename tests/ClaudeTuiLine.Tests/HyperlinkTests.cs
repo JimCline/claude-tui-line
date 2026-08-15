@@ -32,6 +32,39 @@ public class HyperlinkTests
         }
     }
 
+    // SPEC-2.6-vertical-marker-splice.md §7 test 5: the vertical marker splice must go through
+    // the same SegmentTruncation.Truncate the horizontal axis uses, so a colored OSC 8 link
+    // spliced with the marker still closes the link before the ellipsis (ruling d) and keeps the
+    // color on both the retained content and the ellipsis itself.
+    [Fact]
+    public void RowLayoutWrap_MarkerSpliceOnLinkedColoredSegment_ClosesLinkBeforeEllipsis_KeepsColor()
+    {
+        const string url = "https://example.com/path";
+        var text = new string('A', 25);
+        var coloredMarkup = $"[green]{Markup.Escape(text)}[/]";
+        var segment = new Segment(OscHyperlink.Wrap(url, coloredMarkup), text);
+
+        var buffer = PaneRenderer.RenderLeaf(
+            new[] { segment }, 30, OverflowMode.Truncate, "…", new RenderNoteCollector(),
+            allowFallback: false, rowBudget: 1, markerRequired: true);
+
+        var row = Assert.Single(buffer.Rows);
+        // Markup.Remove chokes on raw OSC 8 bytes (unescaped ']' outside a "[...]" span — see
+        // OscHyperlink.EscapeForRender's own doc comment), so the ellipsis is confirmed as a
+        // literal character present directly rather than through Spectre's tag stripper — its
+        // ordering relative to the link's close sequence is checked below.
+        Assert.Contains('…', row.Markup);
+
+        // The link must be explicitly closed before the ellipsis appears — "clicking '…' must
+        // never navigate" — so the OSC 8 close sequence precedes the marker's own position, not
+        // the reverse (which would leave the marker inside the still-open link).
+        var closeIndex = row.Markup.IndexOf(OscHyperlink.Close, StringComparison.Ordinal);
+        var markerIndex = row.Markup.LastIndexOf('…');
+        Assert.True(closeIndex >= 0, $"expected a closed OSC 8 link in '{row.Markup}'");
+        Assert.True(markerIndex > closeIndex, "marker must appear after the link's own close sequence");
+        Assert.Contains("[green]", row.Markup);
+    }
+
     [Fact]
     public void WrapOfLinkedSegment_AtFallbackWidth_CollapsesToOneRow_LinkIntactAndUnsplit()
     {
