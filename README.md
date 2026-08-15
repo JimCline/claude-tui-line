@@ -306,6 +306,21 @@ An item can take another item's value and reshape it, without that source item b
 The pipeline runs `from` → `extract` → `case` → `format`, in that order. `extract` is a regex
 applied to the raw provider value, so it sees the underlying data rather than the rendered text.
 
+### Compound items
+
+An item can declare `parts` instead of a value, rendering several sources concatenated with no
+separator between them — each part gets its own colour:
+
+```json
+{ "id": "agent-badge", "parts": [
+    { "text": "agent:", "color": "grey" },
+    { "from": "agent", "extract": "[^:]+$", "case": "upper", "color": "aqua" }
+] }
+```
+
+This is for one item built from several differently-coloured sources with nothing forced between
+them — two separate derived items would always have a separator (or none) applied uniformly.
+
 ### Colours
 
 Sixteen named colours, plus `default`, `dim`, and `bold`:
