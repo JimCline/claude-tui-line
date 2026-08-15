@@ -76,7 +76,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 46, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 46, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -123,7 +123,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -165,7 +165,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 46, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 46, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -206,7 +206,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 47, Ctx, values, notes, collapse: true);
+        var resolved = SizeResolver.Resolve(pane, 47, Ctx, values,new Dictionary<string, Segment>(),  notes, collapse: true);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -243,7 +243,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 40, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 40, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -278,7 +278,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 200, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 200, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(2, resolved.Children.Count);
         Assert.Equal(100, resolved.Children[0].OuterWidth);
@@ -315,7 +315,7 @@ public class DropFloorPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 50, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 50, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 

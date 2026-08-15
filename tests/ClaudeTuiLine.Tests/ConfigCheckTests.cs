@@ -273,6 +273,70 @@ public class ConfigCheckTests
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
     }
 
+    // SPEC-87 §12.2: hole #4's fix is two-sided — the diagnostic fires AND the rule's resolved
+    // colour at render time falls through to its default rather than picking up anything derived
+    // from the compound (ColorResolution.Resolve never reads the compound map at all).
+    [Fact]
+    public void ColorRuleFromNamingCompoundItem_DiagnosticFiresAndResolvedColorFallsThroughToDefault()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Item = "directory",
+                    Color = new ColorExprJsonConfig
+                    {
+                        Rule = new ColorRuleJsonConfig { From = "agent-badge", Default = "green" },
+                    },
+                },
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Single(diagnostics);
+        Assert.Contains(diagnostics, d => d.Code == "color-from-compound-source" && d.Severity == DiagnosticSeverity.Warning);
+
+        var rule = new ColorResolution.ColorRule(Thresholds: null, Match: null, Default: new ColorResolution.ColorValue.Literal("green"), From: "agent-badge");
+        var values = new Dictionary<string, string?>();
+        var tokens = new Dictionary<string, ColorResolution.ColorRule>();
+
+        var resolvedColor = ColorResolution.Resolve(new ColorResolution.ColorExpr.Inline(rule), values, tokens);
+
+        Assert.Equal("green", resolvedColor);
+    }
+
+    // SPEC-87 §12.3/§12.8.5: an item-level selector naming a compound id (`{"item":"<id>"}`) is
+    // not one of the reference forms this spec's diagnostics cover — a legitimately-declared
+    // compound selected this way reports nothing.
+    [Fact]
+    public void ItemSelectorNamingCompoundElsewhere_ReportsNoDiagnostic()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Id = "empty-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Item = "worktree" } },
+                },
+                new() { Item = "empty-badge" },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Empty(diagnostics);
+    }
+
     [Fact]
     public void ColorTokenNamingNothing_ReportsUnknownColorTokenAsWarning()
     {

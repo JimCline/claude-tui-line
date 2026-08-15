@@ -63,7 +63,7 @@ public class FixedSizeOverAllocationDropTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 46, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 46, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 

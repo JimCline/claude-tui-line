@@ -88,13 +88,13 @@ public class MinRowsDistributeTests
 
     private static int RowsAt(Pane candidate, int outerWidth, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens, ItemContext ctx)
     {
-        var resolved = SizeResolver.Resolve(candidate, outerWidth, ctx, values, new RenderNoteCollector());
-        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, tokens, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(candidate, outerWidth, ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         return rendered.Buffer.Rows.Count;
     }
 
     private static string RenderMarkup(SizeResolver.ResolvedPane resolved, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens) =>
-        string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, tokens, new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
+        string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
 
     [Fact]
     public void Columns112_MinRows_MatchesBruteForceOptimalRowCount()
@@ -125,7 +125,7 @@ public class MinRowsDistributeTests
             bestScore = Math.Min(bestScore, Math.Max(rows1, rows2));
         }
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         var achievedRows1 = RowsAt(left, resolved.Children[0].OuterWidth, values, topLevel.Colors);
         var achievedRows2 = RowsAt(right, resolved.Children[1].OuterWidth, values, topLevel.Colors);
         var achievedScore = Math.Max(achievedRows1, achievedRows2);
@@ -144,7 +144,7 @@ public class MinRowsDistributeTests
             var rows2 = RowsAt(right, w2, blankValues, topLevel.Colors, BlankCtx);
             blankBestScore = Math.Min(blankBestScore, Math.Max(rows1, rows2));
         }
-        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         var blankAchievedRows1 = RowsAt(left, blankResolved.Children[0].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
         var blankAchievedRows2 = RowsAt(right, blankResolved.Children[1].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
         var blankAchievedScore = Math.Max(blankAchievedRows1, blankAchievedRows2);
@@ -177,7 +177,7 @@ public class MinRowsDistributeTests
             bestScore = Math.Min(bestScore, Math.Max(rows1, rows2));
         }
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         var achievedRows1 = RowsAt(left, resolved.Children[0].OuterWidth, values, topLevel.Colors);
         var achievedRows2 = RowsAt(right, resolved.Children[1].OuterWidth, values, topLevel.Colors);
         var achievedScore = Math.Max(achievedRows1, achievedRows2);
@@ -195,7 +195,7 @@ public class MinRowsDistributeTests
             var rows2 = RowsAt(right, w2, blankValues, topLevel.Colors, BlankCtx);
             blankBestScore = Math.Min(blankBestScore, Math.Max(rows1, rows2));
         }
-        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         var blankAchievedRows1 = RowsAt(left, blankResolved.Children[0].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
         var blankAchievedRows2 = RowsAt(right, blankResolved.Children[1].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
         var blankAchievedScore = Math.Max(blankAchievedRows1, blankAchievedRows2);
@@ -213,7 +213,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
 
         SizeResolver.MinRowsPackerInvocationCount = 0;
-        SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+        SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         var count = SizeResolver.MinRowsPackerInvocationCount;
 
         _output.WriteLine($"min-rows packer invocations for the live two-pane config at COLUMNS=112: {count}");
@@ -305,7 +305,7 @@ public class MinRowsDistributeTests
             bestScore = Math.Min(bestScore, Math.Max(rows1, rows2));
         }
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, LongItemCtx, values, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, LongItemCtx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         Assert.Equal(2, resolved.Children.Count);
         var achievedRows1 = RowsAt(left, resolved.Children[0].OuterWidth, values, topLevel.Colors, LongItemCtx);
         var achievedRows2 = RowsAt(right, resolved.Children[1].OuterWidth, values, topLevel.Colors, LongItemCtx);
@@ -366,7 +366,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(1, resolved.Children.Count);
         Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 1000 columns at {surfaceWidth} columns");
@@ -391,7 +391,7 @@ public class MinRowsDistributeTests
             return 5;
         }
 
-        SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, MeasureOverride, new RenderNoteCollector());
+        SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new Dictionary<string, Segment>(), MeasureOverride, new RenderNoteCollector());
 
         Assert.True(fired, "measureOverride must fire for the min-rows content candidate's surplus cap");
     }
@@ -410,7 +410,7 @@ public class MinRowsDistributeTests
 
         int RowCountOverride(Pane p, int w) => w < 50 ? 1 : 5; // more rows at greater width
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, measureOverride: null, RowCountOverride, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new Dictionary<string, Segment>(), measureOverride: null, rowCountOverride: RowCountOverride, notes: new RenderNoteCollector());
 
         // The override reports fewer rows only below width 50 (the value maxT is derived from,
         // via each candidate's own floor) and more rows at or above it (the value the hi-width
@@ -467,7 +467,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(1, resolved.Children.Count);
         Assert.True(resolved.Children.Sum(c => c.OuterWidth) <= surfaceWidth);
@@ -522,7 +522,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(2, resolved.Children.Count);
         Assert.Equal(23, resolved.Children[0].OuterWidth);
@@ -575,7 +575,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(1, resolved.Children.Count);
         Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 72 columns at {surfaceWidth} columns");
@@ -593,7 +593,7 @@ public class MinRowsDistributeTests
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(2, resolved.Children.Count);
         Assert.Equal(54, resolved.Children[0].OuterWidth);
@@ -605,7 +605,7 @@ public class MinRowsDistributeTests
         // surfaceWidth) rather than re-pinning exact widths that this content's absence has no
         // reason to reproduce.
         var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
-        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         Assert.Equal(2, blankResolved.Children.Count);
         Assert.True(blankResolved.Children.Sum(c => c.OuterWidth) <= surfaceWidth);
         BlankSurfaceControl.AssertContentDiffers(
@@ -656,7 +656,7 @@ public class MinRowsDistributeTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(2, resolved.Children.Count);
         Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 72 columns at {surfaceWidth} columns");

@@ -73,7 +73,7 @@ public class MinRowsDropNoteTests
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 

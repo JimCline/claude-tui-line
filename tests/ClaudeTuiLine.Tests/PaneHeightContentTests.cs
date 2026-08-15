@@ -91,8 +91,8 @@ public class PaneHeightContentTests
         var (topLevel, pane) = LoadConfig(json);
         var surfaceWidth = SurfaceLayout.ComputeWidth(columns, topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         return (pane, resolved, rendered, values, topLevel.Colors);
     }
 
@@ -102,7 +102,7 @@ public class PaneHeightContentTests
     {
         var right = resolved.Children[1];
         var alone = new SizeResolver.ResolvedPane(right.Source, right.OuterWidth, Array.Empty<SizeResolver.ResolvedPane>());
-        return PaneTreeRenderer.Render(alone, Ctx, values, tokens, new RenderNoteCollector()).Buffer.Rows.Count;
+        return PaneTreeRenderer.Render(alone, Ctx, values, tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector()).Buffer.Rows.Count;
     }
 
     [Fact]

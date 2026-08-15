@@ -557,8 +557,21 @@ sibling code, `placeholder-compound-source`. The other three have no clean prece
 severities are a product call (`unknown-link-target` and `unknown-color-source` are *warnings*,
 consistent with §3.2's link-is-best-effort rule).
 
+> **Amendment (SPEC-87-compound-reference-resolution.md, incidental finding):** "no clean
+> precedent" was too pessimistic for `ColorFrom` — SPEC-87's severity-follows-the-form rule was
+> itself the clean precedent, simply not looked for here. `ColorFrom` is resolved below at warning
+> severity on that basis, not left open-ended.
+
 **Do not implement these in this change.** File them as a follow-up so this change stays reviewable
 (same reasoning as §7.5). They are recorded here so the next person does not re-derive them.
+
+**Resolved by SPEC-87-compound-reference-resolution.md** (`56c23f7`, `a7eb859`): `ItemSelector`
+(item-level) and `LinkPlaceholder` now reach the compound whole-tree via that spec's compound-map
+lookup mechanism. `ItemSelector` on a part is instead an **error** (`part-compound-source`) rather
+than a resolution, closing the same hole from the other side. `ColorFrom` gets a **warning**
+diagnostic (`color-from-compound-source`) and falls through to its default colour — that spec
+rules this the correct outcome, not a stopgap. `ArgvPlaceholder` is **not** touched by SPEC-87 and
+remains open; the `placeholder-compound-source` code proposed above is still unimplemented.
 
 ---
 

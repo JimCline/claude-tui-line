@@ -19,7 +19,7 @@ public class PaneAssemblerBlockTests
         new(PaneSplit.None, Array.Empty<Pane>(), "auto", NoBorder, overflow, "…", null, items);
 
     private static IReadOnlyList<PaneRow> Render(Pane pane, int innerWidth, IReadOnlyDictionary<string, string?> values) =>
-        PaneAssembler.RenderLeafRows(pane, innerWidth, Ctx, values, Tokens, new RenderNoteCollector());
+        PaneAssembler.RenderLeafRows(pane, innerWidth, Ctx, values, Tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
     // --- 1: byte-parity regression gate — no all-single-line pane's output changes. ---
 
@@ -197,7 +197,7 @@ public class PaneAssemblerBlockTests
         var pane = Leaf(OverflowMode.Truncate, new[] { Item("block") });
         var values = new Dictionary<string, string?> { ["block"] = "line1\nline2\nline3" };
 
-        var rows = PaneAssembler.RenderLeafRows(pane, 80, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 2);
+        var rows = PaneAssembler.RenderLeafRows(pane, 80, Ctx, values, Tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector(), maxContentRows: 2);
 
         Assert.Equal(2, rows.Count);
         Assert.Equal("line1", Stripped(rows[0].Markup).TrimEnd());

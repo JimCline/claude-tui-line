@@ -34,7 +34,10 @@ public static class LeafContent
             .Where(token => token.IsPlaceholder && token.Text.Length > 0)
             .Select(token => token.Text);
 
-    public static ItemDecision Decide(LeafItems.ResolvedItem resolved, IReadOnlyDictionary<string, string?> values)
+    public static ItemDecision Decide(
+        LeafItems.ResolvedItem resolved,
+        IReadOnlyDictionary<string, string?> values,
+        IReadOnlyDictionary<string, Segment> compounds)
     {
         var text = resolved.Display!.Plain;
         var markup = resolved.Display!.Markup;
@@ -48,7 +51,7 @@ public static class LeafContent
 
         if (resolved.Config.Link is { Length: > 0 } linkTemplate
             && resolved.Value is { } ownValue
-            && TryBuildLink(linkTemplate, ownValue, values, out var url))
+            && TryBuildLink(linkTemplate, ownValue, values, compounds, out var url))
         {
             markup = OscHyperlink.Wrap(url, markup);
         }
@@ -79,7 +82,12 @@ public static class LeafContent
     /// suppresses the link only — the item itself still renders, per §3.2's link-is-best-effort
     /// rule.
     /// </summary>
-    private static bool TryBuildLink(string template, string ownValue, IReadOnlyDictionary<string, string?> values, out string url)
+    private static bool TryBuildLink(
+        string template,
+        string ownValue,
+        IReadOnlyDictionary<string, string?> values,
+        IReadOnlyDictionary<string, Segment> compounds,
+        out string url)
     {
         var missing = false;
         var built = new System.Text.StringBuilder();
@@ -92,6 +100,16 @@ public static class LeafContent
             }
 
             var raw = token.Text.Length == 0 ? ownValue : values.GetValueOrDefault(token.Text);
+
+            // SPEC-87 §12.4/§4.1: a compound never writes into `values` (§0), so this is consulted
+            // only on that miss, and only its Plain — markup is dropped unconditionally, a URL is
+            // not a place for SGR bytes. A suppressed compound has no map entry (§12.3), so this
+            // falls through to the same missing-placeholder path below, matching E3.
+            if (raw is null && token.Text.Length > 0 && compounds.TryGetValue(token.Text, out var compoundSegment))
+            {
+                raw = compoundSegment.Plain;
+            }
+
             if (raw is null)
             {
                 missing = true;

@@ -29,7 +29,7 @@ public class NarrowSplitPaneTests
 
         var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
         var values = new Dictionary<string, string?> { ["model-short"] = ItemRegistry.Find("model-short")!.ResolveValue(ctx) };
-        var rows = PaneAssembler.RenderLeafRows(pane, 10, ctx, values, new Dictionary<string, ColorResolution.ColorRule>(), new RenderNoteCollector());
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, ctx, values, new Dictionary<string, ColorResolution.ColorRule>(), new Dictionary<string, Segment>(), new RenderNoteCollector());
 
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.True(r.Width <= 10, $"row '{r.Markup}' exceeds the pane's own width"));
@@ -41,7 +41,7 @@ public class NarrowSplitPaneTests
         // structural invariant, so only the per-row width bound is re-asserted on blank.
         var blankCtx = BlankSurfaceControl.Blank(ctx);
         var blankValues = new Dictionary<string, string?> { ["model-short"] = ItemRegistry.Find("model-short")!.ResolveValue(blankCtx) };
-        var blankRows = PaneAssembler.RenderLeafRows(pane, 10, blankCtx, blankValues, new Dictionary<string, ColorResolution.ColorRule>(), new RenderNoteCollector());
+        var blankRows = PaneAssembler.RenderLeafRows(pane, 10, blankCtx, blankValues, new Dictionary<string, ColorResolution.ColorRule>(), new Dictionary<string, Segment>(), new RenderNoteCollector());
         Assert.All(blankRows, r => Assert.True(r.Width <= 10, $"blank-surface row '{r.Markup}' exceeds the pane's own width"));
         BlankSurfaceControl.AssertContentDiffers(
             string.Join('\n', rows.Select(r => r.Markup)), string.Join('\n', blankRows.Select(r => r.Markup)));

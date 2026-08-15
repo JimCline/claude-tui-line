@@ -26,7 +26,7 @@ public class SplitFlexTests
         new(PaneSplit.Vertical, children, size, border ?? NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: gutter);
 
     private static string RenderMarkup(SizeResolver.ResolvedPane resolved, IReadOnlyDictionary<string, string?> values) =>
-        string.Join('\n', PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
+        string.Join('\n', PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new Dictionary<string, Segment>(), new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
 
     // ---- V1: flex stacks when side by side does not fit but stacked does ----
 
@@ -38,7 +38,7 @@ public class SplitFlexTests
         var notes = new RenderNoteCollector();
 
         // sideBySideFloor = 30 + 30 + 1 = 61; stackedFloor = max(30, 30) = 30. 40 sits between them.
-        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, new Dictionary<string, Segment>(), notes);
 
         Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
         Assert.Equal(2, resolved.Children.Count);
@@ -57,11 +57,11 @@ public class SplitFlexTests
 
         var flexValues = ItemValueResolver.Resolve(flexRoot, Ctx, EmptyColors);
         var flexNotes = new RenderNoteCollector();
-        var flexResolved = SizeResolver.Resolve(flexRoot, 70, Ctx, flexValues, flexNotes);
+        var flexResolved = SizeResolver.Resolve(flexRoot, 70, Ctx, flexValues, new Dictionary<string, Segment>(), flexNotes);
 
         var verticalValues = ItemValueResolver.Resolve(verticalRoot, Ctx, EmptyColors);
         var verticalNotes = new RenderNoteCollector();
-        var verticalResolved = SizeResolver.Resolve(verticalRoot, 70, Ctx, verticalValues, verticalNotes);
+        var verticalResolved = SizeResolver.Resolve(verticalRoot, 70, Ctx, verticalValues, new Dictionary<string, Segment>(), verticalNotes);
 
         Assert.Equal(PaneSplit.Vertical, flexResolved.EffectiveSplit);
         Assert.Empty(flexNotes.Notes);
@@ -81,7 +81,7 @@ public class SplitFlexTests
         var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, new Dictionary<string, Segment>(), notes);
 
         Assert.Equal(PaneSplit.Vertical, resolved.EffectiveSplit);
         Assert.Single(resolved.Children);
@@ -110,7 +110,7 @@ public class SplitFlexTests
             var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
             var notes = new RenderNoteCollector();
 
-            SizeResolver.Resolve(root, width, Ctx, values, notes);
+            SizeResolver.Resolve(root, width, Ctx, values, new Dictionary<string, Segment>(), notes);
 
             Assert.Equal(expectedCount, notes.Notes.Count(n => n.Message.Contains("flex split stacked")));
         }
@@ -126,7 +126,7 @@ public class SplitFlexTests
         var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, new Dictionary<string, Segment>(), notes);
 
         Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
         Assert.Single(notes.Notes);
@@ -229,10 +229,10 @@ public class SplitFlexTests
         var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, new Dictionary<string, Segment>(), notes);
         Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
 
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new Dictionary<string, Segment>(), new RenderNoteCollector());
 
         // §4.5.1 — if this is visually broken (not merely imperfect) the Reviewer/Architect must
         // see it directly rather than through a false-passing assertion; report rather than fix.
@@ -258,7 +258,7 @@ public class SplitFlexTests
             var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
             var notes = new RenderNoteCollector();
 
-            var resolved = SizeResolver.Resolve(root, width, Ctx, values, notes);
+            var resolved = SizeResolver.Resolve(root, width, Ctx, values, new Dictionary<string, Segment>(), notes);
 
             Assert.NotEqual(PaneSplit.Flex, resolved.EffectiveSplit);
             Assert.All(resolved.Children, c => Assert.NotEqual(PaneSplit.Flex, c.EffectiveSplit));
@@ -267,7 +267,7 @@ public class SplitFlexTests
             // exercises both without throwing, which a stray Split==Flex read would not guarantee.
             // Borderless, itemless leaves legitimately render zero content rows, so completing
             // without an exception (rather than a row count) is the assertion here.
-            PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new RenderNoteCollector());
+            PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new Dictionary<string, Segment>(), new RenderNoteCollector());
         }
     }
 
@@ -299,8 +299,8 @@ public class SplitFlexTests
             var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
             var notes = new RenderNoteCollector();
 
-            var resolved = SizeResolver.Resolve(root, w, Ctx, values, notes);
-            var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new RenderNoteCollector());
+            var resolved = SizeResolver.Resolve(root, w, Ctx, values, new Dictionary<string, Segment>(), notes);
+            var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new Dictionary<string, Segment>(), new RenderNoteCollector());
 
             Assert.True(2 == resolved.Children.Count, $"at W={w}, both the fixed sibling and the flex child must survive");
             Assert.DoesNotContain(notes.Notes, n => n.Message.Contains("dropped"));
@@ -318,7 +318,7 @@ public class SplitFlexTests
         var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(root, w, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(root, w, Ctx, values, new Dictionary<string, Segment>(), notes);
 
         Assert.Single(resolved.Children);
         Assert.Contains(notes.Notes, n => n.Message.Contains("dropped"));
@@ -364,7 +364,7 @@ public class SplitFlexTests
         var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(root, 24, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(root, 24, Ctx, values, new Dictionary<string, Segment>(), notes);
 
         Assert.Equal(2, resolved.Children.Count);
         Assert.Equal(24, resolved.Children[1].OuterWidth);
@@ -387,7 +387,7 @@ public class SplitFlexTests
         var values = ItemValueResolver.Resolve(flexChild, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(flexChild, 24, Ctx, values, notes, collapse: true);
+        var resolved = SizeResolver.Resolve(flexChild, 24, Ctx, values, new Dictionary<string, Segment>(), notes, collapse: true);
 
         Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
         Assert.Equal(3, resolved.Children.Count);
@@ -408,7 +408,7 @@ public class SplitFlexTests
         // the inner's own side-by-side floor of 49, so only the INNER flex stacks.
         var values = ItemValueResolver.Resolve(outerFlex, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
-        var resolved = SizeResolver.Resolve(outerFlex, 40, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(outerFlex, 40, Ctx, values, new Dictionary<string, Segment>(), notes);
 
         Assert.Equal(PaneSplit.Vertical, resolved.EffectiveSplit);
         Assert.Equal(2, resolved.Children.Count);
@@ -428,7 +428,7 @@ public class SplitFlexTests
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         for (var i = 0; i < 500; i++)
         {
-            SizeResolver.Resolve(outerFlex, 40, Ctx, values, new RenderNoteCollector());
+            SizeResolver.Resolve(outerFlex, 40, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
         }
 
         stopwatch.Stop();

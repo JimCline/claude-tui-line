@@ -73,7 +73,7 @@ public class BorderSuppressionPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 32, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 32, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -123,7 +123,7 @@ public class BorderSuppressionPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 32, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 32, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -158,7 +158,7 @@ public class BorderSuppressionPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 32, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 32, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(2, resolved.Children.Count);
         Assert.Equal(24, resolved.Children[0].OuterWidth);
@@ -248,7 +248,7 @@ public class BorderSuppressionPredicateTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 33, Ctx, values, notes, collapse: true);
+        var resolved = SizeResolver.Resolve(pane, 33, Ctx, values,new Dictionary<string, Segment>(),  notes, collapse: true);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -279,7 +279,7 @@ public class BorderSuppressionPredicateTests
         var parent = new Pane(PaneSplit.Vertical, new[] { fillPane, fixedPane }, "auto", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0);
 
         var notes = new RenderNoteCollector();
-        var resolved = SizeResolver.Resolve(parent, 32, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(parent, 32, Ctx, values,new Dictionary<string, Segment>(),  notes);
         Assert.Equal(22, resolved.Children[0].OuterWidth); // same grant-22/reserve-4 scenario as Item1/Item3 above
 
         return (resolved.Children[0], values, notes);
@@ -298,7 +298,7 @@ public class BorderSuppressionPredicateTests
         var values = new Dictionary<string, string?> { ["a"] = new string('X', 30) };
         var (fillNode, resolvedValues, notes) = ResolveSuppressedFillPane(items, values);
 
-        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens, notes);
+        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(3, contribution.Buffer.Rows.Count); // top border row, content row, bottom border row
         Assert.All(contribution.Buffer.Rows, r => Assert.Equal(22, r.Width));
@@ -316,7 +316,7 @@ public class BorderSuppressionPredicateTests
     {
         var (fillNode, resolvedValues, notes) = ResolveSuppressedFillPane(Array.Empty<PaneItem>(), new Dictionary<string, string?>());
 
-        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens, notes);
+        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(22, contribution.Buffer.Rows[1].Width);
     }
@@ -332,7 +332,7 @@ public class BorderSuppressionPredicateTests
         var values = new Dictionary<string, string?> { ["a"] = new string('X', 30) };
         var (fillNode, resolvedValues, notes) = ResolveSuppressedFillPane(items, values);
 
-        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens, notes);
+        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens,new Dictionary<string, Segment>(),  notes);
         var contentText = StripMarkupTags(contribution.Buffer.Rows[1].Markup);
 
         Assert.False(contentText.StartsWith(' '), "leading columns must be content, not reclaimed-but-unused blank padding");
@@ -367,9 +367,9 @@ public class BorderSuppressionPredicateTests
     public void Render_NaturalHeight_BorderedPaneWithZeroContentRows_EmitsEmptyBoxNotNothing()
     {
         var pane = EmptyLeaf(EmptyBordered);
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(2, contribution.Buffer.Rows.Count);
     }
@@ -383,9 +383,9 @@ public class BorderSuppressionPredicateTests
     public void Render_NaturalHeight_MinSizeProtectedPaneWithZeroContentRows_Survives()
     {
         var pane = EmptyLeaf(EmptyBordered, minSize: 5);
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(2, contribution.Buffer.Rows.Count);
     }
@@ -396,9 +396,9 @@ public class BorderSuppressionPredicateTests
     public void Render_ClipRowsTwo_ZeroContentRows_EmitsEmptyBoxNotNothing()
     {
         var pane = EmptyLeaf(EmptyBordered);
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector()) with { ClipRows = 2 };
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 2 };
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(2, contribution.Buffer.Rows.Count);
     }
@@ -409,9 +409,9 @@ public class BorderSuppressionPredicateTests
     public void Render_ClipRowsOne_ZeroContentRows_StillEmitsNothing()
     {
         var pane = EmptyLeaf(EmptyBordered);
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector()) with { ClipRows = 1 };
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 1 };
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(0, contribution.Buffer.Rows.Count);
     }
@@ -421,9 +421,9 @@ public class BorderSuppressionPredicateTests
     public void Render_ClipRowsZero_StillEmitsNothing()
     {
         var pane = EmptyLeaf(EmptyBordered);
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector()) with { ClipRows = 0 };
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 0 };
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(0, contribution.Buffer.Rows.Count);
     }
@@ -438,9 +438,9 @@ public class BorderSuppressionPredicateTests
         var item = new PaneItem(null, null, null, null, Id: "a");
         var values = new Dictionary<string, string?> { ["a"] = new string('X', 20) };
         var pane = EmptyLeaf(EmptyBordered) with { Items = new[] { item } };
-        var resolved = SizeResolver.Resolve(pane, 10, Ctx, values, new RenderNoteCollector()) with { ClipRows = 1 };
+        var resolved = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 1 };
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Single(contribution.Buffer.Rows);
         Assert.Contains("X", contribution.Buffer.Rows[0].Markup);
@@ -453,9 +453,9 @@ public class BorderSuppressionPredicateTests
         var items = new[] { new PaneItem(null, null, null, null, Id: "a"), new PaneItem(null, null, null, null, Id: "b") };
         var values = new Dictionary<string, string?> { ["a"] = new string('X', 20), ["b"] = new string('X', 20) };
         var pane = EmptyLeaf(EmptyBordered) with { Items = items };
-        var resolved = SizeResolver.Resolve(pane, 10, Ctx, values, new RenderNoteCollector()) with { ClipRows = 2 };
+        var resolved = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 2 };
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, values, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(2, contribution.Buffer.Rows.Count);
         Assert.All(contribution.Buffer.Rows, r => Assert.Contains("X", r.Markup));
@@ -474,9 +474,9 @@ public class BorderSuppressionPredicateTests
     public void Render_Unbordered_ZeroContentRows_StillEmitsNothing()
     {
         var pane = EmptyLeaf(EmptyBorderless);
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, NoValues,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
-        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens, new RenderNoteCollector());
+        var contribution = PaneTreeRenderer.Render(resolved, Ctx, NoValues, EmptyTokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.Equal(0, contribution.Buffer.Rows.Count);
     }

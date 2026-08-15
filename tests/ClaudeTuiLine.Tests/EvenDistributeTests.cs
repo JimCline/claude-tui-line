@@ -24,8 +24,8 @@ public class EvenDistributeTests
     private static string RenderMarkup(Pane pane, ResolvedConfig topLevel, ItemContext ctx, int outerWidth)
     {
         var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, outerWidth, ctx, values, new RenderNoteCollector());
-        return string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
+        var resolved = SizeResolver.Resolve(pane, outerWidth, ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+        return string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
     }
 
     private static (ResolvedConfig TopLevel, Pane RootPane) LoadConfig(string json)
@@ -48,7 +48,7 @@ public class EvenDistributeTests
     private static SizeResolver.ResolvedPane Resolve(Pane pane, ResolvedConfig topLevel, int outerWidth, ItemContext ctx)
     {
         var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
-        return SizeResolver.Resolve(pane, outerWidth, ctx, values, new RenderNoteCollector());
+        return SizeResolver.Resolve(pane, outerWidth, ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
     }
 
     [Fact]

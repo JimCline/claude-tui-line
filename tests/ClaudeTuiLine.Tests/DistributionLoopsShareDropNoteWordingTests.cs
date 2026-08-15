@@ -67,7 +67,7 @@ public class DistributionLoopsShareDropNoteWordingTests
         var values = ItemValueResolver.Resolve(pane, Ctx, new Dictionary<string, ColorResolution.ColorRule>());
         var notes = new RenderNoteCollector();
 
-        SizeResolver.Resolve(pane, 46, Ctx, values, notes);
+        SizeResolver.Resolve(pane, 46, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
