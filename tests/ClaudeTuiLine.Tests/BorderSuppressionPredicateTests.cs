@@ -1,3 +1,4 @@
+using Spectre.Console;
 using Xunit.Abstractions;
 
 namespace ClaudeTuiLine.Tests;
@@ -19,6 +20,9 @@ public class BorderSuppressionPredicateTests
     };
 
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+    private static readonly IReadOnlyDictionary<string, ColorResolution.ColorRule> Tokens = new Dictionary<string, ColorResolution.ColorRule>();
+    private static readonly PaneBorder Bordered = new(new ColorResolution.ColorExpr.Literal("grey"), BoxBorder.Rounded, PaneBorderEdges.All);
+    private static readonly PaneBorder NoBorder = new(new ColorResolution.ColorExpr.Literal("grey"), null, PaneBorderEdges.All);
 
     private readonly ITestOutputHelper _output;
 
@@ -84,14 +88,9 @@ public class BorderSuppressionPredicateTests
             "grant 22's pre-suppression inner width (18) is under MinUsableWidth, so the " +
             "predicate that let this pane survive must independently agree it suppresses");
 
-        // SPEC-2.3-suppression-predicate.md §6/N1: whether the RENDERED content actually then
-        // occupies the reclaimed inner width 22 (vs. staying laid out at 18, with the 4 freed
-        // columns spent on blank padding instead) is a second, independent defect the spec poses
-        // as NEEDS-EVIDENCE. I read PaneBorderRenderer.Wrap and confirmed the reservation is not
-        // reclaimed today — and its own doc comment states that is deliberate ("keeps the same
-        // reserved geometry ... one code path for both cases, not a separate borderless layout"),
-        // not an oversight. Reversing a documented design choice is outside this predicate fix's
-        // scope; not asserted here, reported upward instead (see task report).
+        // Whether the RENDERED content then occupies the reclaimed width 22 (defect B,
+        // SPEC-2.3-suppression-predicate.md §6.3) is covered separately below by
+        // DefectB_Item1_..., DefectB_Item7_..., and DefectB_Item8_....
     }
 
     // §8 item 2: same pane, granted 19. Pre-suppression inner width 15 < 20 still suppresses, and
@@ -262,5 +261,82 @@ public class BorderSuppressionPredicateTests
         Assert.Equal(2, excludeAwareReserve);
         Assert.True(SizeResolver.ShouldSuppressBorder(middlePane, 21 - excludeAwareReserve),
             "grant 21's exclude-aware pre-suppression inner width (19) is under MinUsableWidth");
+    }
+
+    // Defect B (SPEC-2.3-suppression-predicate.md §6.3): a suppressed pane's border reserve is
+    // reclaimed for content rather than spent on blank chrome. These three tests bypass
+    // ItemValueResolver/config (hand-built values dictionary keyed by PaneItem.Id, matching
+    // HeightLadderTests' pattern) and render end-to-end through PaneTreeRenderer.Render, since
+    // the claim under test is about PaneBorderRenderer.Wrap's actual output, not SizeResolver's
+    // arithmetic. Expected widths are derived from the same grant-22/reserve-4 arithmetic used
+    // above, not observed from a run (§8's explicit requirement).
+    private static string StripMarkupTags(string markup) => System.Text.RegularExpressions.Regex.Replace(markup, @"\[[^\]]*\]", "");
+
+    private static (SizeResolver.ResolvedPane FillNode, IReadOnlyDictionary<string, string?> Values, RenderNoteCollector Notes) ResolveSuppressedFillPane(IReadOnlyList<PaneItem> fillItems, IReadOnlyDictionary<string, string?> values)
+    {
+        var fillPane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "fill", Bordered, OverflowMode.Truncate, "…", null, fillItems);
+        var fixedPane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "10", NoBorder, null, "…", null, Array.Empty<PaneItem>());
+        var parent = new Pane(PaneSplit.Vertical, new[] { fillPane, fixedPane }, "auto", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0);
+
+        var notes = new RenderNoteCollector();
+        var resolved = SizeResolver.Resolve(parent, 32, Ctx, values, notes);
+        Assert.Equal(22, resolved.Children[0].OuterWidth); // same grant-22/reserve-4 scenario as Item1/Item3 above
+
+        return (resolved.Children[0], values, notes);
+    }
+
+    // §8 item 1 (the headline test for defect B): a bordered fill pane forced into suppression at
+    // grant 22 (reserve 4). Pre-defect-B, PaneBorderRenderer.Wrap laid content out at 22 - 4 = 18
+    // and spent the 4 reclaimed columns on blank chrome; post-defect-B, content occupies the full
+    // outer width 22. A single 30-char filler item, truncated, proves this directly: the pane's own
+    // Ellipsis ("…", one column) lands at column 22 — 21 'X's plus the ellipsis — only if the pane
+    // actually offers 22 columns to truncate into; under 18 the ellipsis would land at column 18.
+    [Fact]
+    public void DefectB_Item1_SuppressedContentOccupiesFullOuterWidth()
+    {
+        var items = new[] { new PaneItem(null, null, null, null, Id: "a") };
+        var values = new Dictionary<string, string?> { ["a"] = new string('X', 30) };
+        var (fillNode, resolvedValues, notes) = ResolveSuppressedFillPane(items, values);
+
+        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens, notes);
+
+        Assert.Equal(3, contribution.Buffer.Rows.Count); // top border row, content row, bottom border row
+        Assert.All(contribution.Buffer.Rows, r => Assert.Equal(22, r.Width));
+
+        var contentText = StripMarkupTags(contribution.Buffer.Rows[1].Markup);
+        Assert.Equal(new string('X', 21) + "…", contentText);
+    }
+
+    // §8 item 7: "Item 2's config" (this file's Item1_Band20To23_... test above, same fill pane at
+    // grant 22, no items configured) asserting inner width 22 directly on the rendered content
+    // row's own Width — the number that fails under defect A alone (18) and passes only once
+    // defect B lands too. Declined-to-strike per §6.3.
+    [Fact]
+    public void DefectB_Item7_ReclaimedInnerWidthIsFullOuterWidth()
+    {
+        var (fillNode, resolvedValues, notes) = ResolveSuppressedFillPane(Array.Empty<PaneItem>(), new Dictionary<string, string?>());
+
+        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens, notes);
+
+        Assert.Equal(22, contribution.Buffer.Rows[1].Width);
+    }
+
+    // §8 item 8: distinguishes "reclaimed" from "drew spaces" — a partial fix that widens the
+    // content row's reported Width to 22 while still leaving the old 18-wide content padded with
+    // 4 blank columns would pass items 1 and 7 above but fail this one. The 22-char filler content
+    // must run edge to edge, with no leading/trailing space where the border glyphs used to be.
+    [Fact]
+    public void DefectB_Item8_BlankChromeIsGoneNotMerelyInvisible()
+    {
+        var items = new[] { new PaneItem(null, null, null, null, Id: "a") };
+        var values = new Dictionary<string, string?> { ["a"] = new string('X', 30) };
+        var (fillNode, resolvedValues, notes) = ResolveSuppressedFillPane(items, values);
+
+        var contribution = PaneTreeRenderer.Render(fillNode, Ctx, resolvedValues, Tokens, notes);
+        var contentText = StripMarkupTags(contribution.Buffer.Rows[1].Markup);
+
+        Assert.False(contentText.StartsWith(' '), "leading columns must be content, not reclaimed-but-unused blank padding");
+        Assert.False(contentText.EndsWith(' '), "trailing columns must be content, not reclaimed-but-unused blank padding");
+        Assert.DoesNotContain("  ", contentText); // no interior run of blanks either
     }
 }
