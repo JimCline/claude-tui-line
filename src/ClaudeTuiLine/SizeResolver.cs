@@ -526,7 +526,14 @@ public static class SizeResolver
                 }
             }
 
-            if (!tooSmall || current.Count <= 1)
+            // §67: SolveMinRows's over-constrained fallback (`return lo`) hands back each
+            // candidate's floor with no reference to `r`, so the sum can exceed what the split
+            // actually has — recomputed per iteration since the gutter count (and so `avail`)
+            // falls with each drop.
+            var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, current.Count, collapse));
+            var overAllocated = result.Grants.Sum() > avail;
+
+            if ((!tooSmall && !overAllocated) || current.Count <= 1)
             {
                 return result;
             }
