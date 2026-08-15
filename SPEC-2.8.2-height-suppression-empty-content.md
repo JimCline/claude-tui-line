@@ -182,7 +182,7 @@ output, not about `SizeResolver` arithmetic.
    null so it renders zero content rows. **Assert it emits exactly 2 rows** (top edge, bottom edge),
    not 0. *This test must be shown to FAIL on `main` @ `25facff` before the fix.* If it passes on
    `main`, §1 is wrong and the implementor must stop and report rather than proceed.
-2. **The `minSize` collision (§1.2).** Same as item 1 but with an explicit `minSize` set — the case
+2. **The `minSize` collision (section 1.2).** Same as item 1 but with an explicit `minSize` set — the case
    collapse is forbidden to remove. Assert the pane survives. This is the test that documents *why*
    §1 is a defect and not a feature, so it should carry a comment naming §2.11.2.
 3. **`ClipRows: 2`, zero content rows.** Assert 2 rows out (the empty box), not 0. This is §1.1's
@@ -206,7 +206,7 @@ Items 1 and 3 are the defect; item 6 is the thing most likely to be broken while
 
 **Should a bordered pane with no content render as an empty box, or vanish?**
 
-§3 rules it renders an empty box, on the mechanism grounds in §1.2: vanishing is `PaneCollapse`'s
+§3 rules it renders an empty box, on the mechanism grounds in section 1.2: vanishing is `PaneCollapse`'s
 decision, it has rules including the `minSize` override, and height suppression bypassing them is a
 collision rather than a policy. I am confident in that as *engineering*.
 
@@ -248,7 +248,7 @@ and this spec needs re-dispatching rather than implementing.
 **High on §1's arithmetic.** `contentRows.Count + 2 < 3 ⟺ contentRows.Count == 0` is not a judgment
 call, and `Wrap`'s two `!omitEdges` gates make the empty-output consequence mechanical.
 
-**High on §1.2** being the right frame — `ConfigCheck.cs:784` states the `minSize`-beats-collapse rule
+**High on section 1.2** being the right frame — `ConfigCheck.cs:784` states the `minSize`-beats-collapse rule
 in as many words, and nothing on this path consults it.
 
 **Medium-high on §3.1's budget clause.** The `budget < 2` carve-out is derived from the table in §1.1

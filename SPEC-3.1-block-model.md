@@ -108,7 +108,7 @@ applied, and this layer sees whatever the provider returned. That is intended, n
 
 ### D2 — Strip exactly one trailing newline before splitting. This is not optional.
 
-**A3: ownership moved — see §7.2. If #31 lands first, this rule is #31's to implement, and this
+**A3: ownership moved — see section 7.2. If #31 lands first, this rule is #31's to implement, and this
 task's job is to verify it rather than to write it.** The rule itself is unchanged.
 
 `echo foo` emits `"foo\n"`. A naive `Split('\n')` yields `["foo", ""]` — **two** lines, so the item
@@ -383,7 +383,7 @@ depend on the guess:
    leading separator. Assert on the exact row strings, not on a substring match.
 4. **Trailing newline is not a block** (D2). A provider value of `"foo\n"` with two neighbouring
    single-row items. Assert all three pack onto **one** row with separators between them, and that
-   no blank row is emitted anywhere in the pane. **Per §7.2 this test must exist regardless of which
+   no blank row is emitted anywhere in the pane. **Per section 7.2 this test must exist regardless of which
    task implements the strip** — if #31 landed first it is a regression check on their work, and it
    is still this task's job to have it.
 5. **A blank line inside a block is preserved** (D3). Value `"a\n\nb"`. Assert three rows, the middle
@@ -405,7 +405,7 @@ depend on the guess:
     assembled in exactly one place, with each producer unit's `RenderLeaf` inputs and contributed row
     range in scope there (provenance).
     Record the file and line in the completion report so #27 can attach to it without re-deriving it.
-11. **`Plain` stays escape-free with multi-line input** (§7.3, A3). A block item's value containing
+11. **`Plain` stays escape-free with multi-line input** (section 7.3, A3). A block item's value containing
     `\n`. Assert no emitted row's `Plain` text contains a literal `\n` or any control character —
     §3.2 rule 1. This is the invariant N1 is probing, and it must be asserted here whether or not N1
     comes back clean, because this task is the one that makes multi-line values routine.
@@ -430,7 +430,7 @@ mean I have misread how `Wrap` fuses the two.
 **High on D1, D2, D5, D6, D7, D8.** D2 and D5 are the two I would most expect to be implemented
 wrongly, and both have a dedicated verification item.
 
-**High on §7.2** (D2 ships with the cap lift). It rests on `"foo\n".Split('\n')` having length 2,
+**High on section 7.2** (D2 ships with the cap lift). It rests on `"foo\n".Split('\n')` having length 2,
 which is arithmetic rather than judgment. Stated with its derivation deliberately: I asserted an
 ordering constraint elsewhere this session that turned out to be invented
 (`SPEC-2.3-suppression-predicate.md` §6.1, retracted), so this one is written so a reader can check
@@ -441,7 +441,7 @@ collapsing is a silent mutation and this path has no note channel. Cheap to reve
 
 **D4 — settled (A1).** Jim confirmed it as written. Implement it; do not route it back.
 
-**Open, and not mine to close: §7.3's N1.** What `RowLayout.Wrap` does with an embedded newline
+**Open, and not mine to close: section 7.3's N1.** What `RowLayout.Wrap` does with an embedded newline
 decides whether #31 can merge before this task. I have not run it and will not; it needs an
 implementor. **This is the one thing in this document that could change #31's merge decision**, so it
 should be answered before #31 is verified rather than after.

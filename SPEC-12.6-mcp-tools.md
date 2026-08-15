@@ -10,11 +10,11 @@ checkout. Do not check anything out on their account.)*
 
 - **A1 — THE FIRST SLICE WAS NARROWED; `set_config` REMOVED.** Superseded by A2.
 - **A2 — JIM'S RULING: `set_config` IS BACK IN SCOPE.** `dispatch-10-ruling.md` overrules A1's scope
-  cut. **§7.2's ruling is superseded by §9**, which specifies the checkpoint mechanism concretely.
+  cut. **Section 7.2's ruling is superseded by §9**, which specifies the checkpoint mechanism concretely.
   **§8's Ultra-Advisor recommendation is WITHDRAWN — do not route this to Ultra-Advisor**, per the
   ruling's *"it should not gate #10 on an Ultra-Advisor pass."* A1's §7.1 (library and project
-  layout) is **unchanged and still in force**. §7.3's "get_config alone" is dead except for one
-  sentence promoted into §2.2. **§7.4's V1-V5 are superseded by §10**, which is now the single
+  layout) is **unchanged and still in force**. Section 7.3's "get_config alone" is dead except for one
+  sentence promoted into §2.2. **Section 7.4's V1-V5 are superseded by §10**, which is now the single
   verification list.
 
   A2 also records the finding that **dissolves A1's second objection outright**:
@@ -155,10 +155,10 @@ to redo the work, and stops.
 (§12.6.6). It **never** falls back to a remembered item list — §12.1's rule does not relax by
 changing transport.
 
-**This includes `get_config`, and that is not optional** (promoted from A1's §7.3, which is otherwise
+**This includes `get_config`, and that is not optional** (promoted from A1's section 7.3, which is otherwise
 dead). A read-only tool has no strict need to spawn anything — but if `get_config` skips the CLI
 check, the first machine without a CLI gets a happily-served config and a blank statusline, which is
-§1.3(b)'s fail-open seam arriving through the back door.
+section 1.3(b)'s fail-open seam arriving through the back door.
 
 ### 2.3 The asymmetry that must not be flattened
 
@@ -223,12 +223,12 @@ checkpoint) and before the write (§9.2). See §9.6 on why nothing may be reorde
 
 ## 6. Confidence (§1 and §2)
 
-**High on §1 (spawn).** §1.3(b) is the argument I would defend hardest: linking makes every MCP tool
+**High on §1 (spawn).** Section 1.3(b) is the argument I would defend hardest: linking makes every MCP tool
 succeed on a machine where the statusline cannot render, which converts §12.6.6's `cli-not-found`
-path from a safeguard into dead code. §1.3(a) is nearly as strong and comes straight from §12.6.12
+path from a safeguard into dead code. Section 1.3(a) is nearly as strong and comes straight from §12.6.12
 rule 3. Note the spec explicitly leaves this open, so this is a ruling that closes an open question
 rather than an interpretation of a settled one — **if anyone disagrees, this is a legitimate thing to
-disagree with**, and §1.3(b) is the claim to attack.
+disagree with**, and section 1.3(b) is the claim to attack.
 
 **High on §2.1's core claim** (`set_config` must not ship with a partial CAS contract). It rests on
 §12.6.12's own text rather than on my judgment. **But I overstated its scope** in the original,
@@ -237,7 +237,7 @@ bundling `get_config` into an indivisibility the argument never supported. Corre
 **High on §2.3.** §12.6.12:117-121 states the asymmetry in as many words; my contribution is only
 noticing that "say so" would smuggle rule 3's prohibition back in.
 
-**Medium on §1.4's harness/behaviour line**, constrained by §7.1's allow-list.
+**Medium on section 1.4's harness/behaviour line**, constrained by §7.1's allow-list.
 
 ---
 
@@ -256,7 +256,7 @@ project's correctness budget should go; `SizeResolver` is.
 
 **On the project reference to the core — reference it, but under an explicit allow-list.** impl3
 proposed referencing the main project "only for the server's own file I/O," and the tension is real:
-a project reference makes the whole core reachable, including the merge capability §1.3(a) is built
+a project reference makes the whole core reachable, including the merge capability section 1.3(a) is built
 to keep out of reach.
 
 I considered forbidding the reference and duplicating config-path resolution in the server. **Ruled
@@ -336,7 +336,7 @@ withdraw the recommendation.** Disposition of the four questions A1 could not se
    answering it: the MCP server never writes `origin` at all, so the question does not arise for #10.
 4. **Should `set_config`'s checkpoint capture the `statusLine` and referenced script even though it
    never touches `settings.json`? — ANSWERED: YES**, and not by me. §12.2 rule 4 and
-   `docs/backup-ledger.md`'s opening bug (quoted in §7.2) settle it. I had leaned yes and said I was
+   `docs/backup-ledger.md`'s opening bug (quoted in section 7.2) settle it. I had leaned yes and said I was
    not confident enough to rule it; the document rules it.
 
 §9.5 documents one residual assumption. **That is documentation, not a reopened objection, and
@@ -387,7 +387,7 @@ write, capturing every artifact regardless of which one the command intends to c
 7. **Append exactly one line** (§9.4). **Then** write the config.
 
 **Yes, `set_config` copies `settings.json` even though it never modifies it.** That is rule 4, and
-§7.2 quotes the bug that produced the rule. An implementor who "optimises" this away reintroduces it.
+Section 7.2 quotes the bug that produced the rule. An implementor who "optimises" this away reintroduces it.
 
 ### 9.3 The most dangerous decision in this task — and how to delete it
 
@@ -406,7 +406,7 @@ installed the condition can never come out `origin` again.
 "checkpoint"`.** Three reasons, and I hold this at high confidence:
 
 - **It removes the risk class rather than mitigating it.** The failure above requires writing
-  `origin`; a writer that cannot write one cannot poison anything. Same argument shape as §1.3(a) —
+  `origin`; a writer that cannot write one cannot poison anything. Same argument shape as section 1.3(a) —
   prefer the structure that makes the bad outcome impossible over the rule that forbids it.
 - **A missing `origin` is explicitly an honest, handled state.** §12.2: *"A missing `origin` is honest
   and already handled — §12.5 lists the checkpoints and flags which point at a claude-tui-line
@@ -527,7 +527,7 @@ cost a false regression hunt. This one would cost user data.
 
 ---
 
-## 10. Verification (supersedes §7.4)
+## 10. Verification (supersedes section 7.4)
 
 - **V1** — `get_config` returns the parsed config and a `revision` that changes when a byte changes
   and not otherwise. **Include a formatting-only edit** (whitespace, key order) and assert the

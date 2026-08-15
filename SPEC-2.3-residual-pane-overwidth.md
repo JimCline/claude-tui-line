@@ -341,7 +341,7 @@ Note the child panes may still be bordered — the child's reserve is not `Bound
    floor. Assert the pane **survives**, is granted `avail`, and emits the clamp note — not a drop
    note. Pins the ordering rule; fails if the clamp is hoisted into the loop body.
 4. **Drop cascade then clamp.** Borderless split, `gutter: 0`, three fixed children of `size: 50`,
-   outer 20. `avail` stays **20** through every iteration (§8.1). Assert two drop notes *and* one
+   outer 20. `avail` stays **20** through every iteration (section 8.1). Assert two drop notes *and* one
    clamp note, in that order, and a final grant of 20. Pins §5's compose rule.
 5. **Zero-width surface.** Outer 0, one fixed child ⇒ `avail = 0`. Assert grant **0**, no exception,
    and a well-formed (empty-width) render. Pins the `avail == 0` edge §4.1 calls out.

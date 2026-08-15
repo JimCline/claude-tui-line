@@ -282,7 +282,7 @@ is a positive assertion instead.
    everything else.
 6. **No grant exceeds `avail` at the exit** (item 5). A single-child even split at a width where the
    child's request exceeds `avail`. Assert the grant equals `avail` and that the clamp note is
-   emitted. Per `SPEC-2.3-residual-pane-overwidth.md` §8.1, use a **bordered** split with a non-zero
+   emitted. Per `SPEC-2.3-residual-pane-overwidth.md` section 8.1, use a **bordered** split with a non-zero
    gutter so `avail != splitOuterWidth` — a test where the two are equal cannot distinguish clamping
    to the right quantity from clamping to the wrong one.
 7. **The two sibling loops are unaffected.** Their existing tests pass unchanged. This is the guard

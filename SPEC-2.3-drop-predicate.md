@@ -169,7 +169,7 @@ first; shrink the declared fixed/percent sizes for the second.
 
 ### Ruled
 
-Two messages, selected by the reason the drop fired:
+The message depends on the reason the drop fired:
 
 ```
 below floor:      pane {n} dropped: {grant} columns is under its {floor}-column floor at {w} columns
