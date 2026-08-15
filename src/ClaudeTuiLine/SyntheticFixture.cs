@@ -42,4 +42,28 @@ public static class SyntheticFixture
     // fixture ever disagree, the builder is the fact and the spec clause is the finding.
     public static ItemContext CreateItemContext() =>
         new(Input, gitBranch: "main", engram: new EngramResult(3, "◉ recalled"), remoteUrlProbe: () => "https://github.com/acme/acme-web");
+
+    // §12.3.1/§12.7.1/§12.7.2: the payload the --fixture flag emits. Every field of Input, except
+    // Cwd, which is replaced by the process's real working directory — piping this through
+    // --preview takes the non-empty-stdin (real-probe) branch, and an invented cwd paired with
+    // real git/remote probes would be an incoherent render rather than a merely minimal one. This
+    // is not a second authored fixture: exactly one field is derived from the environment, and
+    // §9.3.1's pinned Input is otherwise unchanged and still what --items and the empty-stdin path
+    // use verbatim.
+    public static StatusInput WithRealCwd(string cwd) => new()
+    {
+        Cwd = cwd,
+        Workspace = Input.Workspace,
+        Worktree = Input.Worktree,
+        Pr = Input.Pr,
+        Model = Input.Model,
+        Effort = Input.Effort,
+        Thinking = Input.Thinking,
+        OutputStyle = Input.OutputStyle,
+        ContextWindow = Input.ContextWindow,
+        RateLimits = Input.RateLimits,
+        Agent = Input.Agent,
+        Vim = Input.Vim,
+        SessionId = Input.SessionId,
+    };
 }
