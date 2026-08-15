@@ -5016,6 +5016,8 @@ MCP publish (step 4) surfaced a genuine, pre-existing defect never previously ex
 
 Implemented by cdtui-impl2, verified by cdtui-worker (all 7 steps pass, idempotent across two runs, guardrails held — no network calls, no writes outside the repo, neither csproj modified, plugin/setup path untouched). Re-ran on `main` post-merge myself: exit 0, binary confirmed newer than HEAD's commit. Merged as c437973/merge-commit (this entry).
 
+**Follow-up (same session):** Jim asked for two more things — a symlink into the user's bin path so `settings.json` doesn't need the full repo path, and an interactive prompt to write the `statusLine` change directly instead of just printing it. New step picks `$HOME/.local/bin` then `$HOME/bin` (whichever exists and is on `$PATH`; never creates a directory or mutates `$PATH`) and symlinks the built binary there, refusing to clobber a real non-symlink file. The wire-up step now prompts on a real tty (default No); on accept it backs up the existing `settings.json` with a timestamp first, then edits only the `statusLine` key via `jq`, leaving every other key untouched — `jq` absent falls back to the original print-only behavior. Non-interactive runs are unchanged. Verified independently by cdtui-worker via a real pty (`expect`): both bin-dir-found and no-bin-dir paths, real-file-collision refusal, accept/decline/jq-absent scenarios, real `~/.claude/settings.json` checksum unchanged throughout, idempotent on rerun. Re-ran on `main` post-merge myself (non-interactive): symlink at `~/.local/bin/claude-tui-line` picked up automatically, printed snippet now shows the short path. Merged as df71ef1/merge-commit.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
