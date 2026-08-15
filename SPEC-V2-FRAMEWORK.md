@@ -6958,9 +6958,9 @@ because the model writes faster.
 
 `get_config` returns a `revision`, a hash of the file's bytes as read. `set_config` takes an
 optional `baseRevision`; if supplied and no longer matching, the write is **refused** with
-`code: "stale-revision"` and the model re-reads instead of clobbering. **Read "re-derives" for
-"re-reads" — §12.6.11 supersedes that clause**, because a caller that re-reads and resubmits its
-original `config` defeats the refusal by complying with it.
+`code: "stale-revision"` and the model re-derives its intended change against the current config
+instead of clobbering (§12.6.11 corrects an earlier "re-reads" here), because a caller that merely
+re-reads and resubmits its original `config` defeats the refusal by complying with it.
 
 It is optional rather than required so a first write to a machine with no config file works
 without ceremony. A model that read the config is expected to hand back what it was given; one
