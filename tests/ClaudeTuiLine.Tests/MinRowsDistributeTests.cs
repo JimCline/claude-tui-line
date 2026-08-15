@@ -274,7 +274,14 @@ public class MinRowsDistributeTests
     // panes with no note at all until this fix threaded a RenderNoteCollector into
     // ResolveVerticalMinRows. Two oversized fixed panes consume the whole surface, leaving the
     // trailing content candidate a grant of 0 either way (the T-search's own "feasible" path and
-    // its "over-constrained" fallback path both bottom out at width 0 here), so it is dropped.
+    // its "over-constrained" fallback path both bottom out at width 0 here), so it is dropped
+    // first. SPEC-2.3.1-min-rows-floor-sum.md §2/§4: the two surviving fixed panes are themselves
+    // unclamped (AllocateMinRowsOnePass:555-562 mirrors AllocateOnePass's own unclamped fixed
+    // loop) and together exceed the surface, so #67's Σgrants ≤ avail guard — which exists for the
+    // fill/content floor-sum case — catches this fixed-pane overrun too and drops a second pane,
+    // exactly as SPEC-2.3.1-min-rows-floor-sum.md §4 predicts ("catches §2's fixed-pane overrun on
+    // the min-rows side for free"). Pre-#67 this test asserted 2 survivors at a silently
+    // over-allocated width; that was the bug, not the contract.
     [Fact]
     public void OverConstrained_MinRows_EmitsDroppedPaneNote()
     {
@@ -315,8 +322,9 @@ public class MinRowsDistributeTests
 
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
 
-        Assert.Equal(2, resolved.Children.Count);
+        Assert.Equal(1, resolved.Children.Count);
         Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: no width remained at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
     }
 
     // SPEC-2.3.1-min-rows-seam-and-bound.md §4a: the seam previously reached zero call sites in
@@ -367,5 +375,216 @@ public class MinRowsDistributeTests
         // override — §10 req 6(b)'s own precedent only requires termination, not preservation.
         Assert.InRange(resolved.Children.Count, 1, 2);
         Assert.All(resolved.Children, c => Assert.True(c.OuterWidth >= 0));
+    }
+
+    // SPEC-2.3.1-min-rows-floor-sum.md §7 item 1: impl3's exact repro — two `fill` panes whose
+    // floors alone (24 each) exceed r (46) before any content is even considered, so no `T` can
+    // ever be feasible and SolveMinRows's `return lo` fallback used to hand back 24+24=48 against a
+    // 46-column budget with nothing reported. ResolveVerticalMinRows's drop-retry loop now catches
+    // this the same way AllocateWithDrop's own `grants[i] < 1` test catches greedy's
+    // under-allocation — asserting only the sum would pass even if the drop happened silently,
+    // which is the regression #25 §5 already fixed once.
+    [Fact]
+    public void FloorSumExceedsBudget_MinRows_ClampsToAvailAndEmitsDropNote()
+    {
+        const string configJson = """
+        {
+          "surface": {
+            "maxRows": 20,
+            "pane": {
+              "split": "vertical",
+              "gutter": 1,
+              "distribute": "min-rows",
+              "children": [
+                { "size": "fill" },
+                { "size": "fill" }
+              ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            File.WriteAllText(path, configJson);
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var surfaceWidth = SurfaceLayout.ComputeWidth("50", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+
+        Assert.Equal(1, resolved.Children.Count);
+        Assert.True(resolved.Children.Sum(c => c.OuterWidth) <= surfaceWidth);
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
+    }
+
+    // §7 item 2: the identical config under `greedy`, characterizing (not endorsing) today's
+    // behavior — both panes granted 23 against a floor of 24, no drop, no note. #67 does not touch
+    // greedy; #67b (routed separately) may change this test deliberately if approved.
+    [Fact]
+    public void FloorSumExceedsBudget_Greedy_CharacterizationGrantsBothPanesUnderFloor()
+    {
+        const string configJson = """
+        {
+          "surface": {
+            "maxRows": 20,
+            "pane": {
+              "split": "vertical",
+              "gutter": 1,
+              "children": [
+                { "size": "fill" },
+                { "size": "fill" }
+              ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            File.WriteAllText(path, configJson);
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var surfaceWidth = SurfaceLayout.ComputeWidth("50", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.Equal(23, resolved.Children[0].OuterWidth);
+        Assert.Equal(23, resolved.Children[1].OuterWidth);
+    }
+
+    // §7 item 3: three candidates whose floors cannot fit in any combination — the loop must drop
+    // twice, in order, and terminate at one pane rather than looping or under-dropping.
+    [Fact]
+    public void ThreeCandidates_MinRows_DropsToOneWithBothNotes()
+    {
+        const string configJson = """
+        {
+          "surface": {
+            "maxRows": 20,
+            "pane": {
+              "split": "vertical",
+              "gutter": 1,
+              "distribute": "min-rows",
+              "children": [
+                { "size": "fill" },
+                { "size": "fill" },
+                { "size": "fill" }
+              ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            File.WriteAllText(path, configJson);
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var surfaceWidth = SurfaceLayout.ComputeWidth("50", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+
+        Assert.Equal(1, resolved.Children.Count);
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: no width remained at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
+    }
+
+    // §7 item 4: a config where a feasible `T` exists must be byte-identical to pre-#67 behavior
+    // (25fa255) — the new invariant check must be unreachable whenever SolveMinRows's own
+    // `sum <= r` check already succeeded, since water-fill already caps at `r`. If this test's
+    // pinned widths ever change, the check moved to the wrong place.
+    [Fact]
+    public void FeasiblePath_MinRows_UnaffectedByOverAllocationGuard()
+    {
+        var (topLevel, pane) = LoadConfig();
+        var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.Equal(54, resolved.Children[0].OuterWidth);
+        Assert.Equal(54, resolved.Children[1].OuterWidth);
+    }
+
+    // §7 item 5: with the fix recomputing `avail` from `current.Count` on every iteration, dropping
+    // the third pane releases one gutter column, which is exactly enough for the remaining two
+    // floors (24 + 24 = 48) to fit the released budget (48) — this is the test that fails if
+    // `avail` is hoisted out of the loop, since a stale n=3 `avail` would wrongly force a second
+    // drop here.
+    [Fact]
+    public void BoundaryCostRecomputedPerIteration_MinRows_FitsAfterOneDropNotTwo()
+    {
+        const string configJson = """
+        {
+          "surface": {
+            "maxRows": 20,
+            "pane": {
+              "split": "vertical",
+              "gutter": 1,
+              "distribute": "min-rows",
+              "children": [
+                { "size": "fill" },
+                { "size": "fill" },
+                { "size": "fill" }
+              ]
+            }
+          }
+        }
+        """;
+
+        var path = Path.GetTempFileName();
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            File.WriteAllText(path, configJson);
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var surfaceWidth = SurfaceLayout.ComputeWidth("52", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: no width remained at {surfaceWidth} columns");
+        Assert.DoesNotContain(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
     }
 }
