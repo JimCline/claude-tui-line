@@ -188,4 +188,29 @@ public class CommandProviderTests
         Assert.Equal("55", atPreviewWidth.Value);
         Assert.Equal("115", atLiveWidth.Value);
     }
+
+    // SPEC-V2-FRAMEWORK.md §2.5.1 rule 2: a content-sized pane's items are measured with
+    // CLAUDE_TUI_LINE_PANE_WIDTH unset — not a guess, not zero — because a content pane's width is
+    // derived from measuring its own content. paneWidthEligible: false is how the caller
+    // (ItemValueResolver, via !SizeResolver.IsContentSized) signals that. This must hold even when a
+    // stale width happens to be sitting in the widths store under the same key, so the ineligible
+    // path can't accidentally read it.
+    [Fact]
+    public async Task ContentSizedPane_PaneWidthIneligible_LeavesEnvVarUnsetEvenWithAStampedWidthPresent()
+    {
+        const string id = "argv-content-pane-width-unset";
+        var command = new[] { "sh", "-c", "echo $CLAUDE_TUI_LINE_PANE_WIDTH" };
+        var item = new PaneItem(null, null, null, null, Id: id, Command: command, Shell: false);
+        var cacheDir = Path.GetTempPath();
+        var widthsDir = Path.GetTempPath();
+        var widthKey = ItemCache.WidthKeyFor(id, command, cwd: null, surfaceWidth: 120);
+
+        ItemCache.WriteWidth(widthsDir, widthKey, paneWidth: 42);
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+
+        Assert.Null(value.Value);
+    }
 }
