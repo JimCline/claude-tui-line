@@ -1074,6 +1074,9 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "fixed-sizes-exceed-parent" && d.Path == "/surface/pane" && d.Severity == DiagnosticSeverity.Error);
     }
 
+    // SPEC-92 §9: parent uses `maxSize` — the case that already fired before #92; #92 only
+    // changes the wording (§5.3), from naming "maxSize" to naming "this pane's own bound", so a
+    // config declaring `size` instead is not told about a key it never wrote.
     [Fact]
     public void MinSizeSumExceedsParentMaxSize_ReportsFixedSizesExceedParent()
     {
@@ -1096,7 +1099,102 @@ public class ConfigCheckTests
 
         var diagnostics = ConfigChecker.Check(config);
 
-        Assert.Contains(diagnostics, d => d.Code == "fixed-sizes-exceed-parent" && d.Path == "/surface/pane" && d.Severity == DiagnosticSeverity.Error);
+        var diagnostic = Assert.Single(diagnostics, d => d.Code == "fixed-sizes-exceed-parent" && d.Path == "/surface/pane" && d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("this pane's own bound (20)", diagnostic.Message);
+        Assert.DoesNotContain("maxSize (", diagnostic.Message);
+    }
+
+    // SPEC-92 §9: parent uses fixed `size` (not `maxSize`) — this is SPEC-92 V1, the fixture that
+    // fails against 62687bb, where `CheckSplitBounds:940`'s old guard (`split.MaxSize is int`) was
+    // false because the parent's bound came from `SizeResolver.FixedSize`, not `MaxSize`.
+    [Fact]
+    public void MinSizeSumExceedsFixedParentSize_ReportsFixedSizesExceedParent()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Size = "40",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 30, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { MinSize = 30, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal("fixed-sizes-exceed-parent", diagnostic.Code);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal("/surface/pane", diagnostic.Path);
+        Assert.Contains("minSize sum (60)", diagnostic.Message);
+        Assert.Contains("this pane's own bound (40)", diagnostic.Message);
+    }
+
+    // SPEC-92 §9: no fixed `size` and no `maxSize` — the parent has no bound at all, so the
+    // merged guard (§5.2) must `yield break` exactly as the two separate guards did before it.
+    // Guards framework `:6073-6075`'s fill/content silence.
+    [Fact]
+    public void UnboundedVerticalParent_MinSizeSumNeverChecked()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 999, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { MinSize = 999, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Empty(diagnostics);
+    }
+
+    // SPEC-92 §9: parent uses fixed `size`, tripping both the fixed-sum and minSize-sum branches
+    // on the same split. Guards §5.2's order-preservation claim: the fixed diagnostic must still
+    // yield before the minSize one, and both must report against the same bound.
+    [Fact]
+    public void FixedParentTripsBothFixedSumAndMinSizeSum_ReportsBothInOrder()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Size = "40",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Size = "25", MinSize = 25, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { Size = "25", MinSize = 25, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config).ToList();
+
+        Assert.Equal(2, diagnostics.Count);
+        Assert.All(diagnostics, d => Assert.Equal("fixed-sizes-exceed-parent", d.Code));
+        Assert.All(diagnostics, d => Assert.Equal(DiagnosticSeverity.Error, d.Severity));
+        Assert.All(diagnostics, d => Assert.Equal("/surface/pane", d.Path));
+        Assert.Contains("fixed sizes (50)", diagnostics[0].Message);
+        Assert.Contains("minSize sum (50)", diagnostics[1].Message);
     }
 
     [Fact]

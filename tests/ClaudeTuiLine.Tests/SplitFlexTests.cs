@@ -615,4 +615,93 @@ public class SplitFlexTests
         Assert.Contains("stacked", diagnostic.Message);
         Assert.Contains("minSize", diagnostic.Message);
     }
+
+    // ---- SPEC-92: fixed-parent minSize-sum check (§9, §10 V5/V6). Named with a `Spec92_` prefix
+    // per SPEC-92 §14 to avoid colliding with this file's existing V5 (SPEC-88) and V6 (SPEC-91). ----
+
+    // SPEC-92 §9: parent uses fixed `size` (not `maxSize`) — the only test that would catch a
+    // regression re-narrowing CheckSplitBounds's merged guard back to MaxSize-only. Distinct from
+    // V6 above despite the identical MinSize values: V6's parent reaches its bound via
+    // `split.MaxSize`, this one via `SizeResolver.FixedSize(split)`. Fails against 62687bb.
+    [Fact]
+    public void Spec92_V5_FlexFixedParentChildrenMinSizeOverBound_TheAndReports()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "flex",
+                    Size = "40",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50 },
+                        new() { MinSize = 50 },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal("/surface/pane", diagnostic.Path);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal("fixed-sizes-exceed-parent", diagnostic.Code);
+        Assert.Contains("side by side", diagnostic.Message);
+        Assert.Contains("stacked", diagnostic.Message);
+
+        // SPEC-91's V6 (maxSize parent, same shape) must still pass in the same run.
+        var v6 = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "flex",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50 },
+                        new() { MinSize = 50 },
+                    },
+                },
+            },
+        };
+        Assert.Single(ConfigChecker.Check(v6));
+    }
+
+    // SPEC-92 §9: parent uses fixed `size`, tripping both branches of CheckSplitBounds on the same
+    // split — guards framework `:6060-6061` by confirming the fixed-sum and minSize-sum diagnostics
+    // quote the same boundaryCost number rather than each recomputing it.
+    [Fact]
+    public void Spec92_V6_BoundaryCostNotDoubleCounted_BothDiagnosticsShareTheSameValue()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "vertical",
+                    Size = "40",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Size = "25", MinSize = 25, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                        new() { Size = "25", MinSize = 25, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config).ToList();
+
+        Assert.Equal(2, diagnostics.Count);
+        var fixedCostMatch = System.Text.RegularExpressions.Regex.Match(diagnostics[0].Message, @"boundary cost \((\d+)\)");
+        var minCostMatch = System.Text.RegularExpressions.Regex.Match(diagnostics[1].Message, @"boundary cost \((\d+)\)");
+        Assert.True(fixedCostMatch.Success);
+        Assert.True(minCostMatch.Success);
+        Assert.Equal(fixedCostMatch.Groups[1].Value, minCostMatch.Groups[1].Value);
+    }
 }

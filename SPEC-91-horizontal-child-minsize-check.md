@@ -6,8 +6,9 @@ declares a `minSize` exceeding the parent's bound, and if so at what severity an
 Surfaced as an incidental finding during #88 (`SPEC-88-responsive-split-fallback.md` §12(2)), which
 documented it and deliberately left it out of scope.
 
-**All `src/` and `tests/` citations are anchored to commit `8437c37`** (`#88: split:"flex"
-responsive split fallback`), except §5.4 and §9.2 which cite the `task-91-horizontal-minsize`
+**All `src/` and `tests/` citations are anchored to commit `62687bb`** (`Merge #91: horizontal
+split child minSize structural check`; originally `8437c37`, `#88: split:"flex" responsive split
+fallback`, re-anchored per A3), except §5.4 and §9.2 which cite the `task-91-horizontal-minsize`
 worktree. Cite those anchors when checking for drift.
 
 **This file is authoritative.** `SPEC-91-amendment-A2-v13c.md` is a companion recording A2's
@@ -32,6 +33,21 @@ outcome. It does not, and it should not. See §9.2 for the corrected ruling and 
 error happened. A2 changes §9.2, §5.4 (new), §13 V9, §14 NE-1, and §16.
 
 **No ruling in §1 changes.** A2 corrects a prediction about one test, not the design.
+
+### A3 — after #92
+
+Applied per `SPEC-92-fixed-parent-minsize-sum.md` §12, in the same change as #92's code fix. Three
+edits, none touching §1's ruling:
+
+1. **§13 V8** reworded from an exit-code/`ok:false` assertion to an `Error`-severity-diagnostic
+   assertion — the input `RunCheck`'s untouched gate consumes, not `RunCheck` itself.
+2. **§15** upgraded from "a strong suspicion, not a confirmed defect" to **confirmed at `62687bb`**,
+   per SPEC-92 §2.1's proof that `SizeResolver.FixedSize` shares the allocator's own classification.
+3. **Eight framework citations re-anchored** for drift (`8437c37`→`62687bb`): `:5419`→`:5466`,
+   `:5420`→`:5467`, `:5994`→`:6041`, `:6008-6010`→`:6055-6057`, `:6011-6014`/`:6011`→`:6058-6061`/
+   `:6058`, `:6016-6018`/`:6016`→`:6073-6075`/`:6073`. §11.1's and §11.2's amendments are noted
+   **applied, not pending**, now living at `:6063-6071` and `:5466` respectively. The header's
+   citation anchor moved from `8437c37` to `62687bb`.
 
 ---
 
@@ -163,7 +179,7 @@ This is the same substitution §9.8 `:6000-6003` blesses for the existing checks
 > is what keeps this width-independent: same function, a number from the config rather than from
 > `COLUMNS`.
 
-And where there is no declared bound, §9.8 `:6016-6018` rules that `--check` must stay silent:
+And where there is no declared bound, §9.8 `:6073-6075` rules that `--check` must stay silent:
 
 > Where the parent is `fill` or `content`, there is no bound to contradict and `--check` says
 > nothing. That is not a gap.
@@ -327,10 +343,10 @@ Consistent with every comparable diagnostic, and required by §9.8's own logic.
 
 All three structural checks §9.8 enumerates are errors:
 
-- `fixed-sizes-exceed-parent` — framework `:5419` table: `error`
-- `min-exceeds-max` — framework `:5420` table: `error`; §9.8 `:6008-6010` notes §9.4 called it a
+- `fixed-sizes-exceed-parent` — framework `:5466` table: `error`
+- `min-exceeds-max` — framework `:5467` table: `error`; §9.8 `:6055-6057` notes §9.4 called it a
   warning "in an earlier draft and has been **corrected**"
-- the `minSize`-sum case — framework `:6011`, same code as the first, therefore also `error`
+- the `minSize`-sum case — framework `:6058`, same code as the first, therefore also `error`
 
 The severity axis in this project tracks **"unachievable everywhere"**, not "how confident the check
 is" and not "how new the check is." The framework's gloss for `min-exceeds-max` is literally
@@ -374,7 +390,7 @@ Four further reasons:
 
 ### 7.1 One honesty problem this creates, and the amendment that fixes it
 
-The §9.4 registry gloss at framework `:5419` reads:
+The §9.4 registry gloss at framework `:5466` reads:
 
 > | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
 
@@ -417,7 +433,7 @@ Plus, post-#88, the `flex` case in §9.3 — a different population, discussed t
 
 **The decisive argument: these configs were never working.**
 
-§9.8's stated fear — `:5994` — is precisely calibrated:
+§9.8's stated fear — `:6041` — is precisely calibrated:
 
 > a false `error` is the worst outcome available here, because exit 1 sends the user to fix
 > something that already works.
@@ -453,7 +469,7 @@ Rejected for three reasons:
    "how recently was this check added." A `Warning` would assert something false about the config.
 2. **There is no deprecation channel to build it on.** The enum has two members. No version
    negotiation, no `--strict`, no per-code suppression anywhere in `ConfigCheck.cs`.
-3. **It would contradict the framework twice over.** §9.8 `:6008-6010` records `min-exceeds-max`
+3. **It would contradict the framework twice over.** §9.8 `:6055-6057` records `min-exceeds-max`
    being *corrected from warning to error* — the project moved the opposite way on a directly
    analogous floor diagnostic. And a warning that a config is structurally impossible is exactly the
    "validator that warns about things that work" §9.4 says gets ignored.
@@ -611,13 +627,15 @@ Two, both to `SPEC-V2-FRAMEWORK.md`. Both correct documentation **already** inac
 
 ### 11.1 §9.8's bullet list does not cover the per-child form at all
 
-§9.8 `:5986-6014` enumerates the structural checks in three bullets, **all sum checks**, written for
-the vertical/shared-axis model. The existing per-child horizontal `FixedSize` check (`:962-968`) is
-**already an implementation extension beyond this list**; a reader reconstructing `--check` from
-§9.8 alone would not produce it.
+§9.8 `:5986-6014` (pre-drift; the same span is now `:6033-6061`) enumerates the structural checks in
+three bullets, **all sum checks**, written for the vertical/shared-axis model. The existing per-child
+horizontal `FixedSize` check (`:962-968`) is **already an implementation extension beyond this
+list**; a reader reconstructing `--check` from §9.8 alone would not produce it.
 
-**Required amendment** — add after the three bullets, before the `fill`/`content` paragraph at
-`:6016`:
+**Applied by #91 — not pending.** The added paragraph now lives at framework `:6063-6071`.
+
+**Required amendment (as applied)** — added after the three bullets, before the `fill`/`content`
+paragraph (now at `:6073-6075`, was `:6016`):
 
 > **The arithmetic form follows the axis, not the size key.** Where a split's children *share* the
 > constrained axis they contend, and the check is a **sum** plus the boundary cost — the three
@@ -633,11 +651,13 @@ The final sentence pre-empts an implementor misapplying §9.8's boundary-cost ru
 
 ### 11.2 §9.4's registry gloss understates the code
 
-`:5419` currently reads:
+**Applied by #91 — not pending.** The corrected gloss now lives at framework `:5466`.
+
+`:5466` (was `:5419`) previously read:
 
 > | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
 
-Already inaccurate on `main` (`:945`). Amend to name floors:
+Already inaccurate on `main` (`:945`). Amended to name floors:
 
 > | `fixed-sizes-exceed-parent` | declared fixed sizes **or floors** cannot fit the parent at any width | error | 9.8 |
 
@@ -696,7 +716,10 @@ cases at `:1817-1862`. V6/V6b in `SplitFlexTests.cs`.
 - **V6b — the composite message quotes the new wording.** For V6's config, the message names **both**
   arrangements and its "stacked (…)" clause contains #91's `minSize` text. Guards `:922`.
 - **V7 — no boundary cost leaked in.** V1's message names the bound as `40`, not boundary-adjusted.
-- **V8 — exit code.** `--check` on V1's config exits **1**; `--check --json` reports `ok: false`.
+- **V8 — an `Error`-severity diagnostic is produced.** `--check` on V1's config yields at least one
+  diagnostic with `DiagnosticSeverity.Error`. This pins the input `RunCheck`'s gate consumes
+  (`diagnostics.Any(d => d.Severity == Error)` → exit 1, `ok: false`). `RunCheck` itself is untouched
+  by #91 (§12) and is deliberately not re-tested here.
 - **V9 — V13(c) unmodified and still green (A2).** `SPEC-88`'s V13(c) passes with **no fixture
   change** — only its comment is updated per §5.4. Its continued green is an assertion that #91 is
   correctly scoped: the change must not perturb configs declaring no `minSize`. **A red V13(c) is a
@@ -744,7 +767,7 @@ I do not run anything. Each item states what to run and what each outcome decide
 **`CheckSplitBounds`'s `minSize` sum check ignores a fixed parent.** `:929` computes
 `parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize` for the *fixed* sum check, but the
 *`minSize`* sum check at `:940` consults `split.MaxSize` alone. So a **fixed** vertical parent —
-`size: "40"` — whose children's `minSize` sum is 50 goes undiagnosed. Framework `:6011` has the same
+`size: "40"` — whose children's `minSize` sum is 50 goes undiagnosed. Framework `:6058` has the same
 narrow wording, so the code may be faithfully implementing a too-narrow bullet.
 
 **It is not confined to the vertical path.** Because `CheckFlexSplitBounds` (`:913`) delegates to
@@ -764,8 +787,9 @@ So #92 is a **shared root cause feeding both the vertical sum check and #88's fl
 **Caution for implementor and reviewer:** do not "strengthen" V6 by switching it to a fixed-size
 flex parent. That variant will fail, and the failure is **#92, not a #91 defect**.
 
-Not verified against `SizeResolver.FixedSize`'s behaviour for every `size` token form — a strong
-suspicion, not a confirmed defect.
+**Confirmed at `62687bb`** and specified in `SPEC-92-fixed-parent-minsize-sum.md`.
+`SizeResolver.FixedSize` (`SizeResolver.cs:175`) delegates to the allocator's own `ClassifySize`,
+so no `size` token form complicates the bound — see SPEC-92 §2.1.
 
 ---
 

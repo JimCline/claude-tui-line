@@ -927,24 +927,23 @@ public static class ConfigChecker
         var boundaryCost = SizeResolver.BoundaryCost(split, split.Children.Count, collapse);
 
         var parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize;
-        if (parentBound is int bound)
+        if (parentBound is not int bound)
         {
-            var fixedSum = split.Children.Sum(c => SizeResolver.FixedSize(c) ?? 0);
-            if (fixedSum + boundaryCost > bound)
-            {
-                yield return new Diagnostic(path, DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
-                    $"children's fixed sizes ({fixedSum}) plus boundary cost ({boundaryCost}) exceed this pane's own bound ({bound})");
-            }
+            yield break;
         }
 
-        if (split.MaxSize is int maxBound)
+        var fixedSum = split.Children.Sum(c => SizeResolver.FixedSize(c) ?? 0);
+        if (fixedSum + boundaryCost > bound)
         {
-            var minSum = split.Children.Sum(c => c.MinSize ?? 0);
-            if (minSum + boundaryCost > maxBound)
-            {
-                yield return new Diagnostic(path, DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
-                    $"children's minSize sum ({minSum}) plus boundary cost ({boundaryCost}) exceed this pane's maxSize ({maxBound})");
-            }
+            yield return new Diagnostic(path, DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
+                $"children's fixed sizes ({fixedSum}) plus boundary cost ({boundaryCost}) exceed this pane's own bound ({bound})");
+        }
+
+        var minSum = split.Children.Sum(c => c.MinSize ?? 0);
+        if (minSum + boundaryCost > bound)
+        {
+            yield return new Diagnostic(path, DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
+                $"children's minSize sum ({minSum}) plus boundary cost ({boundaryCost}) exceed this pane's own bound ({bound})");
         }
     }
 
