@@ -14,9 +14,10 @@ public static class PaneBorderRenderer
     /// <param name="suppressed">
     /// SPEC-V2-FRAMEWORK.md §2.3: a pane whose resolved width falls under
     /// <see cref="RowLayout.MinUsableWidth"/> suppresses its own border first rather than being
-    /// dropped outright. Suppression keeps the same reserved geometry (so the pane's already-
-    /// resolved outer width stays correct) but draws blank chrome instead of glyphs — one code
-    /// path for both cases, not a separate borderless layout.
+    /// dropped outright. SPEC-2.3-suppression-predicate.md §6.3: suppression reclaims the
+    /// reserve for content — reserve, padding, and corner glyphs are all zeroed, and the caller
+    /// (<see cref="PaneTreeRenderer"/>) has already widened <paramref name="innerWidth"/> to the
+    /// pane's full outer width, so <paramref name="contentRows"/> arrive pre-sized to it.
     /// </param>
     /// <param name="omitEdges">
     /// SPEC-V2-FRAMEWORK.md §2.8.2: the height-axis twin of <paramref name="suppressed"/>. A
@@ -35,8 +36,9 @@ public static class PaneBorderRenderer
         var width = Math.Max(0, innerWidth);
         var style = border.Style;
         var edges = border.Edges;
-        var outerWidth = width + SizeResolver.OwnBorderReserve(border);
-        var horizontalSpan = width + 2;
+        var reserve = suppressed ? 0 : SizeResolver.OwnBorderReserve(border);
+        var outerWidth = width + reserve;
+        var horizontalSpan = suppressed ? width : width + 2;
 
         string Part(BoxBorderPart part) => suppressed ? " " : style.GetPart(part);
 
@@ -49,24 +51,30 @@ public static class PaneBorderRenderer
         // padding+content width regardless, so outerWidth comes out exactly right in every
         // edge-on/off combination without needing a junction table. §2.8.2's omitEdges (row budget
         // under 3) forces top/bottom off the same way regardless of the edge config.
-        var leftGlyph = edges.Left ? Colored(Part(BoxBorderPart.Left)) : "";
-        var rightGlyph = edges.Right ? Colored(Part(BoxBorderPart.Right)) : "";
+        //
+        // SPEC-2.3-suppression-predicate.md §6.3: when suppressed, corners and left/right glyphs
+        // are omitted (not drawn as blank) so horizontalSpan/outerWidth above, which already
+        // exclude the reserve, aren't overshot by them.
+        var leftGlyph = edges.Left && !suppressed ? Colored(Part(BoxBorderPart.Left)) : "";
+        var rightGlyph = edges.Right && !suppressed ? Colored(Part(BoxBorderPart.Right)) : "";
 
         var rows = new List<PaneRow>(contentRows.Count + 2);
 
         if (edges.Top && !omitEdges)
         {
-            var topLeft = edges.Left ? Part(BoxBorderPart.TopLeft) : "";
-            var topRight = edges.Right ? Part(BoxBorderPart.TopRight) : "";
+            var topLeft = edges.Left && !suppressed ? Part(BoxBorderPart.TopLeft) : "";
+            var topRight = edges.Right && !suppressed ? Part(BoxBorderPart.TopRight) : "";
             rows.Add(new PaneRow(Colored(topLeft + Repeat(Part(BoxBorderPart.Top), horizontalSpan) + topRight), outerWidth));
         }
 
-        rows.AddRange(contentRows.Select(row => new PaneRow(leftGlyph + " " + row.Markup + " " + rightGlyph, row.Width + SizeResolver.OwnBorderReserve(border))));
+        rows.AddRange(contentRows.Select(row => suppressed
+            ? row
+            : new PaneRow(leftGlyph + " " + row.Markup + " " + rightGlyph, row.Width + reserve)));
 
         if (edges.Bottom && !omitEdges)
         {
-            var bottomLeft = edges.Left ? Part(BoxBorderPart.BottomLeft) : "";
-            var bottomRight = edges.Right ? Part(BoxBorderPart.BottomRight) : "";
+            var bottomLeft = edges.Left && !suppressed ? Part(BoxBorderPart.BottomLeft) : "";
+            var bottomRight = edges.Right && !suppressed ? Part(BoxBorderPart.BottomRight) : "";
             rows.Add(new PaneRow(Colored(bottomLeft + Repeat(Part(BoxBorderPart.Bottom), horizontalSpan) + bottomRight), outerWidth));
         }
 

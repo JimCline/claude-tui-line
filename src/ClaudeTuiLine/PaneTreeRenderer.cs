@@ -39,8 +39,14 @@ public static class PaneTreeRenderer
             ? pane.Border with { Edges = new PaneBorderEdges(edges.Top, edges.Right && !excludeRight, edges.Bottom, edges.Left && !excludeLeft) }
             : pane.Border;
         var borderReserve = SizeResolver.OwnBorderReserve(effectiveBorder);
-        var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
-        var suppressed = SizeResolver.ShouldSuppressBorder(pane, innerWidth);
+        var preSuppressionInnerWidth = Math.Max(0, node.OuterWidth - borderReserve);
+        var suppressed = SizeResolver.ShouldSuppressBorder(pane, preSuppressionInnerWidth);
+
+        // SPEC-2.3-suppression-predicate.md §6.3 (defect B): a suppressed pane's reserve is
+        // reclaimed for content, so it lays out at its full outer width rather than
+        // outer - reserve. The predicate above still evaluates the pre-reclaim width — reclaiming
+        // it first would make suppression circular (§3).
+        var innerWidth = suppressed ? node.OuterWidth : preSuppressionInnerWidth;
 
         // §2.8.1/§2.8.2: node.ClipRows, when set, is the degrade ladder's authoritative row
         // budget for this (always leaf) pane — annotated onto this render attempt's ResolvedPane
