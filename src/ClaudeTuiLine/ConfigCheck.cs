@@ -660,7 +660,7 @@ public static class ConfigChecker
                     "\"children\" has no effect on a leaf; a pane is a split only when its children list has at least one entry");
             }
 
-            if (ConfigLoader.ParseSplitCore(pane.Split) is PaneSplit.Vertical or PaneSplit.Horizontal
+            if (ConfigLoader.ParseSplitCore(pane.Split) is PaneSplit.Vertical or PaneSplit.Horizontal or PaneSplit.Flex
                 && pane.Children is not { Count: > 0 })
             {
                 yield return new Diagnostic(path + "/split", DiagnosticSeverity.Warning, "key-not-applicable",
@@ -892,7 +892,34 @@ public static class ConfigChecker
                     yield return d;
                 }
             }
+            else if (pane.Split == PaneSplit.Flex)
+            {
+                foreach (var d in CheckFlexSplitBounds(pane, path, collapse))
+                {
+                    yield return d;
+                }
+            }
         }
+    }
+
+    // SPEC-88 §4.5.3: a Flex pane is structurally impossible only if it is impossible in BOTH
+    // arrangements it can adopt — the AND is the dual of §3.4's Floor(flex) = min(...), stated once
+    // and reused here rather than restated (§1.1). Running both checks and reporting on EITHER
+    // would reject flex's headline use case (side-by-side over-constrained, stacked fine) at error
+    // severity, which is not shippable. Both underlying checks are lazy IEnumerables and must be
+    // materialized before the AND can be evaluated.
+    private static IEnumerable<Diagnostic> CheckFlexSplitBounds(Pane split, string path, bool collapse)
+    {
+        var sideBySide = CheckSplitBounds(split, path, collapse).ToList();
+        var stacked = CheckHorizontalSplitChildren(split, path).ToList();
+
+        if (sideBySide.Count == 0 || stacked.Count == 0)
+        {
+            yield break;
+        }
+
+        yield return new Diagnostic(path, DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
+            $"this flex split's children exceed its parent's bound in both arrangements: side by side ({sideBySide[0].Message}) and stacked ({stacked[0].Message})");
     }
 
     private static IEnumerable<Diagnostic> CheckSplitBounds(Pane split, string path, bool collapse)

@@ -75,7 +75,7 @@ public static class PaneTreeRenderer
         {
             contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes, maxContentRows, node.ItemsEmptied);
         }
-        else if (pane.Split == PaneSplit.Vertical)
+        else if (node.EffectiveSplit == PaneSplit.Vertical)
         {
             // §2.2: a vertical split's children divide its width but share its height — every
             // child spans the split's full height, so a shorter child is re-rendered with the

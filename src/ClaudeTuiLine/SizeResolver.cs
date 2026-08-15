@@ -23,7 +23,14 @@ public static class SizeResolver
     /// <see cref="HeightLadder"/> annotates a freshly resolved tree with them, never a shared
     /// <c>Pane</c>.
     /// </summary>
-    public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children, int? ClipRows = null, bool ItemsEmptied = false);
+    /// <summary>
+    /// SPEC-88 §1.3/§4.5: <see cref="EffectiveSplit"/> is the render-time orientation this node
+    /// resolved to — never <see cref="PaneSplit.Flex"/>, regardless of <see cref="Pane.Split"/> on
+    /// <see cref="Source"/>. A leaf carries <see cref="PaneSplit.None"/>. This is the carrier a
+    /// Class-B consumer (one that needs the effective orientation rather than the declared one)
+    /// reads instead of <c>Source.Split</c>.
+    /// </summary>
+    public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children, int? ClipRows = null, bool ItemsEmptied = false, PaneSplit EffectiveSplit = PaneSplit.None);
 
     public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes, bool collapse = false) =>
         ResolveNode(root, outerWidth, ctx, values, measureOverride: null, rowCountOverride: null, notes, collapse);
@@ -171,15 +178,24 @@ public static class SizeResolver
     {
         if (pane.Split == PaneSplit.None || pane.Children.Count == 0)
         {
-            return new ResolvedPane(pane, outerWidth, Array.Empty<ResolvedPane>());
+            return new ResolvedPane(pane, outerWidth, Array.Empty<ResolvedPane>(), EffectiveSplit: PaneSplit.None);
         }
 
-        if (pane.Split == PaneSplit.Horizontal)
+        // SPEC-88 §4.1: Flex resolves to a concrete orientation here, strictly above both the
+        // Horizontal branch and the vertical entry points below, so distribute:"min-rows" (which
+        // dispatches inside the vertical branch) sees the same decision a greedy split would.
+        // ResolveFlexOrientation never returns Flex, so effectiveSplit — and every EffectiveSplit
+        // this method returns below — can never carry it either.
+        var effectiveSplit = pane.Split == PaneSplit.Flex
+            ? ResolveFlexOrientation(pane, outerWidth, collapse, notes)
+            : pane.Split;
+
+        if (effectiveSplit == PaneSplit.Horizontal)
         {
             var horizontalChildren = pane.Children
                 .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride, rowCountOverride, notes, collapse))
                 .ToList();
-            return new ResolvedPane(pane, outerWidth, horizontalChildren);
+            return new ResolvedPane(pane, outerWidth, horizontalChildren, EffectiveSplit: PaneSplit.Horizontal);
         }
 
         var alloc = pane.Distribute switch
@@ -194,7 +210,31 @@ public static class SizeResolver
             resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride, rowCountOverride, notes, collapse));
         }
 
-        return new ResolvedPane(pane, outerWidth, resolvedChildren);
+        return new ResolvedPane(pane, outerWidth, resolvedChildren, EffectiveSplit: PaneSplit.Vertical);
+    }
+
+    // SPEC-88 §3.1: side by side when it fits, stacked when it does not and stacking would help,
+    // side by side (the drop ladder's better-understood over-constrained answer) when neither does.
+    // Uses SideBySideFloor/StackedFloor directly rather than Floor(pane, ...) itself, because §3.1's
+    // predicate is defined over the branch VALUES, not Floor()'s minSize short-circuit (:331-334) —
+    // that short-circuit is §3.4's contract for Floor(flexPane) as seen by an ANCESTOR, a different
+    // question from what orientation this pane itself should adopt.
+    private static PaneSplit ResolveFlexOrientation(Pane pane, int outerWidth, bool collapse, RenderNoteCollector notes)
+    {
+        var sideBySideFloor = SideBySideFloor(pane, collapse);
+        if (sideBySideFloor <= outerWidth)
+        {
+            return PaneSplit.Vertical;
+        }
+
+        var stackedFloor = StackedFloor(pane, collapse);
+        if (stackedFloor <= outerWidth)
+        {
+            notes.Add($"pane {pane.Children.Count}: flex split stacked; children need {sideBySideFloor} columns at {outerWidth} columns");
+            return PaneSplit.Horizontal;
+        }
+
+        return PaneSplit.Vertical;
     }
 
     // ---- vertical axis: the graded fixpoint ----
@@ -337,18 +377,19 @@ public static class SizeResolver
         {
             if (p.Split == PaneSplit.Horizontal)
             {
-                return p.Children.Max(c => Floor(c, collapse, excludeLeft: false, excludeRight: false));
+                return StackedFloor(p, collapse);
             }
 
-            var n = p.Children.Count;
-            var boundary = collapse ? Math.Max(0, n - 1) : p.Gutter * Math.Max(0, n - 1);
-            var sum = 0;
-            for (var i = 0; i < n; i++)
+            // SPEC-88 §3.4: a Flex pane can render in either orientation, so its floor is the
+            // minimum over both — evaluated via the same branch expressions this method uses for a
+            // declared Vertical/Horizontal pane, with the same collapse/exclude threading, never a
+            // restated formula (§3.4.2: the two branches are not interchangeable under collapse).
+            if (p.Split == PaneSplit.Flex)
             {
-                sum += Floor(p.Children[i], collapse, excludeLeft: collapse && i > 0, excludeRight: collapse && i < n - 1);
+                return Math.Min(SideBySideFloor(p, collapse), StackedFloor(p, collapse));
             }
 
-            return sum + boundary;
+            return SideBySideFloor(p, collapse);
         }
 
         var spec = ClassifySize(p.Size);
@@ -358,6 +399,31 @@ public static class SizeResolver
             SizeKind.Content => 0,
             _ => RowLayout.MinUsableWidth + OwnBorderReserve(p, excludeLeft, excludeRight),
         };
+    }
+
+    // §2.3: the value Floor()'s Horizontal branch computes for a split with children — its
+    // children stack, each spanning the full width, so the floor is the tallest child's floor.
+    // Named and extracted (not inlined in Floor()) because SPEC-88 §3.1's flex-orientation
+    // predicate and §3.4's Flex floor both need exactly this value, and §1.1 requires one
+    // statement of the rule rather than two that can drift.
+    private static int StackedFloor(Pane p, bool collapse) =>
+        p.Children.Max(c => Floor(c, collapse, excludeLeft: false, excludeRight: false));
+
+    // §2.3/§2.10.2: the value Floor()'s vertical (non-Horizontal) branch computes for a split with
+    // children — its children divide the width, so the floor is their sum plus boundary cost, each
+    // child's own floor threaded with the collapse-aware edge exclusions its position implies.
+    // Extracted for the same reason as StackedFloor above.
+    private static int SideBySideFloor(Pane p, bool collapse)
+    {
+        var n = p.Children.Count;
+        var boundary = collapse ? Math.Max(0, n - 1) : p.Gutter * Math.Max(0, n - 1);
+        var sum = 0;
+        for (var i = 0; i < n; i++)
+        {
+            sum += Floor(p.Children[i], collapse, excludeLeft: collapse && i > 0, excludeRight: collapse && i < n - 1);
+        }
+
+        return sum + boundary;
     }
 
     // SPEC-2.3-drop-predicate.md §3 / SPEC-2.3-suppression-predicate.md §4: the drop-retry loops'

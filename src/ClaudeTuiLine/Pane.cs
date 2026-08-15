@@ -8,6 +8,12 @@ public enum PaneSplit
     None,
     Horizontal,
     Vertical,
+
+    /// <summary>
+    /// SPEC-88 §1.3: a declared-only value — side by side when children fit, stacked when they do
+    /// not. Never an effective orientation; see <see cref="SizeResolver.ResolvedPane.EffectiveSplit"/>.
+    /// </summary>
+    Flex,
 }
 
 /// <summary>

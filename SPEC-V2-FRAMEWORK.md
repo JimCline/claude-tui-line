@@ -1271,6 +1271,53 @@ defined behaviour for an over-constrained row — it drops panes and says so thr
 is the observable consequence, and a note reporting that an algorithm declined to run is a message
 about the implementation rather than about the layout.
 
+#### 2.3.4 `flex` — a split whose orientation is a function of width
+
+`"split": "flex"` arranges children side by side when they fit and stacked when they do not. It
+sits side by side while the vertical floor of §2.3 is within the available width, stacks when
+that is exceeded and the horizontal floor is not, and when neither fits stays side by side so the
+drop ladder runs — a rearrangement that does not make the split fit is not worth the change in
+shape.
+
+`flex` names an arrangement policy rather than a divider, which is why it does not follow the
+tmux/vim naming of `vertical` and `horizontal` at `:775`. Those two are unchanged and remain
+absolute: `vertical` is always side by side, `horizontal` always stacked.
+
+The declared value is what the author wrote and is fixed at config resolution per §2.2; the
+*effective* orientation is computed per render and is always concrete. `flex` is a declared value
+only and never reaches anything downstream of the size resolver, which cannot distinguish a
+stacked `flex` pane from a declared horizontal one.
+
+**A `flex` pane's width floor is the lesser of its two orientations' floors**, because it can
+render in either. This matters beyond the pane itself: an ancestor split's drop decision reads a
+child's floor *before* that child's own orientation is decided, so the floor must answer the
+orientation-independent question or the ancestor will drop a pane that could have rendered — or
+drop a sibling competing with it.
+
+**The same rule governs `--check`'s structural-size validation, in dual form: a `flex` pane's
+declaration is reported as over-constrained only when it is over-constrained in BOTH
+arrangements.** A pane whose children cannot share the parent's width but can each take all of it
+is not an error — it is the case `flex` exists for, and reporting it would make `flex` unusable.
+Floors take the minimum over adoptable orientations; impossibility takes the conjunction. These
+are the same statement.
+
+The decision is made from width alone and is never revisited once rows are known. Reverting it
+because the stacked result busts `maxRows` would make width depend on height, the fixpoint §2.8.1
+forbids. Stacking can therefore cost rows; the render note is what makes that visible. Because a
+`flex` pane advertises the lower floor, it is allocated less width in a competitive layout than a
+declared-vertical pane would be, and so stacks more readily there — the price of the parent being
+able to keep every pane alive.
+
+**Border-edge propagation runs at config load, before any width is known, and treats a `flex`
+pane as vertical.** A stacked `flex` pane may therefore carry edges chosen for the side-by-side
+arrangement. This is accepted: the alternative is a width-dependent resolved tree, which §2.2
+forbids.
+
+`gutter` and `distribute` apply while the pane is side by side and are ignored while it is
+stacked, exactly as §2.3.2 ignores them on a declared horizontal split. They are never diagnosed
+as inapplicable on a `flex` pane, because it can render side by side. Beyond the structural check
+above, `--check` predicts none of this: per §9.8 it is width-independent.
+
 ### 2.4 Compositing — the part that must not be improvised
 
 A leaf pane renders to a **`PaneBuffer`**: an ordered list of rows, each carrying its markup
@@ -6072,6 +6119,7 @@ site:
 pane {n} dropped: {grant} columns is under its {floor}-column floor at {columns} columns
 pane {n} dropped: children need {sum} columns at {columns} columns
 pane {n}: {requested} columns requested, clamped to {avail} at {columns} columns
+pane {n}: flex split stacked; children need {sideBySideFloor} columns at {columns} columns
 segment truncated to fit {columns} columns
 item '{id}' emitted {n} lines; {kept} kept (maxLines)
 ```

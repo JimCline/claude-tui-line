@@ -836,7 +836,7 @@ public class ConfigCheckTests
         var diagnostics = ConfigChecker.Check(config);
 
         Assert.Contains(diagnostics, d => d.Code == "unknown-enum-value" && d.Path == "/surface/pane/split" &&
-            d.Severity == DiagnosticSeverity.Error && d.Message == "'diagonal' is not a split — expected none, horizontal, or vertical");
+            d.Severity == DiagnosticSeverity.Error && d.Message == "'diagonal' is not a split — expected none, horizontal, vertical, or flex");
     }
 
     [Fact]

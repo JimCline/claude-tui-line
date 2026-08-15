@@ -131,7 +131,7 @@ public static class BorderGrid
         var innerRow0 = row0 + (hasBorder && edges.Top ? 1 : 0);
         var innerBand = Math.Max(0, bandHeight - (hasBorder ? SizeResolver.OwnRowReserve(pane) : 0));
 
-        if (pane.Split == PaneSplit.Vertical)
+        if (node.EffectiveSplit == PaneSplit.Vertical)
         {
             var cursorCol = colStart + (hasBorder && edges.Left && !excludeLeft ? 1 : 0);
 

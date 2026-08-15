@@ -787,6 +787,7 @@ public static class ConfigLoader
         ("none", PaneSplit.None),
         ("horizontal", PaneSplit.Horizontal),
         ("vertical", PaneSplit.Vertical),
+        ("flex", PaneSplit.Flex),
     };
 
     internal static IReadOnlyList<string> SplitAcceptedTokens { get; } = SplitAccepted.Select(a => a.Token).ToArray();

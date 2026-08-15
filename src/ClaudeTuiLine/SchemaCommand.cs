@@ -196,7 +196,7 @@ public static class SchemaCommand
             new[] { "split", "children", "size", "minSize", "maxSize", "border", "overflow", "ellipsis", "maxRows", "gutter", "valign", "align", "distribute", "height", "items" },
             new[]
             {
-                Field("split", "string", "none/horizontal/vertical — set together with children for a branch pane.", "split"),
+                Field("split", "string", "none/horizontal/vertical/flex — set together with children for a branch pane.", "split"),
                 Field("children", "array<pane>", "Child panes, present on a branch pane."),
                 Field("size", "string", "This pane's share of its parent's axis.", "size"),
                 Field("minSize", "integer", "Lower bound on this pane's resolved size."),

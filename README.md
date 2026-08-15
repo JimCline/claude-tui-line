@@ -147,7 +147,7 @@ Pane keys:
 
 | key | notes |
 |---|---|
-| `split` | `"vertical"`, `"horizontal"` — makes this a container for `children` |
+| `split` | `"vertical"`, `"horizontal"`, `"flex"` — makes this a container for `children` |
 | `children` | child panes |
 | `size` | a bare column count (`"24"`), a percentage (`"40%"`), `"content"`, or `"fill"` (also the default). `"auto"` is a deprecated alias for `"fill"` — note that it does **not** mean `"content"` |
 | `minSize` / `maxSize` | integers — clamps on the resolved width |
@@ -179,6 +179,14 @@ bottom, first child topmost:
   ]
 }
 ```
+
+`"split": "flex"` picks between those two arrangements automatically: side by side when the
+children fit the available width, stacked when they do not. It is opt-in — `"vertical"` and
+`"horizontal"` keep their exact current meaning — and, once chosen, the arrangement is not
+revisited if the stacked result runs long on rows; a `pane {N}: flex split stacked` note reports
+when it happens. `flex` is one letter from `size`/`height`'s `"fill"`, but the two mean different
+things on different keys: `flex` picks a *direction* for `split`, `fill` picks an *extent* for
+`size`/`height`.
 
 `size: "content"` measures the pane's own text and asks for exactly that much — its **entire**
 unwrapped width, before any cap. A pane holding a long list of items will ask for far more than any
