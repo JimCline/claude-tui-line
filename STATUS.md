@@ -2,7 +2,7 @@
 
 Running progress against `SPEC-V2-FRAMEWORK.md`. Updated as work lands.
 
-**Last updated:** 2026-08-14
+**Last updated:** 2026-08-15
 
 A line is only **Done** here if it was verified independently of the report claiming it —
 rebuilt from source with a matching SHA-256, or checked against rendered bytes. "Tests pass" is
@@ -4995,6 +4995,10 @@ Two files (`SPEC-2.6-vertical-marker-splice.md`, `SPEC-3.1-block-model.md`) sat 
 ### #39: §12.6.11 compare-and-branch on the re-read (test-only)
 
 Per cdtui-arch2's scoping ruling: §12.6.11 applies only to commands that already hold two reads to compare "for free" — `edit.md` and MCP `set_config` (#10). `migrate.md`/`revert.md` never read the live config before writing, so mandating a comparison there would need a *new* read purely to enable it, contradicting the rule's own cost justification; out of scope (see #81, opened separately). Both layers were already implemented correctly by #10; #39 became regression-test-only, no production code. New tests: `EditCommandCompareAndBranchTests.cs` (content-presence guard on `edit.md`'s §12.6.11 rule 1+2 text — a model procedure, not compiled code, mirroring `AllowListTests.V4`'s scan-not-execute pattern) and two new `ConfigToolsTests.cs` cases (tool description reflects §12.6.12 rule 2; full round-trip proving stale-refusal → re-derive against current config → resubmit → succeeds with the intervening write preserved). 1425/1425 core, 17/17 MCP, no regressions. Confirmed as a side effect: `revert.md` deliberately does not restore the config file (documented at `commands/revert.md` §6 and `docs/backup-ledger.md`:130-131 — "put my old statusline back" is a different question from "undo my layout work"), not a gap. Merged as 883275d.
+
+### #81: migrate.md consent-disclosure fix for existing config overwrite
+
+Per cdtui-arch2's ruling (SPEC-81-migrate-overwrite.md): reframed from a missing-guard problem to a consent-integrity defect — `migrate.md`'s existing step-7 consent gate never disclosed that an existing config would be overwritten, even though step 2's backup-ledger procedure already determines config-existence for free (to populate `configCopy`/`null`). Added a 5th disclosure item (existence + resolved path only, never contents) to both branches of step 7, using the same resolved-path phrasing as step 8's write. Separately fixed: step 8's report previously over-promised that `/claude-tui-line:revert` restores the config file — it deliberately does not (only the statusLine entry); corrected to name the backup ledger's `configCopy` path as the only recovery route. `revert.md` untouched. SPEC-V2-FRAMEWORK.md §12.3 gained the corresponding amendment; the existing §10 migrate/edit/migrate-again scenario (bullet 11) was confirmed against its actual text before being extended, rather than assuming the cited line numbers. 1425/1425 tests pass, docs-only change. Merged as 7cac40a.
 
 ## Standing constraints
 
