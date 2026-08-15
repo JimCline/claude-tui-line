@@ -110,6 +110,131 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "unknown-color-token" && d.Path == "/items/0/color" && d.Severity == DiagnosticSeverity.Warning);
     }
 
+    // SPEC-44-color-token-in-rule-branches.md §10 items 2-4: the diagnostic-emission side of the
+    // rule-branch token restriction (§3.2/§4.3). The runtime-resolution side (does the value
+    // actually render/not-render) lives in ColorValueBranchResolutionTests.cs.
+
+    [Fact]
+    public void NonConstantColorTokenInRuleBranch_ReportsNonConstantColorTokenAsWarning()
+    {
+        var config = new UserConfig
+        {
+            Colors = new Dictionary<string, ColorRuleJsonConfig>
+            {
+                ["busy"] = new ColorRuleJsonConfig
+                {
+                    From = "directory",
+                    Thresholds = new List<ThresholdJsonConfig> { new() { Min = 50, Color = "olive" } },
+                },
+            },
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Item = "directory",
+                    Color = new ColorExprJsonConfig
+                    {
+                        Rule = new ColorRuleJsonConfig
+                        {
+                            From = "directory",
+                            Thresholds = new List<ThresholdJsonConfig> { new() { Min = 50, Color = "@busy" } },
+                            Default = "grey",
+                        },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d =>
+            d.Code == "non-constant-color-token" &&
+            d.Path == "/items/0/color/thresholds/0/color" &&
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.Message == "colour token '@busy' is used in a rule branch at /items/0/color/thresholds/0/color, so it must be a constant colour (a 'default' literal with no 'from', 'thresholds', or 'match')");
+    }
+
+    [Fact]
+    public void ChainedColorTokenInRuleBranch_ReportsNonConstantColorTokenAsWarning()
+    {
+        var config = new UserConfig
+        {
+            Colors = new Dictionary<string, ColorRuleJsonConfig>
+            {
+                ["a"] = new ColorRuleJsonConfig { Default = "@b" },
+                ["b"] = new ColorRuleJsonConfig { Default = "red" },
+            },
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Item = "directory",
+                    Color = new ColorExprJsonConfig
+                    {
+                        Rule = new ColorRuleJsonConfig
+                        {
+                            From = "directory",
+                            Thresholds = new List<ThresholdJsonConfig> { new() { Min = 50, Color = "@a" } },
+                            Default = "grey",
+                        },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d =>
+            d.Code == "non-constant-color-token" &&
+            d.Path == "/items/0/color/thresholds/0/color" &&
+            d.Severity == DiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public void UnknownColorTokenInRuleBranch_ReportsUnknownColorTokenAtSameSeverityAsOnABorder()
+    {
+        var branchConfig = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Item = "directory",
+                    Color = new ColorExprJsonConfig
+                    {
+                        Rule = new ColorRuleJsonConfig
+                        {
+                            From = "directory",
+                            Thresholds = new List<ThresholdJsonConfig> { new() { Min = 50, Color = "@nope" } },
+                            Default = "grey",
+                        },
+                    },
+                },
+            },
+        };
+
+        var branchDiagnostics = ConfigChecker.Check(branchConfig);
+
+        var branchDiagnostic = Assert.Single(branchDiagnostics, d =>
+            d.Code == "unknown-color-token" && d.Path == "/items/0/color/thresholds/0/color");
+
+        // Uniformity check (§10 item 4): a branch-position unknown token must be flagged at the same
+        // severity as the existing, unrestricted top-position unknown-token case.
+        var borderConfig = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Item = "directory", Color = new ColorExprJsonConfig { Literal = "@nope" } },
+            },
+        };
+
+        var borderDiagnostics = ConfigChecker.Check(borderConfig);
+        var borderDiagnostic = Assert.Single(borderDiagnostics, d => d.Code == "unknown-color-token");
+
+        Assert.Equal(borderDiagnostic.Severity, branchDiagnostic.Severity);
+        Assert.Equal(DiagnosticSeverity.Warning, branchDiagnostic.Severity);
+    }
+
     [Fact]
     public void UnrecognizedLiteralColor_ReportsUnknownColorAsError()
     {

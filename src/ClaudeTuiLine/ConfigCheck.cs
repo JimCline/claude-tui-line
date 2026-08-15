@@ -141,13 +141,29 @@ public static class ConfigChecker
 
         foreach (var tokenRef in scan.ColorTokenReferences)
         {
-            if (!tokens.ContainsKey(tokenRef.Name))
+            if (!tokens.TryGetValue(tokenRef.Name, out var rule))
             {
                 yield return new Diagnostic(tokenRef.Path, DiagnosticSeverity.Warning, "unknown-color-token",
                     $"no color named '{tokenRef.Name}' in the colors table");
+                continue;
+            }
+
+            // SPEC-44-color-token-in-rule-branches.md §3.2: a rule-branch token is legal only when
+            // it names a constant rule — separate from the existence check above, and only run for
+            // candidates that originated in ColorValue (branch) position.
+            if (tokenRef.InRuleBranch && !IsConstantColorRule(rule))
+            {
+                yield return new Diagnostic(tokenRef.Path, DiagnosticSeverity.Warning, "non-constant-color-token",
+                    $"colour token '@{tokenRef.Name}' is used in a rule branch at {tokenRef.Path}, so it must be a constant colour (a 'default' literal with no 'from', 'thresholds', or 'match')");
             }
         }
     }
+
+    private static bool IsConstantColorRule(ColorResolution.ColorRule rule) =>
+        string.IsNullOrEmpty(rule.From) &&
+        rule.Thresholds is not { Count: > 0 } &&
+        rule.Match is not { Count: > 0 } &&
+        rule.Default is ColorResolution.ColorValue.Literal;
 
     // ---- §9.4.1/§6/§6.2: literal colour values, reusing the ColorExprs the same walk already collected ----
 
@@ -193,9 +209,12 @@ public static class ConfigChecker
 
     private static IEnumerable<Diagnostic> CheckColorRuleLiterals(ColorResolution.ColorRule rule, string path, ColorSystemSupport colorSystem)
     {
-        if (rule.Default is { Length: > 0 } def)
+        // A ColorValue.TokenRef branch has no literal spec of its own to check against the color
+        // system — its own colour system exposure is checked wherever the constant rule it points
+        // at is walked. Only the Literal case has a spec string here.
+        if (rule.Default is ColorResolution.ColorValue.Literal defLit && defLit.Spec.Length > 0)
         {
-            foreach (var d in CheckLiteralSpec(def, path + "/default", colorSystem))
+            foreach (var d in CheckLiteralSpec(defLit.Spec, path + "/default", colorSystem))
             {
                 yield return d;
             }
@@ -205,9 +224,12 @@ public static class ConfigChecker
         {
             for (var i = 0; i < thresholds.Count; i++)
             {
-                foreach (var d in CheckLiteralSpec(thresholds[i].Color, $"{path}/thresholds/{i}/color", colorSystem))
+                if (thresholds[i].Color is ColorResolution.ColorValue.Literal thresholdLit && thresholdLit.Spec.Length > 0)
                 {
-                    yield return d;
+                    foreach (var d in CheckLiteralSpec(thresholdLit.Spec, $"{path}/thresholds/{i}/color", colorSystem))
+                    {
+                        yield return d;
+                    }
                 }
             }
         }
@@ -216,9 +238,12 @@ public static class ConfigChecker
         {
             for (var i = 0; i < match.Count; i++)
             {
-                foreach (var d in CheckLiteralSpec(match[i].Color, $"{path}/match/{i}/color", colorSystem))
+                if (match[i].Color is ColorResolution.ColorValue.Literal matchLit && matchLit.Spec.Length > 0)
                 {
-                    yield return d;
+                    foreach (var d in CheckLiteralSpec(matchLit.Spec, $"{path}/match/{i}/color", colorSystem))
+                    {
+                        yield return d;
+                    }
                 }
             }
         }

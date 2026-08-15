@@ -35,10 +35,8 @@ public class ReferenceExtractorCoverageTests
             [Member<PaneItem>(nameof(PaneItem.Format))] = (ExemptionKind.NeverAReference, "literal {}-substitution only (LeafItems.cs), not a reference form"),
             [Member<PaneItem>(nameof(PaneItem.Extract))] = (ExemptionKind.NeverAReference, "a regex applied to the item's own resolved value"),
             [Member<PaneItem>(nameof(PaneItem.Case))] = (ExemptionKind.NeverAReference, "a closed case-transform token set (\"upper\"/\"lower\")"),
-            [Member<ColorResolution.ColorRule>(nameof(ColorResolution.ColorRule.Default))] = (ExemptionKind.NeverAReference, "a literal colour spec (ColorResolution.cs), never re-parsed"),
             [Member<ColorResolution.ColorExpr.Literal>(nameof(ColorResolution.ColorExpr.Literal.Spec))] = (ExemptionKind.NeverAReference, "a literal colour spec (ColorResolution.cs), never re-parsed"),
-            [Member<ColorResolution.MatchRule>(nameof(ColorResolution.MatchRule.Color))] = (ExemptionKind.NeverAReference, "a literal colour spec, same species as ColorRule.Default"),
-            [Member<ColorResolution.ThresholdRule>(nameof(ColorResolution.ThresholdRule.Color))] = (ExemptionKind.NeverAReference, "a literal colour spec, same species as ColorRule.Default"),
+            [Member<ColorResolution.ColorValue.Literal>(nameof(ColorResolution.ColorValue.Literal.Spec))] = (ExemptionKind.NeverAReference, "a literal colour spec; anything @-prefixed became a ColorValue.TokenRef at parse time (§4.1) and is therefore covered"),
             [Member<ColorResolution.MatchRule>(nameof(ColorResolution.MatchRule.Contains))] = (ExemptionKind.NeverAReference, "a predicate over the item's own value, not an id"),
             [Member<ColorResolution.MatchRule>(nameof(ColorResolution.MatchRule.EqualsValue))] = (ExemptionKind.NeverAReference, "a predicate over the item's own value, not an id"),
             [Member<Pane>(nameof(Pane.Size))] = (ExemptionKind.NeverAReference, "a size form per §4.1 (integer/percentage/content/fill/auto), never an id"),
@@ -73,8 +71,8 @@ public class ReferenceExtractorCoverageTests
         var candidates = CollectCandidates();
 
         Assert.True(
-            candidates.Count == 19,
-            $"Expected 19 candidates from the 7 reflection roots, found {candidates.Count}: "
+            candidates.Count == 18,
+            $"Expected 18 candidates from the 8 reflection roots, found {candidates.Count}: "
                 + string.Join(", ", candidates.Select(Describe).OrderBy(s => s, StringComparer.Ordinal)));
     }
 
@@ -87,6 +85,7 @@ public class ReferenceExtractorCoverageTests
             typeof(PaneBorder),
             typeof(PaneItem),
             typeof(ColorResolution.ColorExpr),
+            typeof(ColorResolution.ColorValue),
             typeof(ColorResolution.ColorRule),
             typeof(ColorResolution.ThresholdRule),
             typeof(ColorResolution.MatchRule),

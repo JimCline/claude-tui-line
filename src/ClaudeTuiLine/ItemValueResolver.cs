@@ -39,7 +39,8 @@ public static class ItemValueResolver
     {
         var items = new List<ScanEntry>();
         var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
-        Walk(root, "", items, colorExprs);
+        var colorValues = new List<(ColorResolution.ColorValue Value, string Path)>();
+        Walk(root, "", items, colorExprs, colorValues);
 
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var id in CollectIds(items, colorExprs, tokens))
@@ -73,7 +74,8 @@ public static class ItemValueResolver
     {
         var items = new List<ScanEntry>();
         var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
-        Walk(root, "", items, colorExprs);
+        var colorValues = new List<(ColorResolution.ColorValue Value, string Path)>();
+        Walk(root, "", items, colorExprs, colorValues);
 
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         var pendingCommands = new List<ScanEntry>();
@@ -135,9 +137,19 @@ public static class ItemValueResolver
     // of a second traversal of the config tree.
     internal readonly record struct ScanEntry(PaneItem Item, bool Eligible, string Path);
 
-    private static void Walk(Pane pane, string path, List<ScanEntry> items, List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs)
+    private static void Walk(
+        Pane pane,
+        string path,
+        List<ScanEntry> items,
+        List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs,
+        List<(ColorResolution.ColorValue Value, string Path)> colorValues)
     {
-        colorExprs.Add((pane.Border.Color, path + "/border/color"));
+        var borderColorPath = path + "/border/color";
+        colorExprs.Add((pane.Border.Color, borderColorPath));
+        if (pane.Border.Color is ColorResolution.ColorExpr.Inline borderInline)
+        {
+            CollectRuleBranches(borderInline.Rule, borderColorPath, colorValues);
+        }
 
         // §2.5.1 rule 2: a content-sized pane's width is derived from measuring its own content, so
         // its command items must be resolved with CLAUDE_TUI_LINE_PANE_WIDTH unset rather than
@@ -152,19 +164,57 @@ public static class ItemValueResolver
             items.Add(new ScanEntry(item, eligible, itemPath));
             if (item.Color is { } color)
             {
-                colorExprs.Add((color, itemPath + "/color"));
+                var itemColorPath = itemPath + "/color";
+                colorExprs.Add((color, itemColorPath));
+                if (color is ColorResolution.ColorExpr.Inline itemInline)
+                {
+                    CollectRuleBranches(itemInline.Rule, itemColorPath, colorValues);
+                }
             }
         }
 
         for (var i = 0; i < pane.Children.Count; i++)
         {
-            Walk(pane.Children[i], $"{path}/children/{i}", items, colorExprs);
+            Walk(pane.Children[i], $"{path}/children/{i}", items, colorExprs, colorValues);
+        }
+    }
+
+    // SPEC-44-color-token-in-rule-branches.md §4.3: a rule's branch colours (a threshold's/match's
+    // `color`, a rule's `default`) are ColorValue, not ColorExpr — reachable from an inline rule
+    // here, and separately from every `colors`-table token in ScanReferences, since a token's own
+    // rule lives outside the pane tree this method walks. Path convention matches
+    // ConfigCheck.CheckColorRuleLiterals's existing `{path}/thresholds/{i}/color` etc.
+    private static void CollectRuleBranches(
+        ColorResolution.ColorRule rule,
+        string path,
+        List<(ColorResolution.ColorValue Value, string Path)> colorValues)
+    {
+        if (rule.Thresholds is { } thresholds)
+        {
+            for (var i = 0; i < thresholds.Count; i++)
+            {
+                colorValues.Add((thresholds[i].Color, $"{path}/thresholds/{i}/color"));
+            }
+        }
+
+        if (rule.Match is { } match)
+        {
+            for (var i = 0; i < match.Count; i++)
+            {
+                colorValues.Add((match[i].Color, $"{path}/match/{i}/color"));
+            }
+        }
+
+        if (rule.Default is { } def)
+        {
+            colorValues.Add((def, path + "/default"));
         }
     }
 
     internal readonly record struct ScanContext(
         List<ScanEntry> Items,
         List<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs,
+        List<(ColorResolution.ColorValue Value, string Path)> ColorValues,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? Tokens);
 
     // Each row carries the MemberInfo(s) its Extract delegate reads alongside the delegate itself,
@@ -248,7 +298,17 @@ public static class ItemValueResolver
             ctx => ctx.ColorExprs
                 .Select(t => (t.Path, TokenRef: t.Expr as ColorResolution.ColorExpr.TokenRef))
                 .Where(t => t.TokenRef is not null)
-                .Select(t => new ColorTokenReference(t.TokenRef!.Name, t.Path))),
+                .Select(t => new ColorTokenReference(t.TokenRef!.Name, t.Path, InRuleBranch: false))),
+
+        // SPEC-44-color-token-in-rule-branches.md §3.2/§4.3: a rule-branch colour's own @-token,
+        // flagged InRuleBranch so ConfigCheck can layer the constant-token restriction on top of
+        // the existence check the two extractors otherwise share.
+        new ColorTokenExtractor(
+            new[] { typeof(ColorResolution.ColorValue.TokenRef).GetProperty(nameof(ColorResolution.ColorValue.TokenRef.Name))! },
+            ctx => ctx.ColorValues
+                .Select(t => (t.Path, TokenRef: t.Value as ColorResolution.ColorValue.TokenRef))
+                .Where(t => t.TokenRef is not null)
+                .Select(t => new ColorTokenReference(t.TokenRef!.Name, t.Path, InRuleBranch: true))),
     };
 
     private static IReadOnlyList<string> CollectIds(
@@ -256,7 +316,7 @@ public static class ItemValueResolver
         List<(ColorResolution.ColorExpr Expr, string Path)> colorExprs,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens)
     {
-        var ctx = new ScanContext(items, colorExprs, tokens);
+        var ctx = new ScanContext(items, colorExprs, new List<(ColorResolution.ColorValue Value, string Path)>(), tokens);
         var ids = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var extractor in ReferenceExtractors)
@@ -279,7 +339,8 @@ public static class ItemValueResolver
     {
         var items = new List<ScanEntry>();
         var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
-        Walk(root, rootPath, items, colorExprs);
+        var colorValues = new List<(ColorResolution.ColorValue Value, string Path)>();
+        Walk(root, rootPath, items, colorExprs, colorValues);
         return items.Select(e => (e.Item, e.Path)).ToList();
     }
 
@@ -299,9 +360,21 @@ public static class ItemValueResolver
     {
         var items = new List<ScanEntry>();
         var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
-        Walk(root, rootPath, items, colorExprs);
+        var colorValues = new List<(ColorResolution.ColorValue Value, string Path)>();
+        Walk(root, rootPath, items, colorExprs, colorValues);
 
-        var ctx = new ScanContext(items, colorExprs, tokens);
+        // §4.3: the `colors`-table tokens' own rule branches live outside the pane tree Walk
+        // traverses, so they're collected here, once per token, using the same path convention
+        // ConfigCheck.CheckColorLiterals already uses for `/colors/{name}` diagnostics.
+        if (tokens is not null)
+        {
+            foreach (var (name, rule) in tokens)
+            {
+                CollectRuleBranches(rule, $"/colors/{name}", colorValues);
+            }
+        }
+
+        var ctx = new ScanContext(items, colorExprs, colorValues, tokens);
 
         var references = new List<IdReference>();
         var selfDeclared = new HashSet<string>(StringComparer.Ordinal);
@@ -540,8 +613,12 @@ internal readonly record struct IdReference(string Id, string Path, ReferenceFor
 /// not an item id — a structurally different type from <see cref="IdReference"/> so a dangling-name
 /// check can never be pointed at <see cref="ReferenceScan.SelfDeclaredIds"/>/the item registry by
 /// mistake; it validates against the parsed <c>colors</c> table's own keys instead.
+/// <see cref="InRuleBranch"/> is true for a <see cref="ColorResolution.ColorValue.TokenRef"/> (a
+/// rule branch's <c>color</c>, or a rule's <c>default</c>) and false for a top-position
+/// <see cref="ColorResolution.ColorExpr.TokenRef"/> — SPEC-44-color-token-in-rule-branches.md §3.2
+/// restricts only the former to naming a constant rule.
 /// </summary>
-internal readonly record struct ColorTokenReference(string Name, string Path);
+internal readonly record struct ColorTokenReference(string Name, string Path, bool InRuleBranch);
 
 /// <summary>
 /// The result of one <see cref="ItemValueResolver.ScanReferences"/> pass: every item-id reference
