@@ -4640,6 +4640,45 @@ Merged cleanly (no conflicts). Verified via `cdtui-worker` pre-merge (1330/1330)
 and post-merge on `main` (1335/1335, `check-all.sh` clean). Landed as merge
 commit `0d6cf62` (pushed).
 
+### #65: fixed the flaky PreviewCliTests/PreviewJsonRowsTests interference
+
+Root-caused the intermittent `JsonReaderException` that hit #63's and the
+#66/#64/#25 post-merge verifies. Both test classes fell back to `dotnet run
+--project ... -c Release -v quiet` whenever `CLAUDE_TUI_LINE_BIN` was unset;
+xUnit runs the two classes in parallel by default, so concurrent `dotnet run`
+invocations raced on the shared `obj`/`bin` tree, and a losing MSBuild
+diagnostic (MSB3030, leading with an absolute path) could leak onto the
+child's stdout ahead of the JSON payload. Reproduced 2 of 3 tries when forcing
+concurrent cold builds.
+
+Fix: the test project's `ProjectReference` to `src/ClaudeTuiLine` already
+copies a runnable pre-built apphost (binary name `claude-tui-line`, lowercase)
+into the test output directory — no build step needed at all. Consolidated
+four near-identical CLI-runner helpers into one `PreviewCliRunner` that
+resolves that binary once and execs it directly. Folded in a second fix:
+concurrent `ReadToEndAsync()` draining of stdout/stderr before `WaitForExit()`
+(replacing sequential draining, which risked a pipe deadlock on high-stderr
+failures). Added `[CollectionDefinition("PreviewCli", DisableParallelization =
+true)]` on both test classes, matching the existing `MinRowsDistributeTests`
+pattern, as defense in depth.
+
+One spec deviation, flagged not silently resolved: the original spec asked
+the JSON-parse helper to also fail on non-zero exit code, but that would break
+two legitimately-passing tests that expect exit 3 *with* valid JSON on stdout
+— a genuine spec self-contradiction against its own "no test assertions
+change" rule. Implemented parse-failure-only diagnostics; exit-code checking
+was not added.
+
+Two related risks noted, not touched here — filed as #68 (`ConfigTests.cs`
+sets process-wide env vars via `Environment.SetEnvironmentVariable`, a similar
+leak risk in a different file) and #69 (`ItemCache.cs` shares fixed temp paths
+across concurrent CLI subprocesses, incidentally mitigated as a side effect of
+this fix but not directly addressed).
+
+Merged cleanly (no conflicts). Verified via `cdtui-worker`: pre-merge 3x full
+runs clean (1329/1329 each), post-merge 2x full runs clean (1335/1335 each),
+`check-all.sh` clean. Landed as merge commit `4d35daf` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
