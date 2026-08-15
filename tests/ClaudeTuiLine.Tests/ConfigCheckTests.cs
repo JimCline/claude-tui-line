@@ -705,6 +705,46 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "min-exceeds-max" && d.Path == "/surface/pane" && d.Severity == DiagnosticSeverity.Error);
     }
 
+    // SPEC-V2-FRAMEWORK.md §4.0.1: maxLines is an opt-in ceiling — zero or negative has no
+    // meaningful reading, so it is rejected the same way min-exceeds-max is.
+    [Fact]
+    public void NonPositiveMaxLines_ReportsInvalidMaxLines()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Items = new List<PaneItemJsonConfig> { new() { Id = "cmd", Command = new List<string> { "echo", "hi" }, MaxLines = 0 } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "invalid-max-lines" && d.Path == "/surface/pane/items/0/maxLines" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void PositiveMaxLines_ReportsNoInvalidMaxLines()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Items = new List<PaneItemJsonConfig> { new() { Id = "cmd", Command = new List<string> { "echo", "hi" }, MaxLines = 3 } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "invalid-max-lines");
+    }
+
     [Fact]
     public void FixedChildrenExceedFixedParent_ReportsFixedSizesExceedParent()
     {
