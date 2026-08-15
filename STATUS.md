@@ -4952,6 +4952,14 @@ Added blank-surface controls (BlankSurfaceControl.cs helper: Blank(ItemContext) 
 
 Removed the prior unconditional 1-line stdout cap for command items; maxLines is now a pure opt-in ceiling with no default, per §4.0.1's explicit "Default: no cap" and the §3 erratum retiring the single-line stdout reading. Implementation reuses #75's SplitBlockLines (D2-compliant trailing-newline strip, general multi-line splitting) for both the block-model path and the newly-uncapped output, confirmed safe against embedded-newline and trailing-newline edge cases by direct empirical test through the production render path. New CheckMaxLines diagnostic rejects maxLines <= 0. Render note on truncation: `item '{id}' emitted {n} lines; {kept} kept (maxLines)`.
 
+### #27: §2.4.1 + §2.6 per-row trim condition and vertical ellipsis budget
+
+RowLayout.Wrap rewritten with a one-row lookahead (PackRow/Compose helpers) per SPEC-3.1-block-model.md Amendment A3: on the row that would exceed the cap, the unit re-packs and splices a truncation via SegmentTruncation.Truncate when content overflows or a marker is required. PaneAssembler gained a RenderUnit(Segments, Rows) record and ApplyRowBudget (replacing ClipRows): finds the smallest unit where cumulative rows meet the cap, keeps everything before it, re-invokes that unit with the remaining budget and markerRequired:true, drops everything after. PaneRenderer.cs is now a thin passthrough; SegmentTruncation.cs (new) extracts the truncation/wrap helpers per §9.4. Merged as 25facff.
+
+### Test-isolation fix: CommandProviderTests fixed-tempdir cache collision
+
+CommandProviderTests.MaxLinesSet_OutputExceedsCap_TruncatesAndEmitsPinnedNote passed on a cold cache and failed deterministically on every subsequent run against the same commit — not a #65-style concurrency flake, but a #69-style fixed-temp-path defect: the test passed `cacheDir: Path.GetTempPath()` with a fixed id, so run 1 executed live (truncated, emitted the note, wrote the cache), and every run after served from cache (correct value, no note, because the note-emission code path never re-ran). Fix: added an `IsolatedTempDir([CallerMemberName] testName)` helper and applied it to this test's cacheDir/widthsDir (the only test in the file that asserts on notes, so the only one that noticed the shared-tempdir defect). CommandProvider.cs untouched — test-only change. Test renamed to `...TruncatesAndEmitsMaxLinesNote` (nothing in src/ emits a "pinned" note). Merged as c304a86.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
