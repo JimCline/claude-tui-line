@@ -356,6 +356,20 @@ public static class SizeResolver
         };
     }
 
+    // SPEC-2.3-drop-predicate.md §3: the drop-retry loops' per-pane test — never below 1 cell (§3(a):
+    // Floor returns 0 for content panes, so a bare grant-vs-Floor test would never fire for them),
+    // and suppression-aware for fill/percent (§3(b)): border suppression is tested before the drop
+    // floor, and when it applies the floor drops to MinUsableWidth alone, since a suppressed border
+    // no longer needs OwnBorderReserve. Reuses ShouldSuppressBorder as-is rather than restating its
+    // condition, so the two checks cannot drift apart.
+    private static int DropFloor(Pane pane, int grant, bool collapse, bool excludeLeft, bool excludeRight)
+    {
+        var floor = ShouldSuppressBorder(pane, grant)
+            ? RowLayout.MinUsableWidth
+            : Floor(pane, collapse, excludeLeft, excludeRight);
+        return Math.Max(1, floor);
+    }
+
     // One run of the six-step allocation (§2.3), operating on whatever child list/request set the
     // caller currently has — a single pass, no fixpoint, no dropping.
     private static AllocResult AllocateOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, IReadOnlyList<int> requests, bool collapse)
@@ -465,7 +479,13 @@ public static class SizeResolver
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
             {
-                if (ClassifySize(current[i].Size).Kind != SizeKind.Fixed && result.Grants[i] < 1)
+                if (ClassifySize(current[i].Size).Kind == SizeKind.Fixed)
+                {
+                    continue;
+                }
+
+                var floor = DropFloor(current[i], result.Grants[i], collapse, excludeLeft: collapse && i > 0, excludeRight: collapse && i < current.Count - 1);
+                if (result.Grants[i] < floor)
                 {
                     tooSmall = true;
                     break;
@@ -487,8 +507,20 @@ public static class SizeResolver
 
             // §9.8.2: the dropped pane is always the current list's last child, whose 1-based
             // position in it equals current.Count before this truncation — stable across repeated
-            // drops because only the tail is ever removed.
-            notes.Add($"pane {current.Count} dropped: no width remained at {splitOuterWidth} columns");
+            // drops because only the tail is ever removed. SPEC-2.3-drop-predicate.md §4: an
+            // over-allocated split wins the tie over a below-floor one when both hold on the same
+            // iteration, since the sum violation applies to every remaining pane at once.
+            if (overAllocated)
+            {
+                notes.Add($"pane {current.Count} dropped: children need {result.Grants.Sum()} columns at {splitOuterWidth} columns");
+            }
+            else
+            {
+                var lastIndex = current.Count - 1;
+                var lastFloor = DropFloor(current[lastIndex], result.Grants[lastIndex], collapse, excludeLeft: collapse && lastIndex > 0, excludeRight: false);
+                notes.Add($"pane {current.Count} dropped: {result.Grants[lastIndex]} columns is under its {lastFloor}-column floor at {splitOuterWidth} columns");
+            }
+
             current = current.Take(current.Count - 1).ToList();
             currentRequests = currentRequests.Take(current.Count).ToList();
         }
@@ -527,7 +559,18 @@ public static class SizeResolver
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
             {
-                if (ClassifySize(current[i].Size).Kind != SizeKind.Fixed && result.Grants[i] < 1)
+                if (ClassifySize(current[i].Size).Kind == SizeKind.Fixed)
+                {
+                    continue;
+                }
+
+                // SPEC-2.3-drop-predicate.md §8: SolveMinRows's own candidate floors come from the
+                // 1-arg Floor overload (collapse-blind), so this drop test matches that — collapse:
+                // false, no excluded edges — rather than the split's actual collapse flag. Fixing
+                // min-rows' own collapse-blindness is a separate, larger change and out of scope
+                // here; this keeps the drop test consistent with the allocation it is checking.
+                var floor = DropFloor(current[i], result.Grants[i], collapse: false, excludeLeft: false, excludeRight: false);
+                if (result.Grants[i] < floor)
                 {
                     tooSmall = true;
                     break;
@@ -550,7 +593,18 @@ public static class SizeResolver
             // position in it equals current.Count before this truncation — stable across repeated
             // drops because only the tail is ever removed. §2.3.3:1220-1222 makes this note the
             // stated observable consequence of min-rows' own over-constrained fallback.
-            notes.Add($"pane {current.Count} dropped: no width remained at {splitOuterWidth} columns");
+            // SPEC-2.3-drop-predicate.md §4: over-allocated wins the tie over below-floor.
+            if (overAllocated)
+            {
+                notes.Add($"pane {current.Count} dropped: children need {result.Grants.Sum()} columns at {splitOuterWidth} columns");
+            }
+            else
+            {
+                var lastIndex = current.Count - 1;
+                var lastFloor = DropFloor(current[lastIndex], result.Grants[lastIndex], collapse: false, excludeLeft: false, excludeRight: false);
+                notes.Add($"pane {current.Count} dropped: {result.Grants[lastIndex]} columns is under its {lastFloor}-column floor at {splitOuterWidth} columns");
+            }
+
             current = current.Take(current.Count - 1).ToList();
         }
     }

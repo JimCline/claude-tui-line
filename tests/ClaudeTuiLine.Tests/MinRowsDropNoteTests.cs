@@ -77,8 +77,8 @@ public class MinRowsDropNoteTests
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
-        Assert.Contains(notes.Notes, n => n.Message.StartsWith("pane 3 dropped: no width remained at", StringComparison.Ordinal));
-        Assert.Contains(notes.Notes, n => n.Message.StartsWith("pane 2 dropped: no width remained at", StringComparison.Ordinal));
+        Assert.Contains(notes.Notes, n => n.Message.StartsWith("pane 3 dropped: 0 columns is under its 1-column floor at", StringComparison.Ordinal));
+        Assert.Contains(notes.Notes, n => n.Message.StartsWith("pane 2 dropped: 0 columns is under its 1-column floor at", StringComparison.Ordinal));
         Assert.Single(resolved.Children);
     }
 }

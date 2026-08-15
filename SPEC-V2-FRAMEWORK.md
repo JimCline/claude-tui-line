@@ -874,11 +874,28 @@ duplicate of an output, and the version that goes stale is always the one no tes
 special "the surface is too tight" mode is describing this formula's *outcome* — there is no
 second code path, and implementing one violates §1.
 
-No child may resolve below 1 cell; children that would are **dropped entirely** rather than
-rendered at a nonsense width, and the freed space is redistributed. A **`fill` or percent** pane
-whose resolved inner width falls under `MinUsableWidth` (20) suppresses its own border first
-(SPEC.md §6b narrow-width suppression, now applied per pane rather than per surface), and is
-dropped only if it still does not fit.
+No child may resolve below its **drop floor**, and children granted less are **dropped entirely**
+rather than rendered at a nonsense width, with the freed space redistributed. A pane's drop floor
+is its `floor(p)` from the table above, never less than 1 cell — a `content` pane's `floor(p)` is
+0, because it asked for its width and was granted it, so 1 cell is the operative minimum there and
+the only pane it ever drops is one granted nothing at all.
+
+A **`fill` or percent** pane whose resolved inner width falls under `MinUsableWidth` (20)
+suppresses its own border first (SPEC.md §6b narrow-width suppression, now applied per pane rather
+than per surface), and is dropped only if it still does not fit. **Suppression precedes the drop
+test, and lowers the floor it is tested against**: once the border is gone the pane no longer needs
+the reserve that paid for it, so its drop floor is `MinUsableWidth` alone. Testing the
+border-inclusive floor against a pane that would have survived without its border drops a pane §2.3
+requires be kept.
+
+**The allocator must test this predicate; deriving the floor is not enough.** Every allocation path
+in §2.3.1 can hand back a grant below the floor it just computed, because none of them subtract the
+floor from anything: the fill divide splits whatever remains, which may be less than the floors it
+was divided among, and §2.3.3's over-constrained fixpoint returns floors that were never summed
+against the budget at all. A grant below its floor that is not dropped is a `minSize` the author
+declared and the renderer silently ignored — the failure this floor exists to prevent. An
+implementation that computes `floor(p)` for allocation and then drops on "was anything left" has
+not implemented this rule.
 
 `MinUsableWidth` governs `fill` and percent panes **only** — for border suppression exactly as
 it does for the viability floor above, and for the same reason: *a pane sized to its own content
