@@ -43,6 +43,12 @@ public static class AcceptedCommand
             new("overflow", OverflowModeParsing.AcceptedTokens, null),
             new("case", ItemValueResolver.CaseAcceptedTokens, null),
             new("height", PaneHeightParsing.AcceptedTokens, null),
+
+            // size stays undecomposed: SPEC-V2-FRAMEWORK.md §1.1.3 section 3 ("size stays
+            // undecomposed — ruled, not left open") already weighed splitting this into
+            // accepted: ["content","fill","auto"] + alsoAccepted: "an integer, or a percentage"
+            // and rejected it. Reopening that ruling means amending §1.1.1, §1.1.2, and §1.1.3
+            // together, not just this line.
             new("size", null, ConfigChecker.FormatAccepted(ConfigChecker.SizeValues)),
         };
 
