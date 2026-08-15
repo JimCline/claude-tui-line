@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace ClaudeTuiLine.Tests;
@@ -11,6 +10,7 @@ namespace ClaudeTuiLine.Tests;
 // statements compile local functions in a way reflection can't cleanly address even with
 // InternalsVisibleTo), so these tests exercise the built CLI as a subprocess — the same mechanism
 // tools/check-examples.sh already uses to check this document's JSON shapes against real output.
+[Collection("PreviewCli")]
 public class PreviewJsonRowsTests
 {
     [Fact]
@@ -19,10 +19,10 @@ public class PreviewJsonRowsTests
         var configPath = WriteTempConfig("{}");
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--json", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
-            using var doc = JsonDocument.Parse(stdout);
+            using var doc = PreviewCliRunner.ParseJsonOrFail((exitCode, stdout, stderr));
             var root = doc.RootElement;
 
             Assert.Equal(60, root.GetProperty("columns").GetInt32());
@@ -71,10 +71,10 @@ public class PreviewJsonRowsTests
         """);
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--json", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
-            using var doc = JsonDocument.Parse(stdout);
+            using var doc = PreviewCliRunner.ParseJsonOrFail((exitCode, stdout, stderr));
             var rowList = doc.RootElement.GetProperty("rows").EnumerateArray().ToList();
 
             Assert.NotEmpty(rowList);
@@ -112,10 +112,10 @@ public class PreviewJsonRowsTests
         """);
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--json", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
-            using var doc = JsonDocument.Parse(stdout);
+            using var doc = PreviewCliRunner.ParseJsonOrFail((exitCode, stdout, stderr));
             var rowList = doc.RootElement.GetProperty("rows").EnumerateArray().ToList();
 
             Assert.NotEmpty(rowList);
@@ -142,7 +142,7 @@ public class PreviewJsonRowsTests
         var configPath = WriteTempConfig("{}");
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--json", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
             Assert.Contains("\"columns\":", stdout);
@@ -166,62 +166,4 @@ public class PreviewJsonRowsTests
         return path;
     }
 
-    static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] cliArgs)
-    {
-        var bin = Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_BIN");
-        ProcessStartInfo psi;
-        if (!string.IsNullOrWhiteSpace(bin) && File.Exists(bin))
-        {
-            psi = new ProcessStartInfo(bin)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-            };
-        }
-        else
-        {
-            var repoRoot = FindRepoRoot();
-            var csproj = Path.Combine(repoRoot, "src", "ClaudeTuiLine", "ClaudeTuiLine.csproj");
-            psi = new ProcessStartInfo("dotnet")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-            };
-            psi.ArgumentList.Add("run");
-            psi.ArgumentList.Add("--project");
-            psi.ArgumentList.Add(csproj);
-            psi.ArgumentList.Add("-c");
-            psi.ArgumentList.Add("Release");
-            psi.ArgumentList.Add("-v");
-            psi.ArgumentList.Add("quiet");
-            psi.ArgumentList.Add("--");
-        }
-
-        foreach (var arg in cliArgs)
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException("failed to start claude-tui-line process");
-        process.StandardInput.Close();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, stdout, stderr);
-    }
-
-    static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "SPEC-V2-FRAMEWORK.md")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException($"could not locate repo root (SPEC-V2-FRAMEWORK.md not found above {AppContext.BaseDirectory})");
-    }
 }
