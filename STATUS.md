@@ -4990,7 +4990,7 @@ Two files (`SPEC-2.6-vertical-marker-splice.md`, `SPEC-3.1-block-model.md`) sat 
 
 **Two open items surfaced during this review, not yet actioned:**
 - SPEC-2.6 §9.8's E2 (highest severity in #27): does a `RenderLeaf` result cache exist in code today, and if so does its key include both new members? Under §9.2.2 unit `k` is rendered twice per pane render — once `(null, false)`, once `(budget, true)` — a cache keyed on the old signature would silently return the first result for the second call, dropping every marker. Needs a grep before #27 implementation starts.
-- SPEC-3.1 §7.3's N1 (open, cdtui-architect's own): what does `RowLayout.Wrap` do with an embedded newline once the cap is lifted? Should be answered before #31's merge decision — the only remaining item that could change it.
+- SPEC-3.1 section 7.3's N1 (open, cdtui-architect's own): what does `RowLayout.Wrap` do with an embedded newline once the cap is lifted? Should be answered before #31's merge decision — the only remaining item that could change it.
 
 ### #39: §12.6.11 compare-and-branch on the re-read (test-only)
 
@@ -4999,6 +4999,10 @@ Per cdtui-arch2's scoping ruling: §12.6.11 applies only to commands that alread
 ### #81: migrate.md consent-disclosure fix for existing config overwrite
 
 Per cdtui-arch2's ruling (SPEC-81-migrate-overwrite.md): reframed from a missing-guard problem to a consent-integrity defect — `migrate.md`'s existing step-7 consent gate never disclosed that an existing config would be overwritten, even though step 2's backup-ledger procedure already determines config-existence for free (to populate `configCopy`/`null`). Added a 5th disclosure item (existence + resolved path only, never contents) to both branches of step 7, using the same resolved-path phrasing as step 8's write. Separately fixed: step 8's report previously over-promised that `/claude-tui-line:revert` restores the config file — it deliberately does not (only the statusLine entry); corrected to name the backup ledger's `configCopy` path as the only recovery route. `revert.md` untouched. SPEC-V2-FRAMEWORK.md §12.3 gained the corresponding amendment; the existing §10 migrate/edit/migrate-again scenario (bullet 11) was confirmed against its actual text before being extended, rather than assuming the cited line numbers. 1425/1425 tests pass, docs-only change. Merged as 7cac40a.
+
+### #82: `--colors` renders at the terminal's real palette, not resolved truecolor
+
+Per cdtui-arch2's ruling (SPEC-colors-terminal-fidelity.md, Amendment A1): `--colors`'s swatch preview rendered through the global auto-detecting `AnsiConsole`, which on a truecolor-capable terminal resolves named colors to 24-bit RGB escapes that bypass terminal ANSI-palette customization (e.g. iTerm2 profile remapping). The statusline render path itself was unaffected — it already pins `ColorSystem` to `Standard`. New `ColorsConsole.Create(TextWriter, AnsiSupport)` factory (`src/ClaudeTuiLine/ColorsConsole.cs`, a new `internal static class` matching the codebase's existing one-concern-one-file pattern) pins `ColorSystem` to `Standard` while leaving `Ansi` auto-detected, so piped output still degrades to bare names as before. Amendment A1 relocated the fix out of `Program.cs` after a CS0106 build blocker: `Program.cs` uses top-level statements with no explicit `Program` class, so a new method there is necessarily a `private` local function unreachable from tests via `InternalsVisibleTo` — the original spec's `internal static` signature was unimplementable as written. `CreateRenderConsole` (Program.cs:135) deliberately left untouched; the two consoles' differing `ColorSystem`/`Ansi` settings must never be harmonized. 1426/1426 core tests pass (re-verified independently post-merge, since the merge auto-combined SPEC-V2-FRAMEWORK.md edits with #81's). Merged as 2cedc89.
 
 ## Standing constraints
 
