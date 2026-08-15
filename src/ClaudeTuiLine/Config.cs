@@ -253,11 +253,56 @@ public sealed class PaneItemJsonConfig
     [JsonPropertyName("maxLines")]
     public int? MaxLines { get; set; }
 
+    /// <summary>SPEC-V2-FRAMEWORK.md §3.3: this item's fragments, concatenated with no separator between them.</summary>
+    [JsonPropertyName("parts")]
+    public List<PaneItemPartJsonConfig>? Parts { get; set; }
+
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
     /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
     /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
     /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §3.3: one fragment of a compound item. Exactly one of <see cref="Text"/>/
+/// <see cref="Item"/>/<see cref="From"/> is the part's source; the rest of the vocabulary is the
+/// same one a pane item carries, because a part is an item fragment. <see cref="Parts"/> and
+/// <see cref="Link"/> are declared solely so §3.3's one-level and item-level-link rules are
+/// reported as <c>part-forbidden-key</c> errors rather than as <c>unknown-key</c> warnings.
+/// </summary>
+public sealed class PaneItemPartJsonConfig
+{
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+
+    [JsonPropertyName("item")]
+    public string? Item { get; set; }
+
+    [JsonPropertyName("from")]
+    public string? From { get; set; }
+
+    [JsonPropertyName("extract")]
+    public string? Extract { get; set; }
+
+    [JsonPropertyName("case")]
+    public string? Case { get; set; }
+
+    [JsonPropertyName("format")]
+    public string? Format { get; set; }
+
+    [JsonPropertyName("color")]
+    [JsonConverter(typeof(ColorExprJsonConverter))]
+    public ColorExprJsonConfig? Color { get; set; }
+
+    [JsonPropertyName("parts")]
+    public List<PaneItemPartJsonConfig>? Parts { get; set; }
+
+    [JsonPropertyName("link")]
+    public string? Link { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 }
@@ -468,6 +513,7 @@ internal sealed class BorderConfigConverter : JsonConverter<BorderConfig?>
 [JsonSerializable(typeof(SurfaceConfig))]
 [JsonSerializable(typeof(PaneConfig))]
 [JsonSerializable(typeof(PaneItemJsonConfig))]
+[JsonSerializable(typeof(PaneItemPartJsonConfig))]
 [JsonSerializable(typeof(ThresholdJsonConfig))]
 [JsonSerializable(typeof(MatchJsonConfig))]
 public partial class ConfigJsonContext : JsonSerializerContext
@@ -794,8 +840,19 @@ public static class ConfigLoader
             i.From,
             i.Extract,
             i.Case,
-            i.MaxLines)).ToList()
+            i.MaxLines,
+            ToPaneItemParts(i.Parts))).ToList()
         ?? (IReadOnlyList<PaneItem>)Array.Empty<PaneItem>();
+
+    private static IReadOnlyList<PaneItemPart>? ToPaneItemParts(List<PaneItemPartJsonConfig>? parts) =>
+        parts?.Select(p => new PaneItemPart(
+            p.Text,
+            p.Item,
+            p.From,
+            p.Extract,
+            p.Case,
+            p.Format,
+            ParseColorExpr(p.Color, p.Item))).ToList();
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.9 ruling: absent an explicit <c>border.enabled</c>, a leaf pane

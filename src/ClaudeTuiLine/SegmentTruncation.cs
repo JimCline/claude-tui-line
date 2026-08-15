@@ -19,6 +19,15 @@ internal static class SegmentTruncation
     // innerWidth is not greater than the marker's width.
     internal static Segment Truncate(Segment segment, int innerWidth, string ellipsis)
     {
+        // §3.3/SPEC-85 §5.2: a compound segment's Spans must survive truncation so surviving
+        // parts keep their per-part colour (the "one genuinely hard finding" — SegmentTruncation
+        // otherwise degrades any composite markup to unstyled text). Every non-compound segment
+        // has Spans == null and falls through to the untouched logic below, byte-for-byte.
+        if (segment.Spans is not null)
+        {
+            return TruncateSpans(segment, innerWidth, ellipsis);
+        }
+
         if (innerWidth <= 0)
         {
             return Restyle(segment, string.Empty);
@@ -47,6 +56,97 @@ internal static class SegmentTruncation
         return new Segment(OscHyperlink.Wrap(url, restyledContent.Markup) + restyledEllipsis.Markup, newPlain);
     }
 
+    // Span-aware counterpart of Truncate's body above, for a compound segment (Spans != null).
+    // §5.2: the ellipsis is appended outside the last surviving span, unstyled — never restyled
+    // into the severed span's colour.
+    private static Segment TruncateSpans(Segment segment, int innerWidth, string ellipsis)
+    {
+        if (innerWidth <= 0)
+        {
+            return RestyleSlice(segment, 0, 0);
+        }
+
+        if (!MarkerFits(innerWidth, ellipsis))
+        {
+            var hardCut = SafeCutIndex(segment.Plain, Math.Min(innerWidth, segment.Plain.Length));
+            return RestyleSlice(segment, 0, hardCut);
+        }
+
+        var contentBudget = innerWidth - ellipsis.Length;
+        var cutIndex = SafeCutIndex(segment.Plain, Math.Min(contentBudget, segment.Plain.Length));
+        var styledContent = RestyleSlice(segment, 0, cutIndex);
+        var escapedEllipsis = Spectre.Console.Markup.Escape(ellipsis);
+        var newMarkup = styledContent.Markup + escapedEllipsis;
+        var newPlain = styledContent.Plain + ellipsis;
+
+        // The ellipsis sits outside any link the content carries, so the result is no longer a
+        // link-wrapped decomposition and cannot satisfy §12.3's invariant — a truncated segment is
+        // terminal (nothing slices it again), so it drops its Spans instead. With no link the
+        // ellipsis is just one more unstyled span and the decomposition survives intact.
+        if (styledContent.Spans is not { } contentSpans || OscHyperlink.TryUnwrap(styledContent.Markup, out _, out _))
+        {
+            return new Segment(newMarkup, newPlain);
+        }
+
+        var spans = new List<StyledSpan>(contentSpans) { new(ellipsis, escapedEllipsis) };
+        return new Segment(newMarkup, newPlain, spans);
+    }
+
+    // §5.1/§5.2 of SPEC-85: slices a Segment to [start, end) of its Plain. When the segment
+    // carries no span decomposition this is byte-for-byte today's Restyle. When it does, a span
+    // entirely outside the slice is dropped, a span entirely inside is copied verbatim (markup
+    // included — the surviving-spans-keep-their-markup rule), and a span the boundary lands
+    // inside is cut and re-styled through the single-span Restyle/RestyleSimple path so the
+    // degradation from a composite markup a cut cannot preserve is bounded to that one fragment.
+    internal static Segment RestyleSlice(Segment original, int start, int end)
+    {
+        if (original.Spans is not { } spans)
+        {
+            return Restyle(original, original.Plain[start..end]);
+        }
+
+        // §12.3: an OSC 8 link wraps the style markup from outside the decomposition, so it is
+        // unwrapped before slicing and re-applied after — the same layering Restyle uses, and
+        // what re-opens the link on every continuation row when WrapToWidth chunks a segment.
+        var linked = OscHyperlink.TryUnwrap(original.Markup, out var url, out _);
+
+        var surviving = new List<StyledSpan>();
+        var offset = 0;
+        foreach (var span in spans)
+        {
+            var spanStart = offset;
+            var spanEnd = offset + span.Plain.Length;
+            offset = spanEnd;
+
+            if (spanEnd <= start || spanStart >= end)
+            {
+                continue;
+            }
+
+            if (spanStart >= start && spanEnd <= end)
+            {
+                surviving.Add(span);
+                continue;
+            }
+
+            var sliceStart = Math.Max(start, spanStart) - spanStart;
+            var sliceEnd = Math.Min(end, spanEnd) - spanStart;
+            var restyled = Restyle(new Segment(span.Markup, span.Plain), span.Plain[sliceStart..sliceEnd]);
+            surviving.Add(new StyledSpan(restyled.Plain, restyled.Markup));
+        }
+
+        if (surviving.Count == 0)
+        {
+            // Nothing survives: emit a bare empty segment rather than an empty link or an empty
+            // colour wrap. §8.9 — no decoration may be emitted around no text.
+            return new Segment(string.Empty, string.Empty);
+        }
+
+        var plain = string.Concat(surviving.Select(s => s.Plain));
+        var styleMarkup = string.Concat(surviving.Select(s => s.Markup));
+        return new Segment(linked ? OscHyperlink.Wrap(url, styleMarkup) : styleMarkup, plain, surviving);
+    }
+
     // §2.6 wrap, trap 1 (break on plain text only) and trap 2 (style re-emitted on every
     // continuation row): chunks the oversized segment's Plain text into innerWidth-wide pieces
     // and restyles each piece independently, so every resulting Segment carries its own style.
@@ -55,7 +155,7 @@ internal static class SegmentTruncation
         var chunks = new List<Segment>();
         if (innerWidth <= 0)
         {
-            chunks.Add(Restyle(segment, string.Empty));
+            chunks.Add(RestyleSlice(segment, 0, 0));
             return chunks;
         }
 
@@ -63,7 +163,7 @@ internal static class SegmentTruncation
         while (i < segment.Plain.Length)
         {
             var end = SafeCutIndex(segment.Plain, Math.Min(i + innerWidth, segment.Plain.Length));
-            chunks.Add(Restyle(segment, segment.Plain[i..end]));
+            chunks.Add(RestyleSlice(segment, i, end));
             i = end;
         }
 

@@ -81,15 +81,39 @@ public static class SegmentBuilder
     }
 
     /// <summary>
+    /// SPEC-85-ADDENDUM-spans-threading.md §12/D-F: one compound part's <see cref="StyledSpan"/>
+    /// markup as a clean <c>"[color]text[/]"</c> (or unstyled) wrap — unlike
+    /// <see cref="BuildItemSegment(string,string?)"/>, no trailing raw SGR reset is baked in.
+    /// That reset exists to stop a command's raw stdout bleeding into an adjacent segment, which
+    /// does not apply here (a compound part's text is never raw script output); its escaped-bracket
+    /// form also breaks <see cref="SegmentTruncation.TryGetSimpleWrap"/>'s exact-suffix match, so a
+    /// span truncated mid-part would silently lose its colour.
+    /// </summary>
+    internal static string BuildSpanMarkup(string plain, string? color)
+    {
+        var escaped = Markup.Escape(plain);
+        return string.IsNullOrEmpty(color) ? escaped : $"[{color}]{escaped}[/]";
+    }
+
+    /// <summary>
     /// Builds one item segment from its own already-tagged markup, with an optional outer colour
     /// wrapped around it. SPEC-V2-FRAMEWORK.md §6: a config <c>color</c> nests around an item's
     /// internal markup rather than replacing it — Spectre gives the inner tags their own span and
     /// leaves the outer colour to claim whatever text they don't.
     /// </summary>
-    public static Segment BuildItemSegment(string plain, string markup, string? color) =>
+    public static Segment BuildItemSegment(string plain, string markup, string? color, IReadOnlyList<StyledSpan>? spans = null) =>
         string.IsNullOrEmpty(color)
-            ? new Segment(markup, plain)
-            : new Segment($"[{color}]{markup}[/]", plain);
+            ? new Segment(markup, plain, spans)
+            : new Segment($"[{color}]{markup}[/]", plain, null);
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §3.3: assembles a compound item's per-part spans into one
+    /// <see cref="Segment"/> — the sole place that establishes the <see cref="Segment.Spans"/>
+    /// invariant (§5.1: concatenated span <c>Plain</c>/<c>Markup</c> equal the segment's own).
+    /// No separator is inserted between spans.
+    /// </summary>
+    public static Segment BuildCompoundSegment(IReadOnlyList<StyledSpan> spans) =>
+        new(string.Concat(spans.Select(s => s.Markup)), string.Concat(spans.Select(s => s.Plain)), spans);
 
     internal static Segment? BuildDirectory(string? cwd) =>
         string.IsNullOrEmpty(cwd) ? null : SingleColor("teal", Basename(cwd));

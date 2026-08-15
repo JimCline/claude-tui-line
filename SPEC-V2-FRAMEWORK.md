@@ -2698,6 +2698,9 @@ Rules, each closing a silent failure:
   markup — including closing any span the cut lands inside. A truncation that severs a colour
   span mid-way and emits an unclosed SGR bleeds colour into the border. This is the one
   genuinely new implementation hazard here and needs its own test.
+- **A compound whose value spans more than one line loses per-part colour.** The block-layout
+  path (§3.1) renders each line as its own single-colour `Segment`, not through the span
+  decomposition above — an accepted, documented limitation, not a silent one.
 - **A literal is bound to its adjacent values and disappears with them.** A literal part is
   dropped when **any value part adjacent to it resolved to empty**, evaluated against the
   *original* array positions rather than against what earlier removals left behind. `agent:` does
@@ -5399,6 +5402,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `overflow-forbidden-position` | `overflow: "overflow"` where §2.6 forbids it | error | 9.4.1 |
 | `unknown-item-id` | `{ "item": … }` selector, derived `from`, or argv `{id}` naming nothing | error | 9.4.1 |
 | `from-derived-source` | derived `from` naming another derived item — present, but forbidden here | error | 9.4.1 |
+| `from-compound-source` | item-level or part-level `from` naming a compound item — a compound writes no value into the resolution dictionary, so this can never work | error | 3.3 |
 | `unknown-link-target` | `link` `{other-id}` naming nothing; link dropped, text survives | warning | 9.4.1 |
 | `unknown-color-source` | colour rule `from` naming nothing, inline or in the `colors` table | warning | 9.4.1 |
 | `unknown-color-token` | `@name` naming no entry **in the `colors` table** — a different namespace from item ids | warning | 6.3 |

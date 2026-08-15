@@ -42,6 +42,10 @@ public class ReferenceExtractorCoverageTests
             [Member<Pane>(nameof(Pane.Size))] = (ExemptionKind.NeverAReference, "a size form per §4.1 (integer/percentage/content/fill/auto), never an id"),
             [Member<Pane>(nameof(Pane.Ellipsis))] = (ExemptionKind.NeverAReference, "literal display text"),
             [Member<PaneBorder>(nameof(PaneBorder.Style))] = (ExemptionKind.NeverAReference, "Spectre.Console's BoxBorder — a foreign type, not recursed into"),
+            [Member<PaneItemPart>(nameof(PaneItemPart.Text))] = (ExemptionKind.NeverAReference, "a compound part's literal text, never a reference"),
+            [Member<PaneItemPart>(nameof(PaneItemPart.Extract))] = (ExemptionKind.NeverAReference, "a regex applied to the part's own resolved value"),
+            [Member<PaneItemPart>(nameof(PaneItemPart.Case))] = (ExemptionKind.NeverAReference, "a closed case-transform token set (\"upper\"/\"lower\")"),
+            [Member<PaneItemPart>(nameof(PaneItemPart.Format))] = (ExemptionKind.NeverAReference, "literal {}-substitution only (LeafItems.cs), not a reference form"),
         };
 
     [Fact]
@@ -71,8 +75,8 @@ public class ReferenceExtractorCoverageTests
         var candidates = CollectCandidates();
 
         Assert.True(
-            candidates.Count == 18,
-            $"Expected 18 candidates from the 8 reflection roots, found {candidates.Count}: "
+            candidates.Count == 24,
+            $"Expected 24 candidates from the 8 reflection roots, found {candidates.Count}: "
                 + string.Join(", ", candidates.Select(Describe).OrderBy(s => s, StringComparer.Ordinal)));
     }
 

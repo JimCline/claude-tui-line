@@ -58,6 +58,79 @@ public class ConfigCheckTests
         Assert.Contains(diagnostics, d => d.Code == "from-derived-source" && d.Path == "/items/0/from" && d.Severity == DiagnosticSeverity.Error);
     }
 
+    // SPEC-85-ADDENDUM-spans-threading.md §12.8: an item-level `from` naming a compound item's own
+    // id can never work — a compound writes no value into the resolution dictionary.
+    [Fact]
+    public void FromNamingCompoundItem_ReportsFromCompoundSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Id = "a", From = "agent-badge" },
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "from-compound-source" && d.Path == "/items/0/from" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    // §12.8: a compound part's own `from` naming a compound id is the same hole at part position.
+    [Fact]
+    public void PartFromNamingCompoundItem_ReportsFromCompoundSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new()
+                {
+                    Id = "a",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { From = "agent-badge" } },
+                },
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "from-compound-source" && d.Path == "/items/0/parts/0/from" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    // §12.8.3: precedence — an item carrying both `parts` and `from` reports the compound reason,
+    // not from-derived-source, for the *referencing* item's own from (§4.4 rules `parts` wins on
+    // the node that declares both; this checks the id being pointed AT is reported as compound).
+    [Fact]
+    public void FromNamingCompoundItem_DoesNotAlsoReportFromDerivedSource()
+    {
+        var config = new UserConfig
+        {
+            Items = new List<PaneItemJsonConfig>
+            {
+                new() { Id = "a", From = "agent-badge" },
+                new()
+                {
+                    Id = "agent-badge",
+                    Parts = new List<PaneItemPartJsonConfig> { new() { Text = "agent:" } },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "from-derived-source" && d.Path == "/items/0/from");
+    }
+
     [Fact]
     public void LinkPlaceholderNamingNothing_ReportsUnknownLinkTargetAsWarning()
     {

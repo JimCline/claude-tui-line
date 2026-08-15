@@ -44,6 +44,7 @@ public sealed record CheckFailureJson(
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = false)]
 [JsonSerializable(typeof(CheckResultJson))]
 [JsonSerializable(typeof(CheckFailureJson))]
+[JsonSerializable(typeof(PaneItemPartJsonConfig))]
 public partial class CheckJsonContext : JsonSerializerContext
 {
 }
@@ -80,6 +81,7 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckEmptyPanes(root, rootPath));
         diagnostics.AddRange(CheckUnknownKeys(config));
         diagnostics.AddRange(CheckMaxLines(root, rootPath));
+        diagnostics.AddRange(CheckCompoundParts(config));
         return diagnostics;
     }
 
@@ -116,6 +118,11 @@ public static class ConfigChecker
                     _ => (DiagnosticSeverity.Error, "unknown-item-id"),
                 };
                 yield return new Diagnostic(reference.Path, severity, code, $"no item named '{reference.Id}'");
+            }
+            else if (reference.Form == ReferenceForm.DerivedFrom && scan.CompoundItemIds.Contains(reference.Id))
+            {
+                yield return new Diagnostic(reference.Path, DiagnosticSeverity.Error, "from-compound-source",
+                    $"'{reference.Id}' is a compound item; a compound item has no single value for 'from' to read");
             }
             else if (reference.Form == ReferenceForm.DerivedFrom && scan.DerivedItemIds.Contains(reference.Id))
             {
@@ -500,6 +507,17 @@ public static class ConfigChecker
         {
             yield return UnknownEnumValue(path + "/case", item.Case, "case", ItemValueResolver.CaseAcceptedTokens);
         }
+
+        if (item.Parts is { } parts)
+        {
+            for (var i = 0; i < parts.Count; i++)
+            {
+                if (ItemValueResolver.IsUnrecognizedCase(parts[i].Case))
+                {
+                    yield return UnknownEnumValue($"{path}/parts/{i}/case", parts[i].Case, "case", ItemValueResolver.CaseAcceptedTokens);
+                }
+            }
+        }
     }
 
     private static Diagnostic UnknownEnumValue(string path, string? value, string fieldName, IReadOnlyList<string> accepted) =>
@@ -552,6 +570,47 @@ public static class ConfigChecker
 
     private static IEnumerable<Diagnostic> CheckKeyNotApplicable(UserConfig? config)
     {
+        // SPEC-85 §4.4: an item carrying `parts` alongside a key from another kind (`from`,
+        // `command`, `item`) — or `format`/`maxLines`, neither of which a compound reads — has no
+        // defined meaning; `parts` wins, and the conflicting key is reported here instead.
+        foreach (var (item, path) in WalkRawItems(config))
+        {
+            if (item.Parts is null)
+            {
+                continue;
+            }
+
+            if (item.From is not null)
+            {
+                yield return new Diagnostic(path + "/from", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"from\" has no effect alongside \"parts\"; a compound item's text comes from its parts, and \"parts\" wins");
+            }
+
+            if (item.Command is not null)
+            {
+                yield return new Diagnostic(path + "/command", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"command\" has no effect alongside \"parts\"; a compound item's text comes from its parts, and \"parts\" wins");
+            }
+
+            if (item.Item is not null)
+            {
+                yield return new Diagnostic(path + "/item", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"item\" has no effect alongside \"parts\"; a compound item's text comes from its parts, and \"parts\" wins");
+            }
+
+            if (item.Format is not null)
+            {
+                yield return new Diagnostic(path + "/format", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"format\" has no effect alongside \"parts\"; a compound item's text comes from its parts, not a provider value");
+            }
+
+            if (item.MaxLines is not null)
+            {
+                yield return new Diagnostic(path + "/maxLines", DiagnosticSeverity.Warning, "key-not-applicable",
+                    "\"maxLines\" has no effect alongside \"parts\"; it caps a provider's output and a compound item has no provider");
+            }
+        }
+
         if (config?.Surface?.Pane is not { } surfacePane)
         {
             yield break;
@@ -681,6 +740,87 @@ public static class ConfigChecker
                 {
                     yield return new Diagnostic($"{path}/children/{i}", DiagnosticSeverity.Warning, "collapsed-edge-conflict",
                         $"children {i} and {i + 1} declare different border style/color on their shared edge; the earlier child in tree order wins");
+                }
+            }
+        }
+    }
+
+    // SPEC-85 §4.2/§4.3: every raw item, across both the surface.pane tree and the top-level
+    // items shorthand — the same two-shape source CheckEnums/CheckItemEnums already reads item
+    // config from, reused here rather than a second traversal.
+    private static IEnumerable<(PaneItemJsonConfig Item, string Path)> WalkRawItems(UserConfig? config)
+    {
+        if (config?.Surface?.Pane is { } surfacePane)
+        {
+            foreach (var (pane, path) in WalkRawPanes(surfacePane, "/surface/pane"))
+            {
+                if (pane.Items is not { } items)
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < items.Count; i++)
+                {
+                    yield return (items[i], $"{path}/items/{i}");
+                }
+            }
+        }
+        else if (config?.Items is { } items)
+        {
+            for (var i = 0; i < items.Count; i++)
+            {
+                yield return (items[i], $"/items/{i}");
+            }
+        }
+    }
+
+    // ---- §4.2: compound-part diagnostics — part-source-count / part-forbidden-key ----
+
+    private static IEnumerable<Diagnostic> CheckCompoundParts(UserConfig? config)
+    {
+        foreach (var (item, path) in WalkRawItems(config))
+        {
+            if (item.Parts is not { } parts)
+            {
+                continue;
+            }
+
+            if (parts.Count == 0)
+            {
+                yield return new Diagnostic(path + "/parts", DiagnosticSeverity.Error, "part-source-count",
+                    "a compound item must declare at least one part");
+                continue;
+            }
+
+            for (var i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                var partPath = $"{path}/parts/{i}";
+
+                var sourceCount = (part.Text is not null ? 1 : 0) + (part.Item is not null ? 1 : 0) + (part.From is not null ? 1 : 0);
+                if (sourceCount == 0)
+                {
+                    yield return new Diagnostic(partPath, DiagnosticSeverity.Error, "part-source-count",
+                        "a compound part must name exactly one source — 'text', 'item', or 'from'");
+                }
+                else if (sourceCount > 1)
+                {
+                    var present = new[] { (part.Text is not null, "text"), (part.Item is not null, "item"), (part.From is not null, "from") }
+                        .Where(t => t.Item1).Select(t => $"'{t.Item2}'");
+                    yield return new Diagnostic(partPath, DiagnosticSeverity.Error, "part-source-count",
+                        $"a compound part must name exactly one source, not {string.Join(" and ", present)}");
+                }
+
+                if (part.Parts is not null)
+                {
+                    yield return new Diagnostic(partPath, DiagnosticSeverity.Error, "part-forbidden-key",
+                        "'parts' may not appear inside a compound part — compound items are one level deep");
+                }
+
+                if (part.Link is not null)
+                {
+                    yield return new Diagnostic(partPath, DiagnosticSeverity.Error, "part-forbidden-key",
+                        "'link' belongs on the item, not on a part — it wraps the whole compound");
                 }
             }
         }
@@ -982,6 +1122,19 @@ public static class ConfigChecker
         if (item.Color?.Rule is { } rule)
         {
             foreach (var e in WalkRuleObjects(rule, path + "/color")) yield return e;
+        }
+
+        if (item.Parts is { } parts)
+        {
+            for (var i = 0; i < parts.Count; i++)
+            {
+                yield return (parts[i].Extra, ConfigJsonContext.Default.PaneItemPartJsonConfig, "a compound part", $"{path}/parts/{i}");
+
+                if (parts[i].Color?.Rule is { } partRule)
+                {
+                    foreach (var e in WalkRuleObjects(partRule, $"{path}/parts/{i}/color")) yield return e;
+                }
+            }
         }
     }
 

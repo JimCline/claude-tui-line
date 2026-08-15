@@ -15,7 +15,13 @@ public static class LeafContent
     /// SPEC-V2-FRAMEWORK.md §4: the item's own markup, including any internal per-fragment colour
     /// it applies to itself, and any OSC 8 hyperlink its <c>link</c> config wraps around it.
     /// </param>
-    public readonly record struct ItemDecision(string Text, string Markup);
+    /// <param name="Spans">
+    /// SPEC-V2-FRAMEWORK.md §3.3: a compound item's per-part decomposition, carried through to the
+    /// <see cref="Segment"/> the assembler builds so truncation and wrapping can preserve per-part
+    /// colour (SPEC-85 §5.2). Null for every non-compound item, and cleared by any transformation
+    /// here that puts markup outside the decomposition (SPEC-85 §12.3).
+    /// </param>
+    public readonly record struct ItemDecision(string Text, string Markup, IReadOnlyList<StyledSpan>? Spans = null);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §5: the id names a <c>link</c> template's <c>{other-id}</c>
@@ -32,10 +38,12 @@ public static class LeafContent
     {
         var text = resolved.Display!.Plain;
         var markup = resolved.Display!.Markup;
+        var spans = resolved.Display!.Spans;
 
-        if (resolved.Config.Color is not null && !IsSemantic(resolved.Config))
+        if (resolved.Config.Parts is null && resolved.Config.Color is not null && !IsSemantic(resolved.Config))
         {
             markup = Spectre.Console.Markup.Escape(text);
+            spans = null;
         }
 
         if (resolved.Config.Link is { Length: > 0 } linkTemplate
@@ -45,14 +53,16 @@ public static class LeafContent
             markup = OscHyperlink.Wrap(url, markup);
         }
 
-        return new ItemDecision(text, markup);
+        return new ItemDecision(text, markup, spans);
     }
 
     // A row's own colour is decorative unless its registry entry says otherwise (§4/§6): an
     // item-level config colour replaces a decorative colour rather than nesting around it, so a
     // decorative row's internal markup is discarded here and the outer colour becomes the sole
     // colour. Rows with no registry entry (e.g. a command item) carry no internal colour to begin
-    // with, so this is a no-op for them.
+    // with, so this is a no-op for them. A compound item (SPEC-V2-FRAMEWORK.md §3.3) is excluded
+    // from this replacement entirely: its item-level colour is already consumed per-part, as the
+    // default for parts that don't set their own, so there is no outer wrap left to apply here.
     private static bool IsSemantic(PaneItem config)
     {
         var id = config.Id ?? config.Item;

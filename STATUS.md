@@ -99,6 +99,19 @@ flagged rather than silently reconciled; §2.3.1 is now corrected.
 
 Recently landed, pending the last of its per-defect checks:
 
+- **Compound items** (§3.3, task #85) — `parts`, so one item can hold several sources with a
+  colour each and no separator between them (a dim `agent:` label against an aqua value).
+  `Segment.Spans` decomposition (SPEC-85 §5.1/§5.2) is now actually wired into the production
+  render path — `ItemDecision` → `LeafContent.Decide` → `PaneAssembler` → the 4-arg
+  `SegmentBuilder.BuildItemSegment` — not just present in unit tests
+  (SPEC-85-ADDENDUM-spans-threading.md §12, closing that gap). The item-level colour wrap is
+  skipped for a compound (already consumed per-part) and a `link` wraps the whole compound from
+  outside the decomposition. `TruncateSpans`/`RestyleSlice` both close a colour span cleanly at a
+  cut, append the truncation ellipsis as its own unstyled span, and keep the ellipsis outside any
+  link so it is never clickable. `from` naming a compound item's own id (item-level or
+  part-level) is now `from-compound-source`, error severity. 1443/1443 tests. Known accepted
+  limitation: a compound spanning more than one line loses per-part colour (block layout renders
+  each line as one plain `Segment`).
 - **OSC 8 hyperlinks** (§3.2, §3.2.1) — committed as `1028f5d` and pushed to `main`, remote ref
   confirmed. Brings `remote-url`, derived items (`from` / `extract` / `case`), the `ItemContext`
   refactor (§3), one shared `AnsiStrip`, and `OscHyperlink.EscapeForRender`. 1063/1063 tests;
@@ -114,7 +127,7 @@ Recently landed, pending the last of its per-defect checks:
 2. **Phase 6 authoring surface** (§12) — backup ledger **first**, then `migrate`, `revert`,
    `edit`.
 3. **Config diagnostics** — see the open defects below. Defect 11's fix is §5's resolution set,
-   which items 4 and 5 depend on.
+   which item 4 depends on.
 4. **`{item-id}` placeholders in a `command` item's argv** (§4.2) — hand a framework-resolved
    value to a user's own script without re-deriving it. Reuses §3.2's link-template resolver
    rather than adding a syntax. **argv-only expansion**; under `shell: true` the values go to
@@ -123,17 +136,8 @@ Recently landed, pending the last of its per-defect checks:
    defect 11 deliberately** — both are the same root cause (§5 enumerating displayed items
    rather than referenced ones), and building this first would reproduce defect 11 in a second
    place with the same silence.
-5. **Compound items** (§3.3) — `parts`, so one item can hold several sources with a colour each
-   and **no separator between them**: a dim `agent:` label against an aqua value, which is
-   impossible today because `color` paints the whole item and splitting the label into its own
-   item inserts ` | `. Not a new render path — a compound produces the same one `Segment` with
-   multiple styled spans that builtins already use for `ctx:62% (125k/200k)`, and §4.1's
-   `match` + `colors` must compile to that same span list rather than a parallel one. Depends on
-   item 3 for the same reason item 4 does: a part's `item` / `from` is the sixth way to name an
-   item by id, and §5's set has to enumerate it. New hazard needing its own test: `truncate`
-   cutting mid-span must close the SGR or colour bleeds into the border.
-6. **`maxRows` degrade ladder** (§2.8).
-7. **Phase 7 MCP server** (§12.6) — ambient access, so "make the border green" works mid-
+5. **`maxRows` degrade ladder** (§2.8).
+6. **Phase 7 MCP server** (§12.6) — ambient access, so "make the border green" works mid-
    conversation without the user knowing a slash command exists. Seven tools, **read/write**:
    `list_items`, `list_colors`, `get_config`, `set_config`, `validate`, `preview`, `revert` —
    enough for the model to carry a request from words to a rendered statusline unaided.

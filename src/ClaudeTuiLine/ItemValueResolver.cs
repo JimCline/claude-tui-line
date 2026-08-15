@@ -285,6 +285,28 @@ public static class ItemValueResolver
                 .Where(entry => entry.Item.Command is { Count: > 0 })
                 .SelectMany(entry => ArgvPlaceholders.ReferencedIds(entry.Item.Command!)
                     .Select(id => new IdCandidate(id, entry.Path + "/command", ReferenceKind.Reference, ReferenceForm.ArgvPlaceholder, entry.Item.Id)))),
+
+        // §3.3: a compound part's `item` selector.
+        new ReferenceExtractor(
+            new[] { typeof(PaneItemPart).GetProperty(nameof(PaneItemPart.Item))! },
+            ctx => ctx.Items
+                .Where(entry => entry.Item.Parts is not null)
+                .SelectMany(entry => entry.Item.Parts!
+                    .Select((part, i) => (part, i))
+                    .Where(t => t.part.Item is { Length: > 0 })
+                    .Select(t => new IdCandidate(t.part.Item!, $"{entry.Path}/parts/{t.i}/item",
+                        ReferenceKind.Reference, ReferenceForm.ItemSelector)))),
+
+        // §3.3: a compound part's `from`.
+        new ReferenceExtractor(
+            new[] { typeof(PaneItemPart).GetProperty(nameof(PaneItemPart.From))! },
+            ctx => ctx.Items
+                .Where(entry => entry.Item.Parts is not null)
+                .SelectMany(entry => entry.Item.Parts!
+                    .Select((part, i) => (part, i))
+                    .Where(t => t.part.From is { Length: > 0 })
+                    .Select(t => new IdCandidate(t.part.From!, $"{entry.Path}/parts/{t.i}/from",
+                        ReferenceKind.Reference, ReferenceForm.DerivedFrom)))),
     };
 
     // An `@name` colour reference (§6.3) validates against the `colors` table's own keys, not
@@ -395,6 +417,7 @@ public static class ItemValueResolver
 
         var derivedItemIds = new HashSet<string>(StringComparer.Ordinal);
         var commandItemIds = new HashSet<string>(StringComparer.Ordinal);
+        var compoundItemIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in items)
         {
             if (entry.Item.Id is not { Length: > 0 } ownId)
@@ -411,6 +434,13 @@ public static class ItemValueResolver
             {
                 commandItemIds.Add(ownId);
             }
+
+            // §3.3/§12.8: a compound declares an id but produces no scalar value, so nothing may
+            // source `from` it. Deliberately NOT folded into derivedItemIds — §6.2.
+            if (entry.Item.Parts is not null)
+            {
+                compoundItemIds.Add(ownId);
+            }
         }
 
         var colorTokenReferences = new List<ColorTokenReference>();
@@ -419,7 +449,7 @@ public static class ItemValueResolver
             colorTokenReferences.AddRange(extractor.Extract(ctx));
         }
 
-        return new ReferenceScan(references, selfDeclared, derivedItemIds, commandItemIds, colorTokenReferences, colorExprs);
+        return new ReferenceScan(references, selfDeclared, derivedItemIds, commandItemIds, compoundItemIds, colorTokenReferences, colorExprs);
     }
 
     /// <summary>
@@ -465,7 +495,9 @@ public static class ItemValueResolver
 
     // §8: the first capture group when the pattern has one, otherwise the whole match; no match
     // suppresses the derived item entirely (null), the same convention as an absent field (§3).
-    private static string? ExtractValue(string source, string pattern)
+    // internal: SPEC-85 §5.3 step 1 reuses this for a compound part's `from`/`extract`, rather
+    // than re-implementing the extract/case rule a second time.
+    internal static string? ExtractValue(string source, string pattern)
     {
         var match = Regex.Match(source, pattern);
         if (!match.Success)
@@ -501,7 +533,9 @@ public static class ItemValueResolver
     }
 
     // §8: any case value other than "upper"/"lower" passes the text through unchanged.
-    private static string ApplyCase(string value, string? caseMode) => ParseCaseMode(caseMode) switch
+    // internal: SPEC-85 §5.3 step 1 reuses this for a compound part's `case`, same reason as
+    // ExtractValue above.
+    internal static string ApplyCase(string value, string? caseMode) => ParseCaseMode(caseMode) switch
     {
         CaseMode.Upper => value.ToUpperInvariant(),
         CaseMode.Lower => value.ToLowerInvariant(),
@@ -639,5 +673,6 @@ internal readonly record struct ReferenceScan(
     IReadOnlyCollection<string> SelfDeclaredIds,
     IReadOnlyCollection<string> DerivedItemIds,
     IReadOnlyCollection<string> CommandItemIds,
+    IReadOnlyCollection<string> CompoundItemIds,
     IReadOnlyList<ColorTokenReference> ColorTokenReferences,
     IReadOnlyList<(ColorResolution.ColorExpr Expr, string Path)> ColorExprs);

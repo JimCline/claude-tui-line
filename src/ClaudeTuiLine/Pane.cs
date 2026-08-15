@@ -241,7 +241,21 @@ public sealed record PaneItem(
     string? From = null,
     string? Extract = null,
     string? Case = null,
-    int? MaxLines = null);
+    int? MaxLines = null,
+    IReadOnlyList<PaneItemPart>? Parts = null);
+
+/// <summary>
+/// SPEC-V2-FRAMEWORK.md §3.3: one fragment of a compound item (<see cref="PaneItem.Parts"/>).
+/// Exactly one of <see cref="Text"/>/<see cref="Item"/>/<see cref="From"/> is the part's source.
+/// </summary>
+public sealed record PaneItemPart(
+    string? Text,
+    string? Item,
+    string? From,
+    string? Extract,
+    string? Case,
+    string? Format,
+    ColorResolution.ColorExpr? Color);
 
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §2.2's pane tree node: a leaf (<see cref="Items"/>) or a split

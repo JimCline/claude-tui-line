@@ -14,7 +14,7 @@ public static class PaneAssembler
     // contribution to the pane's row list. Segments is the exact list handed to RenderLeaf,
     // retained so ApplyRowBudget can re-invoke it with a row budget without re-deriving its
     // input — the provenance SPEC-3.1 §6 requires.
-    private readonly record struct RenderUnit(IReadOnlyList<Segment> Segments, IReadOnlyList<PaneRow> Rows);
+    internal readonly record struct RenderUnit(IReadOnlyList<Segment> Segments, IReadOnlyList<PaneRow> Rows);
 
     public static IReadOnlyList<PaneRow> RenderLeafRows(
         Pane pane,
@@ -109,7 +109,7 @@ public static class PaneAssembler
     // single concatenation site both packed-group flushes and block lines feed, per SPEC-3.1 §6)
     // rather than a FlushGroup call, which would risk emitting an empty-group unit for an empty
     // group.
-    private static IReadOnlyList<RenderUnit> RenderItemRows(
+    internal static IReadOnlyList<RenderUnit> RenderItemRows(
         Pane pane,
         int innerWidth,
         ItemContext ctx,
@@ -142,6 +142,12 @@ public static class PaneAssembler
 
             var decision = LeafContent.Decide(resolved, values);
             var color = ColorResolution.Resolve(resolved.Config.Color, values, tokens);
+            // SPEC-85 §12.5/D-B: a compound's item-level colour is already consumed per-part
+            // (as each part's default) by LeafItems, so the single-line path must not wrap it
+            // again here — that outer wrap would sit outside the Spans decomposition and violate
+            // the §12.3 invariant. Every other path (blocks, the stripped-trailing-newline case)
+            // keeps using `color` unchanged.
+            var itemColor = resolved.Config.Parts is null ? color : null;
 
             var lines = SplitBlockLines(decision.Text);
             if (lines.Count > 1)
@@ -163,7 +169,7 @@ public static class PaneAssembler
             // leak into this row's markup and inflate its Plain.Length-measured width by one.
             var singleLine = lines[0];
             packedGroup.Add(singleLine == decision.Text
-                ? SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color)
+                ? SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, itemColor, decision.Spans)
                 : SegmentBuilder.BuildItemSegment(singleLine, color));
         }
 
