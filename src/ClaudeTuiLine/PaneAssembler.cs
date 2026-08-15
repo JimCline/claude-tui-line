@@ -70,6 +70,12 @@ public static class PaneAssembler
         return buffer.Rows;
     }
 
+    // SPEC-3.1-block-model.md §3: a block is an item whose resolved display text splits (per
+    // SplitBlockLines) into more than one line. A block interrupts the current packed group and
+    // renders its own lines as their own rows instead of joining the group — D4/D6 rule out any
+    // separator or blank row on either side of it, so this is a straight append into `rows` (the
+    // single concatenation site both packed-group flushes and block lines feed) rather than a
+    // FlushGroup call, which would risk emitting an empty-group row for an empty group.
     private static IReadOnlyList<PaneRow> RenderItemRows(
         Pane pane,
         int innerWidth,
@@ -103,11 +109,52 @@ public static class PaneAssembler
 
             var decision = LeafContent.Decide(resolved, values);
             var color = ColorResolution.Resolve(resolved.Config.Color, values, tokens);
-            packedGroup.Add(SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color));
+
+            var lines = SplitBlockLines(decision.Text);
+            if (lines.Count > 1)
+            {
+                FlushGroup();
+                foreach (var line in lines)
+                {
+                    var lineSegment = SegmentBuilder.BuildItemSegment(line, color);
+                    var lineBuffer = PaneRenderer.RenderLeaf(new[] { lineSegment }, innerWidth, overflow, pane.Ellipsis, notes, allowFallback: false);
+                    rows.AddRange(lineBuffer.Rows);
+                }
+
+                continue;
+            }
+
+            // D2: a lone trailing newline (or \r\n) doesn't make an item a block, but it also
+            // isn't part of the single surviving line — SplitBlockLines already stripped it, so
+            // reuse that stripped text rather than the raw decision.Text, or the stray \n would
+            // leak into this row's markup and inflate its Plain.Length-measured width by one.
+            var singleLine = lines[0];
+            packedGroup.Add(singleLine == decision.Text
+                ? SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color)
+                : SegmentBuilder.BuildItemSegment(singleLine, color));
         }
 
         FlushGroup();
         return rows;
+    }
+
+    // SPEC-3.1-block-model.md §3 rule D2: strip exactly one trailing newline (and a \r
+    // immediately before it) before splitting, then TrimEnd('\r') each resulting line — so
+    // "foo\n" is one line (not a block) but "foo\n\n" is two, one of them a real blank line
+    // that must survive as a padded row (D3), not be silently collapsed.
+    internal static IReadOnlyList<string> SplitBlockLines(string value)
+    {
+        var end = value.Length;
+        if (end > 0 && value[end - 1] == '\n')
+        {
+            end--;
+            if (end > 0 && value[end - 1] == '\r')
+            {
+                end--;
+            }
+        }
+
+        return value[..end].Split('\n').Select(line => line.TrimEnd('\r')).ToList();
     }
 
     // §2.6: "overflow" is only legal for a surface's single root pane; inside any split it would
