@@ -6,31 +6,32 @@ declares a `minSize` exceeding the parent's bound, and if so at what severity an
 Surfaced as an incidental finding during #88 (`SPEC-88-responsive-split-fallback.md` §12(2)), which
 documented it and deliberately left it out of scope.
 
-**All `src/` and `tests/` citations in this document are anchored to commit `8437c37`** (`#88:
-split:"flex" responsive split fallback`), the tip of `main` at the time of Amendment A1. Cite that
-commit when checking for drift.
+**All `src/` and `tests/` citations are anchored to commit `8437c37`** (`#88: split:"flex"
+responsive split fallback`), except §5.4 and §9.2 which cite the `task-91-horizontal-minsize`
+worktree. Cite those anchors when checking for drift.
+
+**This file is authoritative.** `SPEC-91-amendment-A2-v13c.md` is a companion recording A2's
+derivation and postmortem; where the two differ, this file governs.
 
 ---
 
-## Amendment A1 — after #88 landed
+## Amendment log
 
-**What changed and why.** This spec was first written while #88 was in flight, so it held #91 and
-cited `ConfigCheck.cs` at pre-#88 line numbers. #88 merged as `8437c37`, which inserted a `Flex`
-branch into `CheckStructuralSizes` and added `CheckFlexSplitBounds`, shifting every line number in
-this file by roughly +38. A1 does five things:
+### A1 — after #88 landed
 
-1. **NE-3 is resolved** (§14) — #88 has landed. §9's hold is discharged and #91 may be implemented.
-2. **All `ConfigCheck.cs` and `ConfigCheckTests.cs` citations re-anchored** to `8437c37`.
-3. **§9 substantially rewritten.** The situation is no longer "#88 is in flight." It is "#88 landed,
-   but `SPEC-88`'s text still forbids this change and a merged test still asserts the bug exists."
-   That is a sharper hazard than the original section described, and §9.1/§9.2 now address it
-   directly.
-4. **V6 activated** (§13), with a new V6b for an interaction only visible in #88's merged code.
-5. **§15's incidental finding is now task #92**, and A1 records that it propagates further than the
-   original §15 said — into #88's flex combinator, not only the vertical path.
+This spec was first written while #88 was in flight, so it held #91 and cited `ConfigCheck.cs` at
+pre-#88 line numbers. #88 merged as `8437c37`, inserting a `Flex` branch into `CheckStructuralSizes`
+and adding `CheckFlexSplitBounds`, shifting every line number by roughly +38. A1: resolved NE-3;
+re-anchored all citations; rewrote §9 for the landed world; activated V6 and added V6b; upgraded
+§15's finding to task #92.
 
-**One thing A1 does not change: every ruling in §1.** The evidence that decided them is framework
-text and unaffected by #88.
+### A2 — after cdtui-impl4 implemented
+
+**§9.2 was wrong.** It asserted that `SPEC-88`'s V13(c) would turn red, and called that the expected
+outcome. It does not, and it should not. See §9.2 for the corrected ruling and §9.2.1 for how the
+error happened. A2 changes §9.2, §5.4 (new), §13 V9, §14 NE-1, and §16.
+
+**No ruling in §1 changes.** A2 corrects a prediction about one test, not the design.
 
 ---
 
@@ -176,8 +177,9 @@ implements this, and the new check sits inside it, inheriting the behaviour for 
 
 **File:** `src/ClaudeTuiLine/ConfigCheck.cs`
 **Method:** `CheckHorizontalSplitChildren` (`:951-969`)
-**Nothing else in `src/` is touched.** In particular `CheckFlexSplitBounds` (`:911-923`) is not
-edited, even though its behaviour changes as a consequence (§9.3).
+**Plus** the comment update in §5.4. **Nothing else in `src/` is touched.** In particular
+`CheckFlexSplitBounds` (`:911-923`) is not edited, even though its behaviour changes as a
+consequence (§9.3).
 
 ### 5.1 Current code, as merged at `8437c37`
 
@@ -275,6 +277,48 @@ the `minSize` branch, because the fixed branch did not fire.
 
 This also matches `SPEC-88` V13(b)'s stated preference for "exactly **one** diagnostic" per fault.
 
+### 5.4 Required: update V13(c)'s stale comment (A2)
+
+**File:** `tests/ClaudeTuiLine.Tests/SplitFlexTests.cs`, the comment at `:517-520` inside
+`V13c_SameConfigsDeclaredVerticalAndHorizontal_ByteIdenticalToCurrentMain`.
+
+It currently reads:
+
+```csharp
+        // §7/V13(c): CheckSplitBounds and CheckHorizontalSplitChildren are called unchanged for
+        // declared vertical/horizontal — this pins their exact pre-#88 output, including
+        // CheckHorizontalSplitChildren's documented minSize gap (it only checks FixedSize), which
+        // must NOT be "helpfully" fixed as part of this change.
+```
+
+Two sentences are now false in a way that matters. The comment describes the `minSize` gap as live
+and **instructs future editors not to close it** — a gap #91 has just deliberately closed. Left
+alone it is a standing instruction to undo this spec, sitting in a test file, with no indication its
+reason expired. Same hazard as §9.1's stale `SPEC-88` §7 prohibition, somewhere people read more
+often than a spec.
+
+**#91 owns this edit.** The comment became false *because of* #91, and it lives in a file #91
+already modifies (V6/V6b at `:533-610`). §12's "do not touch another spec's file" constraint governs
+`SPEC-88-responsive-split-fallback.md`, not test-file comments this change invalidates.
+
+**Required replacement** — wording is the implementor's, these facts are not:
+
+```csharp
+        // §7/V13(c): CheckSplitBounds and CheckHorizontalSplitChildren are called unchanged for
+        // declared vertical/horizontal — this pins their output at 8437c37, so the flex branch
+        // cannot perturb the declared directions.
+        //
+        // The fixture is deliberately FixedSize-only. SPEC-91 added a per-child minSize check to
+        // CheckHorizontalSplitChildren, and this test stays green precisely because no child here
+        // declares one — that is correct scoping, not an oversight. Do not add a minSize-bearing
+        // case: it would test SPEC-91's check rather than this test's subject, which is #88's
+        // non-interference. SPEC-91's own coverage is V1/V2/V3/V5/V7 in ConfigCheckTests.cs and
+        // V6/V6b below.
+```
+
+The final clause pre-empts exactly the change that was contemplated when V13(c) was found green, so
+the next reader does not re-raise it.
+
 ---
 
 ## 6. Severity: `Error`
@@ -320,8 +364,8 @@ Four further reasons:
    "a code that is not in it does not exist." A new code requires a new §9.4 registry row and
    becomes permanently supported API. Reuse requires neither.
 3. **Code reuse is the established norm.** `key-not-applicable` is emitted from ten sites,
-   `part-source-count` from three, `unknown-item-id` from four. Codes here identify a *kind of
-   fault*, not a call site.
+   `part-source-count` from three, `unknown-item-id` from four. Codes identify a *kind of fault*,
+   not a call site.
 4. **`SPEC-88` §7 pins it** — "**The `fixed-sizes-exceed-parent` code's meaning and severity**
    (§9.6). Reused, not redefined, and no new code is registered." #91 stays inside that constraint.
 
@@ -367,7 +411,7 @@ The affected config is narrow, and every clause is required:
    parent is untouched (§4), **and**
 3. a **direct child** declares `minSize` **strictly greater** than that bound.
 
-Plus, post-#88, the `flex` case in §9.3 — which is a *different* population and is discussed there.
+Plus, post-#88, the `flex` case in §9.3 — a different population, discussed there.
 
 ### 8.2 Why the risk is acceptable
 
@@ -379,14 +423,13 @@ Plus, post-#88, the `flex` case in §9.3 — which is a *different* population a
 > something that already works.
 
 That is the harm to avoid, and #91 does not cause it. A child floor above its parent's declared
-ceiling is unsatisfiable at *every* width (§4). Such a config is **already** misrendering today; the
-dispatch says so ("degrades visibly only at render time"), and `SPEC-88` calls the current behaviour
-**failing open**. `--check` newly reporting it is the validator becoming correct about a config that
-was already broken — not a working config being newly rejected.
+ceiling is unsatisfiable at *every* width (§4). Such a config is **already** misrendering today, and
+`SPEC-88` calls the current behaviour **failing open**. `--check` newly reporting it is the
+validator becoming correct about a config that was already broken — not a working config newly
+rejected.
 
 So this is **not** the §9.4 antipattern §9.8 `:5980-5981` warns about ("a validator which warns
-about things that work correctly gets ignored on the occasions it is right"). It is the opposite:
-removing a case where the validator stays silent about something that does not work.
+about things that work correctly gets ignored on the occasions it is right"). It is the opposite.
 
 **Supporting points:**
 
@@ -394,94 +437,110 @@ removing a case where the validator stays silent about something that does not w
   declared bound, with no width and no derived arithmetic. Contrast §9.8 `:5990-5998`, where the
   double-counting risk came entirely from hand-written boundary arithmetic — which this check does
   not perform (§5.3(b)).
-- **The signal is high.** `minSize` is a number the author deliberately named. Framework `:2363`
-  ("`minSize` is a number the author named") and §2.11.1 both treat an explicit `minSize` as a
-  strong declaration of intent. Reporting a contradiction between two things the author explicitly
-  declared is about as low-noise as a diagnostic gets.
-- **No in-tree test breaks on the declared-horizontal path.** Verified at `8437c37`: no fixture in
-  `ConfigCheckTests.cs` declares a horizontal split with a child `minSize`. The nearest negative
-  test, `HorizontalSplitChildrenWithinParentBound_ProducesNoStructuralDiagnostic` (`:1841-1862`),
-  uses `Size` only. **`SPEC-88`'s V13(c) is a separate matter — see §9.2.**
+- **The signal is high.** `minSize` is a number the author deliberately named. Framework `:2363` and
+  §2.11.1 both treat an explicit `minSize` as a strong declaration of intent.
+- **No in-tree test breaks.** Verified at `8437c37` and again post-implementation: no fixture
+  declares a horizontal split with a child `minSize`. `HorizontalSplitChildrenWithinParentBound_…`
+  (`:1841-1862`) uses `Size` only, and `SPEC-88`'s V13(c) likewise — see §9.2.
 - **The repair is obvious and local.** The message names the child's `minSize`, the parent's bound,
   and why every child gets the full parent width.
 
 ### 8.3 Rejected: ship as `Warning` first, promote to `Error` later
 
-This is the conventional rollout answer and it is **wrong here**. Rejected for three reasons:
+Rejected for three reasons:
 
 1. **It misuses the severity axis.** Severity here means "is this achievable at any width" (§6), not
    "how recently was this check added." A `Warning` would assert something false about the config.
-2. **There is no deprecation channel to build it on.** The enum has two members. There is no version
-   negotiation, no `--strict`, and no per-code suppression anywhere in `ConfigCheck.cs`. A
-   soft-launch would require inventing all of that for one six-line check.
-3. **It would contradict the framework twice over.** §9.8 `:6008-6010` records that
-   `min-exceeds-max` was *already corrected from warning to error* — the project has explicitly
-   moved in the opposite direction on a directly analogous floor diagnostic. And a warning that a
-   config is structurally impossible is exactly the "validator that warns about things that work"
-   §9.4 says gets ignored.
+2. **There is no deprecation channel to build it on.** The enum has two members. No version
+   negotiation, no `--strict`, no per-code suppression anywhere in `ConfigCheck.cs`.
+3. **It would contradict the framework twice over.** §9.8 `:6008-6010` records `min-exceeds-max`
+   being *corrected from warning to error* — the project moved the opposite way on a directly
+   analogous floor diagnostic. And a warning that a config is structurally impossible is exactly the
+   "validator that warns about things that work" §9.4 says gets ignored.
 
 ### 8.4 Rejected: document as accepted behaviour, change nothing
 
-Rejected. It leaves an asymmetry with no principled defence (§2), it has now been logged as a defect
-three times (#88 twice, #91 once), and it keeps `--check` silent about a config that cannot render —
-which is the one thing §9.8 says the structural checks exist to catch.
+Rejected. It leaves an asymmetry with no principled defence (§2), it has been logged as a defect
+three times (#88 twice, #91 once), and it keeps `--check` silent about a config that cannot render.
 
 ---
 
 ## 9. Coordination with #88 — READ BEFORE IMPLEMENTING
 
-#88 merged at `8437c37`, so the **ordering** constraint is satisfied. Three coordination hazards
-remain, and two of them are worse now than while #88 was in flight, because they are no longer
-hypothetical.
+#88 merged at `8437c37`, so the **ordering** constraint is satisfied. Two coordination hazards
+remain live, and one predicted hazard did not materialise.
 
 ### 9.1 `SPEC-88`'s text still forbids this change — SPEC-91 governs
 
-`SPEC-88` §7 "What must NOT change" still reads, unamended as of this writing:
+`SPEC-88` §7 "What must NOT change" still reads, unamended:
 
 > **`CheckSplitBounds` and `CheckHorizontalSplitChildren` themselves.** §4.5.3 adds a `Flex` branch
 > to their *caller* and calls both unchanged. In particular, **do not add a `minSize` check to
 > `CheckHorizontalSplitChildren`** to close the gap §4.5.3 documents — that changes declared-
 > horizontal behaviour and is out of scope (§12). **V13(c) guards this.**
 
-**#91's implementor will read that as a direct prohibition on this spec, and so will a Reviewer
-validating the diff.** Resolve it as follows:
+**#91's implementor will read that as forbidding this spec, and so will a Reviewer validating the
+diff.** Resolve as follows:
 
 **That prohibition was scoped to #88's own diff and is discharged.** `SPEC-88` §12(2) — the same
 document — asks for exactly this work to be "**routed separately**" and says "**if it is fixed
 later**", which is now. §7's list is what *#88* must not change while landing `flex`; it is not a
-standing prohibition binding all future work. **`SPEC-91` governs this change.**
+standing prohibition binding all future work. **`SPEC-91` governs.**
 
-**The `SPEC-88` text nevertheless needs amending** so the next reader is not misled — see §9.5. That
-amendment is cdtui-architect's to make, not #91's implementor's, and **#91 is not blocked waiting on
-it.** If a Reviewer flags the conflict, this section is the answer.
+Note the final clause, "V13(c) guards this," is **factually wrong even on its own terms** — see
+§9.2. The `SPEC-88` text needs amending so the next reader is not misled (§9.5), but that is
+cdtui-architect's edit and **#91 is not blocked waiting on it.** If a Reviewer flags the conflict,
+this section is the answer.
 
-### 9.2 V13(c) is now a merged, passing test that #91 will turn red — this is expected
+### 9.2 V13(c) does **not** go red, and must not be made to (A2 — corrects a wrong earlier ruling)
 
-`SPEC-88` V13(c):
+**This section previously asserted V13(c) would turn red and called that the expected outcome. That
+was wrong.** The corrected ruling:
 
-> **(c) No regression.** The same two configs declared `"vertical"` and `"horizontal"` produce
-> **byte-identical diagnostics to current `main`**.
+`V13c_SameConfigsDeclaredVerticalAndHorizontal_ByteIdenticalToCurrentMain`
+(`SplitFlexTests.cs:498-531`) uses `MaxSize = 40` with two children at `Size = "50"` and **declares
+no `MinSize` at all**. #91's check is gated on `child.MinSize is int`, so it cannot fire. The two
+diagnostics V13(c) asserts (`:527-530`) both come from the pre-existing `FixedSize` branch, which
+#91 leaves byte-identical. **V13(c) is correctly green, and stays green.**
 
-That test shipped with #88 and is green on `main` today. #91 deliberately changes what a
-declared-`"horizontal"` config reports.
+**Ruling: leave V13(c)'s fixture alone. Do not add a `minSize`-bearing case to it.** Four reasons:
 
-**So V13(c) is not a test #91 must keep passing. It is a test whose baseline #91 invalidates.** It
-must be **re-baselined** against post-#91 behaviour, not merely re-run.
+1. **Purpose.** V13(c) is #88's regression guard — the `Flex` branch must not perturb the declared
+   directions. That purpose is intact and a `FixedSize`-only fixture is the right instrument.
+2. **The coverage already exists.** #91's check is exercised by V1, V2, V3, V5, V7 in
+   `ConfigCheckTests.cs` and V6/V6b in `SplitFlexTests.cs`. A `minSize` case on V13(c) would
+   duplicate V1/V2 and add no assurance.
+3. **Conflation.** A test guarding two specs' invariants fails for two unrelated reasons and tells
+   you less on failure. V13(c) failing should mean exactly one thing.
+4. **The anchor has moved.** V13(c) compares against "current `main`", which post-#91 *includes*
+   #91. A #91-sensitive case there is self-referential.
 
-> **The trap, stated plainly for the implementor:** if V13(c) fails and you make it pass by
-> weakening or reverting #91's check, you have silently undone this spec and the diff will still be
-> green. A failing V13(c) is the expected outcome. Re-baseline it; do not revert.
+**Its comment is stale regardless and must be fixed — see §5.4.**
 
-The implementor must **locate V13(c) first**, before writing any code, so its failure is anticipated
-rather than discovered. It is not among the `fixed-sizes-exceed-parent` assertions in
-`ConfigCheckTests.cs` (`:1074`, `:1099`, `:1124`, `:1837`, `:1862`), so it is likely in the flex
-test file — `SplitFlexTests.cs` is where #88's other flex tests live. Suggested:
-`grep -rn "byte-identical\|V13" tests/ --include=*.cs`. **If V13(c) cannot be located, stop and
-report** rather than proceeding on the assumption it does not exist.
+**V13(c) staying green is evidence *for* the implementation.** #91 is supposed to fire on a child
+`minSize` over bound and on nothing else. A correctly-scoped change leaves a `FixedSize`-only parity
+fixture untouched; had V13(c) gone red, that would have meant #91 was perturbing configs with no
+`minSize`, which would be a genuine defect.
+
+#### 9.2.1 How the error happened, and what survives it
+
+I reasoned: V13(c) pins declared-horizontal output → #91 changes declared-horizontal output →
+V13(c) fails. The middle step is too coarse. #91 changes declared-horizontal output **only for
+configs carrying a child `minSize` over bound** — a qualifier this spec already carried at §13 V9.
+**So §9.2 and §13 V9 contradicted each other, and the correct statement was the one already
+written.** A self-diff failure, and a spec defect, not an implementation defect.
+
+It was compounded by asserting an outcome for a fixture I had not read, in the same breath as
+instructing the implementor to read it first.
+
+**What survives:** the *locate V13(c) before writing code* instruction was right and worked exactly
+as intended — it is what surfaced the discrepancy early instead of at review. The general trap it
+guarded against ("do not make a red baseline test green by weakening the check") remains sound
+advice; it simply describes a failure that does not occur for this fixture.
 
 ### 9.3 #91 changes `flex` behaviour, through code #91 does not touch
 
-This is the part most likely to be missed. #88's `CheckFlexSplitBounds` (`:911-923`) is:
+#88's `CheckFlexSplitBounds` (`:911-923`) is:
 
 ```csharp
     var sideBySide = CheckSplitBounds(split, path, collapse).ToList();
@@ -499,75 +558,66 @@ This is the part most likely to be missed. #88's `CheckFlexSplitBounds` (`:911-9
 `stacked` is `CheckHorizontalSplitChildren`'s output. **#91 makes that method produce diagnostics it
 previously did not**, so a `flex` pane whose children have `minSize` over bound now satisfies the
 AND where it previously short-circuited at `stacked.Count == 0`. `SPEC-88` §12(2) predicted this
-("§4.5.3's under-report closes for free"). It is the correct behaviour — such a pane is impossible
-in both arrangements, exactly #88's AND criterion — but it is **a behaviour change to `flex` caused
-by #91, in a method #91 does not edit**, and it is untested unless #91 adds V6.
+("§4.5.3's under-report closes for free"). Correct behaviour — impossible in both arrangements is
+exactly #88's AND criterion — but it is **a behaviour change to `flex` caused by #91, in a method
+#91 does not edit**, and it is untested unless #91 adds V6.
 
 There is also a **message-composition consequence**: `stacked[0].Message` will now sometimes be
-#91's new `minSize` wording, which gets interpolated into the flex composite message. V6b covers it.
+#91's new `minSize` wording, interpolated into the flex composite message. V6b covers it.
 
-**Critically, this must not be confused with #88's V13(a)**, the headline case that must stay clean:
-`{"split":"flex","maxSize":40}` with two `minSize: 30` children. There each child's `minSize` of 30
-is **under** the bound of 40, so #91's per-child check does **not** fire, `stacked` stays empty, and
-the AND still yields nothing. **V13(a) still passes after #91.** The distinction is `minSize > bound`
-per child (fires) versus `Σ minSize > bound` (does not, in the per-child form) — §2.1's duality
-doing exactly its job.
+**Not to be confused with #88's V13(a)**, which must stay clean: `{"split":"flex","maxSize":40}`
+with two `minSize: 30` children. Each child's 30 is **under** the bound of 40, so #91's per-child
+check does **not** fire, `stacked` stays empty, and the AND still yields nothing. **V13(a) still
+passes.** The distinction is `minSize > bound` per child (fires) versus `Σ minSize > bound` (does
+not, in the per-child form) — §2.1's duality doing its job.
 
 ### 9.4 Ordering — satisfied
 
-The original ruling was "#88 first, then #91." #88 merged at `8437c37`. **#91 may now be
-implemented.** No worktree conflict remains, though the implementor should branch from `8437c37` or
-later so that `CheckFlexSplitBounds` is present — implementing #91 against a pre-#88 base would
-silently skip §9.3 entirely.
+#88 merged at `8437c37`. #91 may be implemented. Branch from `8437c37` or later so
+`CheckFlexSplitBounds` is present — implementing against a pre-#88 base would silently skip §9.3.
 
 ### 9.5 `SPEC-88` amendments still outstanding — cdtui-architect's, not #91's
 
-`SPEC-88` is unamended (919 lines, unchanged). Three places are now stale, and a fourth is separately
-known:
+`SPEC-88` is unamended (919 lines). Four places are stale:
 
 - §7 — the "do not add a `minSize` check" prohibition, discharged by this spec (§9.1).
-- §6 V13(c) — baseline superseded (§9.2).
+- §7's "V13(c) guards this" — factually wrong; V13(c)'s fixture cannot detect the gap (§9.2).
 - §12(2) — incidental finding resolved; should point to this spec.
 - (Separately, the §3.4.2 / V11 amendment from the Ultra-Advisor's world-(C) ruling.)
 
-**#91's implementor must not make these edits.** They belong to `SPEC-88`'s author. #91 proceeds
-without them.
+**#91's implementor must not make these edits.** #91 proceeds without them.
 
 ---
 
 ## 10. Forward compatibility with §2.8
 
 The check rests on "a horizontal split gives every child the full parent width," which holds only
-because §2.8 is unimplemented (`:879-882`, `:953-955`). It is fair to ask whether #91 builds on sand.
+because §2.8 is unimplemented (`:879-882`, `:953-955`).
 
-**It does not. The check stays sound when §2.8 lands.** Under §2.8, width is *divided* among a
-horizontal split's children, so each child receives some share `s_i ≤ B`. A child with `minSize = M`
-where `M > B` therefore satisfies `M > B ≥ s_i` — still unsatisfiable, a fortiori.
+**It stays sound when §2.8 lands.** Under §2.8 width is *divided*, so each child receives some share
+`s_i ≤ B`. A child with `minSize = M` where `M > B` satisfies `M > B ≥ s_i` — still unsatisfiable, a
+fortiori.
 
-So §2.8 cannot make this check *wrong*, only **incomplete**: once children contend, a sum check
-would also be needed. At that point both branches converge on sum-plus-per-child, and the per-child
-`minSize` check #91 adds survives unchanged as one half of it.
-
-This is the same forward-compatibility the existing per-child `FixedSize` check already enjoys, so
-#91 adds no new coupling to §2.8's eventual landing.
+So §2.8 cannot make this check *wrong*, only **incomplete**: once children contend, a sum check is
+also needed. At that point both branches converge on sum-plus-per-child, and #91's per-child
+`minSize` check survives unchanged as one half of it. Same forward-compatibility the existing
+per-child `FixedSize` check already enjoys.
 
 ---
 
 ## 11. Framework amendments
 
-Two, both to `SPEC-V2-FRAMEWORK.md`. Both correct documentation that is **already** inaccurate on
-`main`; #91 does not create either defect, but should not compound them.
+Two, both to `SPEC-V2-FRAMEWORK.md`. Both correct documentation **already** inaccurate on `main`.
 
 ### 11.1 §9.8's bullet list does not cover the per-child form at all
 
-§9.8 `:5986-6014` enumerates the structural checks in three bullets, **all of which are sum checks**,
-written for the vertical/shared-axis model. The existing per-child horizontal `FixedSize` check
-(`:962-968`) is **already an implementation extension beyond this list.** §9.8 does not describe it,
-and a reader reconstructing `--check` from §9.8 alone would not produce it.
+§9.8 `:5986-6014` enumerates the structural checks in three bullets, **all sum checks**, written for
+the vertical/shared-axis model. The existing per-child horizontal `FixedSize` check (`:962-968`) is
+**already an implementation extension beyond this list**; a reader reconstructing `--check` from
+§9.8 alone would not produce it.
 
-**Required amendment.** §9.8's enumeration must state the sum/per-child duality explicitly, so that
-both existing per-child behaviour and #91's addition are normatively described. Recommended shape —
-add after the three bullets, before the `fill`/`content` paragraph at `:6016`:
+**Required amendment** — add after the three bullets, before the `fill`/`content` paragraph at
+`:6016`:
 
 > **The arithmetic form follows the axis, not the size key.** Where a split's children *share* the
 > constrained axis they contend, and the check is a **sum** plus the boundary cost — the three
@@ -579,8 +629,7 @@ add after the three bullets, before the `fill`/`content` paragraph at `:6016`:
 > boundary cost in the per-child form: each child receives the full extent, so no divider is
 > reserved, and adding one would reintroduce exactly the double-count the first bullet's rule closes.
 
-The final sentence is not padding — it pre-empts an implementor reading §9.8's emphatic "call
-`SizeResolver`'s own boundary-cost function" rule and wrongly applying it here (§5.3(b)).
+The final sentence pre-empts an implementor misapplying §9.8's boundary-cost rule here (§5.3(b)).
 
 ### 11.2 §9.4's registry gloss understates the code
 
@@ -588,17 +637,13 @@ The final sentence is not padding — it pre-empts an implementor reading §9.8'
 
 > | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
 
-Already inaccurate on `main` (`:945` files a `minSize` contention under it). Amend the gloss to name
-floors:
+Already inaccurate on `main` (`:945`). Amend to name floors:
 
 > | `fixed-sizes-exceed-parent` | declared fixed sizes **or floors** cannot fit the parent at any width | error | 9.8 |
 
-Severity, code and section reference are unchanged.
-
-**Note for the implementor:** per framework `:445`, editing a documented closed set can fail
-`tools/check-all.sh`'s doc-token check until the corresponding table is updated. This amendment edits
-a table cell's prose rather than adding a member, so it is not expected to trip that check — but see
-§14 NE-2.
+Severity, code and section reference unchanged. Per framework `:445`, editing a documented closed
+set can fail `check-all.sh`'s doc-token check; this edits table prose rather than adding a member,
+so it should not trip it — but see §14 NE-2.
 
 ---
 
@@ -606,21 +651,19 @@ a table cell's prose rather than adding a member, so it is not expected to trip 
 
 - **`CheckSplitBounds` (`:925-949`) — entirely.** In particular its min-check's use of
   `split.MaxSize` alone at `:940`. That is **task #92** (§15), not #91.
-- **`CheckFlexSplitBounds` (`:911-923`) — entirely**, including its AND short-circuit and its
-  composite message format. Its *behaviour* changes as a consequence of #91 (§9.3); its *code* does
-  not.
+- **`CheckFlexSplitBounds` (`:911-923`) — entirely**, including its AND short-circuit and composite
+  message format. Its *behaviour* changes as a consequence of #91 (§9.3); its *code* does not.
 - **`CheckStructuralSizes`'s routing (`:862-903`)**, including all three branches and the
-  `:879-882` §2.8 scoping comment. #91 changes what one branch *reports*, never which branch runs.
-- **The existing fixed per-child diagnostic** at `:962-968` — its condition, path
-  (`{path}/children/{i}`), code, severity and **message text verbatim**. §13 V4 guards this.
-- **`parentBound`'s expression and the `yield break` guard** (`:956-960`). A `fill`/`content` parent
-  must continue to produce nothing (§4, framework `:6016-6018`).
+  `:879-882` §2.8 scoping comment.
+- **The existing fixed per-child diagnostic** at `:962-968` — condition, path, code, severity and
+  **message text verbatim**. §13 V4 guards this.
+- **`parentBound`'s expression and the `yield break` guard** (`:956-960`).
+- **V13(c)'s fixture** (`SplitFlexTests.cs:500-515`) — §9.2. Only its comment changes (§5.4).
 - **`DiagnosticSeverity`** (`:9-13`) — no third member.
 - **The `fixed-sizes-exceed-parent` code's meaning, severity, and registry row** beyond §11.2's
-  prose widening. No new code is registered by #91.
-- **`RunCheck`** (`Program.cs:660-704`) — the exit-code and `ok` mapping are unchanged.
-- **`--check`'s width-independence.** No `COLUMNS` read, no `SizeResolver` resolve pass, no
-  boundary-cost call added.
+  prose widening.
+- **`RunCheck`** (`Program.cs:660-704`).
+- **`--check`'s width-independence.** No `COLUMNS` read, no resolve pass, no boundary-cost call.
 - **`SizeResolver`, `PaneCollapse`, `Config.cs`, `Pane.cs`** — untouched.
 - **`SPEC-88-responsive-split-fallback.md`** — not #91's file to edit (§9.5).
 
@@ -628,47 +671,39 @@ a table cell's prose rather than adding a member, so it is not expected to trip 
 
 ## 13. Verification
 
-V1-V5 and V7-V10 go in `tests/ClaudeTuiLine.Tests/ConfigCheckTests.cs`, beside the existing
-horizontal cases at `:1817-1862`. V6/V6b belong wherever #88's V13 flex tests live (§9.2).
+V1-V5, V7, V8 in `tests/ClaudeTuiLine.Tests/ConfigCheckTests.cs`, beside the existing horizontal
+cases at `:1817-1862`. V6/V6b in `SplitFlexTests.cs`.
 
-- **V1 — the new diagnostic fires (`maxSize` parent).** `{"split":"horizontal","maxSize":40}` with
-  one child `{"minSize":50}` → exactly one diagnostic: code `fixed-sizes-exceed-parent`, severity
-  `Error`, path `/surface/pane/children/0`, message naming `50` and `40`.
-- **V2 — the new diagnostic fires (fixed parent).** `{"split":"horizontal","size":"10"}` with one
-  child `{"minSize":20}` → same shape, path `/surface/pane/children/0`. Guards §5.3(a) — a test
-  using only `maxSize` would pass against an implementation that wrongly consulted `split.MaxSize`
-  alone, mirroring `CheckSplitBounds:940`. **This test is the one that distinguishes the correct
-  implementation from that plausible wrong one.**
-- **V3 — no bound, no diagnostic.** A `fill` or `content` horizontal parent with a child
+- **V1 — fires (`maxSize` parent).** `{"split":"horizontal","maxSize":40}`, one child
+  `{"minSize":50}` → exactly one diagnostic: `fixed-sizes-exceed-parent`, `Error`, path
+  `/surface/pane/children/0`, message naming `50` and `40`.
+- **V2 — fires (fixed parent).** `{"split":"horizontal","size":"10"}`, one child `{"minSize":20}` →
+  same shape. Guards §5.3(a) — a `maxSize`-only test would pass against an implementation wrongly
+  consulting `split.MaxSize` alone, mirroring `CheckSplitBounds:940`. **This is the test that
+  distinguishes the correct implementation from that plausible wrong one.**
+- **V3 — no bound, no diagnostic.** A `fill`/`content` horizontal parent with a child
   `{"minSize":999}` → **no** `fixed-sizes-exceed-parent`. Guards framework `:6016-6018`.
-- **V4 — the fixed check is unchanged.** `:1817-1837` and `:1841-1862` pass **unmodified**, and
-  their emitted message strings are byte-identical to `8437c37`.
-- **V5 — at most one diagnostic per child (§5.3(c)).** A horizontal parent bounded at 10 with one
-  child `{"size":"20","minSize":30}` → **exactly one** diagnostic for `/surface/pane/children/0`,
-  its message naming the **fixed size (20)**, not the `minSize`. Paired with: a child
-  `{"size":"5","minSize":30}` under the same bound → exactly one diagnostic, message naming the
-  **`minSize` (30)**. The pair proves `else if` suppresses only the redundant case and never loses a
-  detection.
+- **V4 — the fixed check is unchanged.** `:1817-1837` and `:1841-1862` pass **unmodified**, messages
+  byte-identical to `8437c37`.
+- **V5 — at most one diagnostic per child (§5.3(c)).** Horizontal parent bounded at 10, child
+  `{"size":"20","minSize":30}` → **exactly one** diagnostic, message naming the **fixed size (20)**.
+  Paired with child `{"size":"5","minSize":30}` under the same bound → exactly one, naming the
+  **`minSize` (30)**. The pair proves `else if` suppresses only the redundant case.
 - **V6 — `flex` inherits the fix (§9.3).** `{"split":"flex","maxSize":40}` with two `minSize: 50`
-  children → the AND now produces **exactly one** diagnostic, code `fixed-sizes-exceed-parent`,
-  severity `Error`, path = **the split's own path** (not `…/children/{i}`, per
-  `CheckFlexSplitBounds:921`). **And, in the same run, #88's V13(a) must still pass**:
-  `{"split":"flex","maxSize":40}` with two `minSize: 30` children still reports `ok: true` and **no**
-  diagnostic. If V6 and V13(a) cannot both be green, the implementation is wrong — see §9.3.
-- **V6b — the composite message quotes the new wording.** For V6's config, the flex diagnostic's
-  message must name **both** arrangements and its "stacked (…)" clause must contain #91's `minSize`
-  message text. Guards the interpolation at `:922` against a stale-message regression.
-- **V7 — no boundary cost leaked in.** V1's message must name the parent's bound as `40`, not a
-  boundary-adjusted number. Guards §5.3(b).
-- **V8 — exit code.** `--check` on V1's config exits **1**, and `--check --json` reports
-  `ok: false`.
-- **V9 — V13(c) re-baselined, not reverted (§9.2).** After re-baselining, V13(c)'s declared-
-  `"vertical"` half must still be byte-identical to `8437c37`; only its declared-`"horizontal"` half
-  changes, and only for configs carrying a child `minSize` over bound.
-- **V10 — full suite.** `dotnet test tests/ClaudeTuiLine.Tests` — no failures other than V13(c)'s
-  expected, deliberate re-baseline (see §14 NE-1).
+  children → the AND produces **exactly one** diagnostic, path = **the split's own path** (per
+  `:921`). **And #88's V13(a) must still pass** in the same run. If both cannot be green, the
+  implementation is wrong.
+- **V6b — the composite message quotes the new wording.** For V6's config, the message names **both**
+  arrangements and its "stacked (…)" clause contains #91's `minSize` text. Guards `:922`.
+- **V7 — no boundary cost leaked in.** V1's message names the bound as `40`, not boundary-adjusted.
+- **V8 — exit code.** `--check` on V1's config exits **1**; `--check --json` reports `ok: false`.
+- **V9 — V13(c) unmodified and still green (A2).** `SPEC-88`'s V13(c) passes with **no fixture
+  change** — only its comment is updated per §5.4. Its continued green is an assertion that #91 is
+  correctly scoped: the change must not perturb configs declaring no `minSize`. **A red V13(c) is a
+  defect, not an expected re-baseline.**
+- **V10 — full suite.** `dotnet test tests/ClaudeTuiLine.Tests` — **fully green** (§14 NE-1).
 - **V11 — `tools/check-all.sh`** passes, or fails only in ways already failing on `main` (§14 NE-2).
-  §11's amendments must be made in the **same change** as the code, per framework `:445`.
+  §11's amendments must land in the **same change** as the code, per framework `:445`.
 
 ---
 
@@ -676,72 +711,61 @@ horizontal cases at `:1817-1862`. V6/V6b belong wherever #88's V13 flex tests li
 
 I do not run anything. Each item states what to run and what each outcome decides.
 
-- **NE-1 — which existing tests fail, and are they only the expected ones?**
-  *Partially resolved by inspection at `8437c37`.* No fixture in `ConfigCheckTests.cs` declares a
-  horizontal split with a child `minSize`; the nearest negative test (`:1841-1862`) uses `Size` only.
-  **`SPEC-88`'s V13(c) is expected to fail (§9.2) and must be re-baselined.**
-  **To run:** `dotnet test tests/ClaudeTuiLine.Tests` after the change.
-  → **Only V13(c) fails:** expected; re-baseline per §9.2 and V9.
-  → **Anything else fails:** stop and report which test and its fixture. **Do not "fix" it** — a
-  failure outside V13(c) most likely means this spec is wrong, not the test.
+- **NE-1 — does any existing test fail? (A2: expectation corrected.)**
+  *Resolved by inspection and by implementation.* No fixture in `ConfigCheckTests.cs` declares a
+  horizontal split with a child `minSize`, and `SPEC-88`'s V13(c) is `FixedSize`-only (§9.2).
+  **Expected outcome is a fully green suite — including V13(c).**
+  **To run:** `dotnet test tests/ClaudeTuiLine.Tests`.
+  → **All green:** proceed.
+  → **Any failure, V13(c) included:** stop and report the test and its fixture. **Do not "fix" it.**
+  A failure now most likely means this spec is wrong. (Earlier drafts predicted a deliberate V13(c)
+  re-baseline; that prediction was withdrawn in A2 — a red V13(c) is a defect.)
 
 - **NE-2 — does `tools/check-all.sh` accept §11's amendments?**
-  Run before and after. `check-all.sh` was **failing on `main`** before #88 for unrelated reasons
-  (`check-citations` on undefined §-refs, `check-counts` on `SPEC-2.3-drop-predicate.md:172`), so the
-  bar is **no new failures**, not exit 0. Re-establish the baseline at `8437c37` first, since #88 may
-  have changed it.
+  Run before and after. It was failing on `main` before #88 for unrelated reasons
+  (`check-citations`, `check-counts` on `SPEC-2.3-drop-predicate.md:172`), so the bar is **no new
+  failures**, not exit 0. Re-establish the baseline at `8437c37` first.
   → **No new failures:** proceed.
-  → **A new failure naming §9.4's table or §9.8:** report the exact message; §11.2's shape needs
-  revisiting.
+  → **A new failure naming §9.4's table or §9.8:** report the exact message; §11.2 needs revisiting.
 
-- **NE-3 — RESOLVED.** #88 landed on `main` as `8437c37`. #91 is unblocked; branch from `8437c37`
-  or later (§9.4).
+- **NE-3 — RESOLVED.** #88 landed as `8437c37`. Branch from `8437c37` or later (§9.4).
 
 - **NE-4 — are there real-world configs in the blast radius?**
-  §8.1 defines the affected shape; §9.3 adds the `flex` population. If any example, fixture, README
-  snippet, or `docs/` config matches, it will newly fail `--check` and must be fixed in the same
-  change.
-  Suggested: search `.json`/`.md` for a `"split": "horizontal"` or `"split": "flex"` pane carrying
-  `size` or `maxSize` whose children declare `minSize`.
+  §8.1 defines the shape; §9.3 adds the `flex` population. Any example, fixture, README snippet or
+  `docs/` config that matches will newly fail `--check` and must be fixed in the same change.
   → **None found:** §8.2's risk assessment stands unqualified.
-  → **Any found:** report them. A repo-shipped config in the blast radius is evidence the pattern
-  occurs in the field, and would justify re-opening §8.3's staged-rollout question **as a product
-  call for Jim rather than an engineering one**.
+  → **Any found:** report. That is evidence the pattern occurs in the field and would reopen §8.3's
+  staged-rollout question **as a product call for Jim rather than an engineering one**.
 
 ---
 
-## 15. Task #92 — the shared root cause (was: incidental finding)
+## 15. Task #92 — the shared root cause
 
 **`CheckSplitBounds`'s `minSize` sum check ignores a fixed parent.** `:929` computes
-`parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize` and uses it for the *fixed* sum check,
-but the *`minSize`* sum check at `:940` consults `split.MaxSize` alone. So a **fixed** vertical
-parent — say `size: "40"` — whose children's `minSize` sum is 50 goes undiagnosed, because
-`split.MaxSize` is null and the block is skipped. Framework `:6011` has the same narrow wording
-("the parent's `maxSize`"), so the code may be faithfully implementing a too-narrow bullet.
+`parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize` for the *fixed* sum check, but the
+*`minSize`* sum check at `:940` consults `split.MaxSize` alone. So a **fixed** vertical parent —
+`size: "40"` — whose children's `minSize` sum is 50 goes undiagnosed. Framework `:6011` has the same
+narrow wording, so the code may be faithfully implementing a too-narrow bullet.
 
-**A1 update: this propagates further than first stated.** It is not confined to the vertical path.
-Because `CheckFlexSplitBounds` (`:913`) delegates to `CheckSplitBounds`, a **`flex` pane with a fixed
-size** (not `maxSize`) and a child whose `minSize` exceeds it will, even after #91:
+**It is not confined to the vertical path.** Because `CheckFlexSplitBounds` (`:913`) delegates to
+`CheckSplitBounds`, a **`flex` pane with a fixed size** (not `maxSize`) and a child whose `minSize`
+exceeds it will, even after #91:
 
-- fire `CheckHorizontalSplitChildren` (per-child, uses `FixedSize(split) ?? MaxSize` — sees the
-  fixed size), but
-- **not** fire `CheckSplitBounds`'s min branch (gated on `MaxSize`, which is null),
+- fire `CheckHorizontalSplitChildren` (per-child; uses `FixedSize(split) ?? MaxSize`), but
+- **not** fire `CheckSplitBounds`'s min branch (gated on `MaxSize`, null here),
 
 so the AND yields **nothing**, for a pane impossible in both arrangements. **#91 does not close that
-case**, and the `maxSize`-parent case works only because `Σ minSize ≥ any single minSize`.
+case**; the `maxSize`-parent case works only because `Σ minSize ≥ any single minSize`.
 
-So #92 is a **shared root cause feeding both the vertical sum check and #88's flex combinator**, not
-a standalone vertical-path issue.
+So #92 is a **shared root cause feeding both the vertical sum check and #88's flex combinator.**
 
-**Deliberately out of scope for #91**, for the reason #88 used to punt this one: it is a pre-existing
-gap in a different code path, fixing it newly rejects a different population of field configs, and it
-deserves its own ruling. §12 forbids touching it here.
+**Out of scope for #91**, for the reason #88 used to punt this one. §12 forbids touching it here.
 
-**Caution for #91's implementor and reviewer:** do not "strengthen" V6 by switching it to a
-fixed-size flex parent. That variant will fail, and the failure is #92, **not a #91 defect**.
+**Caution for implementor and reviewer:** do not "strengthen" V6 by switching it to a fixed-size
+flex parent. That variant will fail, and the failure is **#92, not a #91 defect**.
 
-I have **not** verified this against `SizeResolver.FixedSize`'s behaviour for every `size` token
-form, so it remains a strong suspicion rather than a confirmed defect.
+Not verified against `SizeResolver.FixedSize`'s behaviour for every `size` token form — a strong
+suspicion, not a confirmed defect.
 
 ---
 
@@ -749,36 +773,34 @@ form, so it remains a strong suspicion rather than a confirmed defect.
 
 **Decided, with confidence:**
 
-1. **Add the check** (§3) — the asymmetry has no principled defence and framework §9.8's invariant
-   covers the case exactly.
-2. **Severity `Error`** (§6) — severity tracks "unachievable at any width"; framework `:6008-6010`
-   shows the project already corrected an analogous floor diagnostic *from* warning *to* error.
-3. **Reuse `fixed-sizes-exceed-parent`** (§7) — framework `:6011-6014` rules floor-based
-   contradictions take the same code, and `:945` already does exactly this.
-4. **Accept the backward-compat risk, no staged rollout** (§8) — the newly-rejected configs are
-   unsatisfiable at every width and already misrender, so this is not the "false error" §9.8 warns
-   against. `Warning`-first rejected on three independent grounds (§8.3).
-5. **`else if`, one diagnostic per child** (§5.3(c)) — chosen to avoid pre-empting
-   `SPEC-2.3-drop-predicate.md:323`'s open ruling.
-6. **`SPEC-91` governs over `SPEC-88` §7's stale prohibition** (§9.1) — that prohibition was scoped
-   to #88's diff, and #88's own §12(2) routed this work onward.
-7. **V13(c) is re-baselined, not satisfied** (§9.2).
+1. **Add the check** (§3).
+2. **Severity `Error`** (§6).
+3. **Reuse `fixed-sizes-exceed-parent`** (§7).
+4. **Accept the backward-compat risk, no staged rollout** (§8).
+5. **`else if`, one diagnostic per child** (§5.3(c)).
+6. **`SPEC-91` governs over `SPEC-88` §7's stale prohibition** (§9.1).
+7. **V13(c) keeps its fixture and stays green; only its comment changes** (§9.2, §5.4) — **A2,
+   reversing this spec's earlier claim that it would go red.**
 
 **Flagged, not decided — for the Orchestrator or Jim:**
 
-- **The residual product question (§8.2, NE-4).** My ruling is that no *working* config is newly
-  rejected, because the affected configs cannot render correctly at any width. That is sound, but it
-  is an engineering judgment about a **user-visible gating change**: someone with such a config who
-  tolerates the degraded render newly gets exit 1. I judge that correct — a validator silent about
-  an impossible config is worse — but if NE-4 finds the pattern in practice, **this becomes Jim's
-  call, not mine.**
-- **The `SPEC-88` amendments (§9.5)** are another architect's file. Specified, not made.
-- **Task #92 (§15)** needs its own ruling; A1 raises its priority from "incidental" to "shared root
-  cause."
+- **The residual product question (§8.2, NE-4).** No *working* config is newly rejected, because the
+  affected configs cannot render correctly at any width. Sound, but it is an engineering judgment
+  about a **user-visible gating change**. If NE-4 finds the pattern in practice, **this becomes
+  Jim's call, not mine.**
+- **The `SPEC-88` amendments (§9.5)** — another architect's file. Specified, not made.
+- **Task #92 (§15)** needs its own ruling.
+- **Optional, declined here:** V13(c)'s name (`…ByteIdenticalToCurrentMain`) points at a moving
+  reference. Renaming would be an improvement but widens this diff for no correctness gain; note it
+  against #92 instead.
+- **Incidental:** `SplitFlexTests.cs` now carries two V-numbering schemes — `SPEC-88`'s `V6a`/`V6b`
+  (`:139`, `:159`) and `SPEC-91`'s `V6`/`V6b` (`:536`, `:586`). Compiles and CI output is
+  unambiguous, and the section header at `:533` mitigates it. Prefixing #91's with `Spec91_` would
+  be tidier; **not worth holding a merge for.**
 
-**Confidence: high** on §1's rulings — framework §9.8 and `:6011-6014` decide most of this directly,
-and the change is small, additive, and provably free of false positives.
+**Confidence: high** on §1's rulings — framework §9.8 and `:6011-6014` decide most of this directly.
 
-**The risk in this task is not the ruling; it is the coordination.** §9.1 (a live prohibition in
-another spec), §9.2 (a merged test that must fail), and §9.3 (a behaviour change in untouched code)
-are where an implementor or reviewer can do real damage.
+**A2's lesson, recorded rather than buried:** this spec asserted a test outcome without reading the
+fixture, while instructing its implementor to read it first. §9.2 and §13 V9 then disagreed with
+each other, and the implementor caught it. **The risk in this task was never the ruling; it was the
+coordination** — §9.1, §9.2, §9.3 — and one of the three turned out to be my own error.
