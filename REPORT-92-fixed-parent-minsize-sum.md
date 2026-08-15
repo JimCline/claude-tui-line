@@ -2,8 +2,16 @@
 
 Issue #92. Implemented per `SPEC-92-fixed-parent-minsize-sum.md`, anchored to `62687bb`.
 Branch `task-92-fixed-parent-minsize`, worktree
-`claude-tui-line-task-92-fixed-parent-minsize`. Uncommitted at time of writing this report;
-committing next per repo convention (see "Commit strategy" below).
+`claude-tui-line-task-92-fixed-parent-minsize`. Committed as `e230847`.
+
+## Update — post cdtui-worker review
+
+Rebased onto `origin/main` (`c104fc4`, picks up #47's merge and its check-counts fix for free).
+Fixed the one flagged item: §11.1's inferred span for the re-anchored `:5986-6014` citation was
+`:6033-6061`, derived from SPEC-92 §12(c)'s table endpoints — but those endpoints were pre-#92-edit.
+#92's own edit to the third bullet (the "bounded... in the same sense as the first bullet" clause)
+added 2 lines, so the correct current span is `:6033-6063`. Fixed. Rebuilt (exit 0) and re-ran the
+9 targeted tests (4 ConfigCheckTests.cs + 2 Spec92_ + SPEC-91's V6/V6b/V13a) — all pass.
 
 ## Code change
 

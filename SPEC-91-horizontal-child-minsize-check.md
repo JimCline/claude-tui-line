@@ -627,7 +627,7 @@ Two, both to `SPEC-V2-FRAMEWORK.md`. Both correct documentation **already** inac
 
 ### 11.1 §9.8's bullet list does not cover the per-child form at all
 
-§9.8 `:5986-6014` (pre-drift; the same span is now `:6033-6061`) enumerates the structural checks in
+§9.8 `:5986-6014` (pre-drift; the same span is now `:6033-6063`) enumerates the structural checks in
 three bullets, **all sum checks**, written for the vertical/shared-axis model. The existing per-child
 horizontal `FixedSize` check (`:962-968`) is **already an implementation extension beyond this
 list**; a reader reconstructing `--check` from §9.8 alone would not produce it.
