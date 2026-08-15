@@ -4784,6 +4784,56 @@ regression on the common case). Merged cleanly on top of #69's merge (only
 via `cdtui-worker`: pre-merge full suite clean (1337/1337), post-merge
 covered together with #69 above. Landed as merge commit `9f68ea9` (pushed).
 
+**Architect ruling on the open question above**: full-row-replacement is not
+spec-compliant. §2.6's "ends with the marker" means the marker replaces the
+row's last *cells*, never the whole row — impl2's diff is correct and stays
+(it fixed a real §2.4 shearing bug independent of this), but the splice
+itself is a follow-up, deliberately sequenced after the §3.1 block-model work
+below rather than built against the current row-production shape twice.
+
+### #13: remote-url probe now cached under a TTL
+
+`RemoteUrl.Probe` reuses `ItemCache`'s existing atomic-write machinery
+(`ItemCache.KeyFor`, `TryRead`/`Write`, the same `CacheEntry` record) rather
+than inventing a second caching mechanism, with a 30s TTL matching
+`CommandProvider.DefaultTtlSeconds`'s precedent. Cache key folds in `cwd`
+alongside the id. Touched `RemoteUrl.cs`, `Program.cs`,
+`RemoteUrlTests.cs` — 91 insertions, 5 deletions. Verified via `cdtui-worker`:
+pre-merge and post-merge build+full suite (1349/1349)+`check-all.sh` all
+clean. Landed as merge commit `24357b4` (pushed).
+
+### #39: §12.6.11 compare-and-branch — investigated, no code change
+
+Rule has three parts: (1) compare a re-read config against the first read and
+branch, (2) tell the user what moved, (3) apply the same discipline to the
+MCP server's stale-revision refusal (§12.6.5) so a naive retry can't defeat
+it. Parts 1+2 are already fully implemented, verbatim, in
+`commands/edit.md` step 5 (the client/prompt layer `/claude-tui-line:edit`
+follows). Part 3's target — an MCP server implementing `set_config` and
+§12.6.5's baseRevision check — does not exist anywhere in this repo; the
+C# codebase is CLI-only (render/validate/preview), and every
+`set_config`/`stale-revision` hit is spec/doc text, not implementation. This
+is Phase-7 MCP-tools territory (task #10) — holding #39 until that server
+exists to implement rule 3 against. No falsification-style test written
+against a server that isn't built.
+
+### #47: §2.11.3/§6.6.1 citations confirmed stale — routed to architect
+
+Not a line-number fix: both sections' *mechanism* claims are wrong about
+current code, not just their line refs. `SafeLoadAll` no longer exists (split
+into `LoadRenderConfig` + `BuildFallbackConfig`, Program.cs:804/869). §9.2.1
+bypasses the Pane/collapse/render pipeline entirely for all 3
+"config unreadable" rows — `RunAsync` prints a raw diagnostic and returns
+before any Pane reaches the renderer, contradicting §2.11.3's "non-empty
+reason-pane survives collapse" mechanism and §6.6.1's "always routes through
+Panel" claim. One narrow exception found and flagged, not treated as a live
+bug: the catch-all `try/catch` around `ResolveTopLevel`/`ResolveRootPane`
+still renders a collapse-eligible fallback pane through the ordinary
+pipeline, but no user-reachable config value was found that triggers that
+catch. Both sections cross-reference each other's now-wrong claims, so
+rewriting coherently is a spec-authoring call — routed to `cdtui-architect`
+rather than guessed at. No code or spec changes made.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
