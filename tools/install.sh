@@ -114,10 +114,8 @@ echo
 # projects. It has no PublishAot and no publish profile of its own, so this publishes it
 # framework-dependent (needs the .NET 10 runtime present at run time, unlike the AOT CLI).
 #
-# This step is allowed to fail without aborting the script: ClaudeTuiLineMcp.csproj's
-# ProjectReference to the self-contained (PublishAot) ClaudeTuiLine.csproj currently trips
-# NETSDK1151 during publish — a pre-existing conflict between those two project files, tracked
-# separately, unrelated to the CLI build above.
+# This step is allowed to fail without aborting the script, so an MCP publish problem never
+# blocks the CLI install above.
 echo "5. Build: claude-tui-line-mcp"
 mcp_log="$log_dir/mcp-publish.log"
 if dotnet publish src/ClaudeTuiLineMcp/ClaudeTuiLineMcp.csproj -c Release -o publish-mcp > "$mcp_log" 2>&1; then

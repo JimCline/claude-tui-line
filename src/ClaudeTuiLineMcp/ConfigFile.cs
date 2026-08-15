@@ -5,7 +5,7 @@ namespace ClaudeTuiLineMcp;
 /// <summary>
 /// SPEC-12.6-mcp-tools.md §1.4: reading the config file and hashing its bytes for <c>revision</c>
 /// is the server's own file I/O, not behaviour there is anything to duplicate — §7.1's core
-/// allow-list stays at <c>ConfigLoader.ResolveConfigPath()</c> only (E1: the core exposes no
+/// allow-list stays at <c>ConfigPath.ResolveConfigPath()</c> only (E1: the core exposes no
 /// reusable SHA-256 helper or atomic writer to extend it with).
 /// </summary>
 internal static class ConfigFile

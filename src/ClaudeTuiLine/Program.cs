@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ClaudeTuiLine;
+using ClaudeTuiLineShared;
 using Spectre.Console;
 
 // §9.1: argv is inspected only far enough to notice it is empty before the render path below
@@ -268,7 +269,7 @@ static void DrawRows(IAnsiConsole console, IReadOnlyList<PaneRow> rows, bool ren
 // exit-3 gate, and --json-vs-bare formatting) that are specific to this subcommand.
 static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? columns)
 {
-    var configPath = explicitConfigPath ?? ConfigLoader.ResolveConfigPath();
+    var configPath = explicitConfigPath ?? ConfigPath.ResolveConfigPath();
 
     if (configPath is not null)
     {
@@ -641,7 +642,7 @@ static int RunFixture()
 // subprocess. §9.4's exit codes: 0 clean, 1 at least one error diagnostic, 2 usage, 3 unreadable.
 static int RunCheck(bool json, string? explicitConfigPath)
 {
-    var configPath = explicitConfigPath ?? ConfigLoader.ResolveConfigPath();
+    var configPath = explicitConfigPath ?? ConfigPath.ResolveConfigPath();
     UserConfig? config = null;
 
     if (configPath is not null)
@@ -826,7 +827,7 @@ static StatusInput ParseInput(string? raw)
 // defaults; only "no --config, nothing at any searched path" (row 1) is a legitimate default.
 static (ResolvedConfig TopLevel, Pane RootPane, string? ConfigPath, string? UnreadableReason, int UnreadableReasonProtectedLength) LoadRenderConfig(string? explicitConfigPath)
 {
-    var configPath = explicitConfigPath ?? ConfigLoader.ResolveConfigPath();
+    var configPath = explicitConfigPath ?? ConfigPath.ResolveConfigPath();
     UserConfig? config = null;
 
     if (configPath is not null)

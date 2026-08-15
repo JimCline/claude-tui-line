@@ -1,4 +1,5 @@
 using ClaudeTuiLine;
+using ClaudeTuiLineShared;
 using Spectre.Console;
 
 namespace ClaudeTuiLine.Tests;
@@ -179,21 +180,21 @@ public class ConfigTests
     [Fact]
     public void ResolveConfigPath_OverrideSet_ReturnsOverrideVerbatim()
     {
-        var resolved = ConfigLoader.ResolveConfigPath(configPathOverride: "/some/explicit/path.json", home: "/irrelevant/home");
+        var resolved = ConfigPath.ResolveConfigPath(configPathOverride: "/some/explicit/path.json", home: "/irrelevant/home");
         Assert.Equal("/some/explicit/path.json", resolved);
     }
 
     [Fact]
     public void ResolveConfigPath_OverrideEmpty_IsTreatedAsUnset()
     {
-        var resolved = ConfigLoader.ResolveConfigPath(configPathOverride: "", home: "/tmp/some-home");
+        var resolved = ConfigPath.ResolveConfigPath(configPathOverride: "", home: "/tmp/some-home");
         Assert.Equal(Path.Combine("/tmp/some-home", ".claude", "claude-tui-line.json"), resolved);
     }
 
     [Fact]
     public void ResolveConfigPath_OverrideNull_FallsBackToHomePath()
     {
-        var resolved = ConfigLoader.ResolveConfigPath(configPathOverride: null, home: "/tmp/some-home");
+        var resolved = ConfigPath.ResolveConfigPath(configPathOverride: null, home: "/tmp/some-home");
         Assert.Equal(Path.Combine("/tmp/some-home", ".claude", "claude-tui-line.json"), resolved);
     }
 
@@ -212,7 +213,7 @@ public class ConfigTests
             Environment.SetEnvironmentVariable("HOME", tempHome);
             Environment.SetEnvironmentVariable("CLAUDE_TUI_LINE_CONFIG", null);
 
-            var resolved = ConfigLoader.LoadBorderConfig(ConfigLoader.ResolveConfigPath());
+            var resolved = ConfigLoader.LoadBorderConfig(ConfigPath.ResolveConfigPath());
 
             Assert.Equal(new ColorResolution.ColorExpr.Literal("blue"), resolved.BorderColor);
             Assert.Same(BoxBorder.Heavy, resolved.Style);

@@ -254,10 +254,10 @@ project's correctness budget should go; `SizeResolver` is.
 
 **Layout: a new `src/ClaudeTuiLineMcp/` sibling project.** Separate assembly, separate entry point.
 
-**On the project reference to the core — reference it, but under an explicit allow-list.** impl3
-proposed referencing the main project "only for the server's own file I/O," and the tension is real:
-a project reference makes the whole core reachable, including the merge capability section 1.3(a) is built
-to keep out of reach.
+**On sharing code with the core — SPEC-83 replaced the project reference with a shared
+library.** impl3 originally proposed referencing the main project "only for the server's own file I/O,"
+and the tension was real: a project reference makes the whole core reachable, including the merge
+capability section 1.3(a) is built to keep out of reach.
 
 I considered forbidding the reference and duplicating config-path resolution in the server. **Ruled
 against it**, because the failure it invites is worse: if the server and the CLI ever disagree about
@@ -265,18 +265,21 @@ against it**, because the failure it invites is worse: if the server and the CLI
 success. A silent path divergence is harder to detect than a rule violation and has no natural
 tripwire.
 
-So: **the reference is allowed, and the allow-list is `ConfigLoader.ResolveConfigPath()` and nothing
-else.** This is enforceable rather than aspirational — see V4. If a second member is genuinely
-needed, that is a spec amendment, not an implementor's call.
+The original resolution was to allow a `ProjectReference` to `ClaudeTuiLine` under a
+one-member allow-list. **SPEC-83 superseded that**, for an unrelated reason:
+`ClaudeTuiLine.csproj` sets `PublishAot`, making it self-contained, and the SDK refuses
+to publish a framework-dependent exe that references one (NETSDK1151). The shared
+function now lives in `src/ClaudeTuiLineShared`, a plain dependency-free library, as
+`ClaudeTuiLineShared.ConfigPath.ResolveConfigPath()`. Both the CLI and the server
+reference *that*; **the server has no reference to `ClaudeTuiLine` at all.**
 
-**A2 — the allow-list gains at most one conditional member, and only because §9 requires it.**
-The same divergence argument that justified `ResolveConfigPath` applies to the config path the
-*checkpoint* records: if the checkpoint captures a different file from the one `set_config` writes,
-the recovery tree points at the wrong artifact — §9.2 step 6 must resolve the config path through the
-identical call. Beyond that, **if the core already exposes a SHA-256 helper or an atomic
-temp-file-then-rename writer, the server may use those and V4 asserts a two- or three-member list**;
-if it does not, the server implements them locally and the list stays at one. See E1. The server must
-**not** go looking for anything else adjacent in the core.
+The allow-list survives this intact, and is strictly stronger for it. It was previously
+"one permitted member out of an entire reachable core," enforced by a grep. It is now
+"the core is not reachable," enforced by the absence of the reference itself — V4b
+asserts the `ProjectReference` is gone, and V4 continues to assert no `ClaudeTuiLine.*`
+member has crept back in by any other route. If a second shared member is genuinely
+needed, moving it into `ClaudeTuiLineShared` is a spec amendment, not an implementor's
+call.
 
 ### 7.2 — SUPERSEDED BY A2. See §9.
 
@@ -537,7 +540,8 @@ cost a false regression hunt. This one would cost user data.
 - **V3** — with no CLI on the search path, **both** tools fail `cli-not-found` and **name the paths
   searched**. Assert the paths are in the payload, not just that the code fires.
 - **V4** — structural: `grep` `src/ClaudeTuiLineMcp/` for core types; assert only the §7.1 allow-list
-  appears. Without this, §7.1 is a comment rather than a rule.
+  appears. Without this, §7.1 is a comment rather than a rule. **V4b** additionally asserts the MCP
+  csproj carries no `ProjectReference` to `ClaudeTuiLine.csproj`.
 - **V5** — `set_config` with a stale `baseRevision` refuses with `stale-revision` **and a payload
   carrying the current config and the current revision** (§2.2). **Assert the payload, not just the
   code** — the payload is the half that prevents the clobber, and a code-only assertion passes

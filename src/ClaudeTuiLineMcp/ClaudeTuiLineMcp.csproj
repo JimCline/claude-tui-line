@@ -19,11 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- SPEC-12.6-mcp-tools.md §7.1: the only allowed core reference is
-         ClaudeTuiLine.ConfigLoader.ResolveConfigPath() (and, per A2, at most one conditional
-         member if the core exposes a reusable SHA-256 helper or atomic writer — it does not,
-         per E1, so the allow-list stays at one member). V4 enforces this structurally. -->
-    <ProjectReference Include="../ClaudeTuiLine/ClaudeTuiLine.csproj" />
+    <!-- SPEC-83/SPEC-12.6-mcp-tools.md §7.1: the server shares exactly one function with the CLI —
+         ConfigPath.ResolveConfigPath() — and reaches it through this small dependency-free library
+         rather than through a reference to ClaudeTuiLine. There is deliberately no reference to
+         ClaudeTuiLine.csproj: the core is now unreachable from here by construction, and its
+         PublishAot/self-contained setting can no longer block this project's publish (NETSDK1151). -->
+    <ProjectReference Include="../ClaudeTuiLineShared/ClaudeTuiLineShared.csproj" />
   </ItemGroup>
 
 </Project>
