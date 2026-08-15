@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "claude-tui-line": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-tui-line-mcp"
+    }
+  }
+}

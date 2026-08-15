@@ -49,6 +49,22 @@ and report which directory it went to — if the fallback was used, the user sho
 you rather than discover it. Report the build's exit code; if it is nonzero, show the error lines
 and stop.
 
+## 2b. Build the MCP server
+
+The same `$BIN_DIR` from step 2 — one install location, so the launcher script and `CliLocator`
+agree about where things are.
+
+```bash
+dotnet publish "${CLAUDE_PLUGIN_ROOT}/src/ClaudeTuiLineMcp/ClaudeTuiLineMcp.csproj" \
+  -c Release -o "$BIN_DIR"
+```
+
+The result is `$BIN_DIR/claude-tui-line-mcp`. Confirm it exists and is executable. Report the exit
+code; if nonzero, show the error lines and stop.
+
+This publish is framework-dependent and must stay that way — see #83. Do not add `--self-contained`
+or a `-r` flag to make it match step 2's output.
+
 ## 3. Back up whatever statusline is already configured
 
 **This step is mandatory and must happen before step 4 writes anything.**
@@ -167,6 +183,9 @@ Report, briefly:
 
 - that `/claude-tui-line:edit` changes the statusline in plain English, so they do not have to
   hand-write JSON to try something
+- that the MCP tools (`get_config_schema` and the rest) need a **session restart or
+  `/reload-plugins`** before they appear, since a newly added MCP server is picked up at plugin load
+  rather than immediately
 
 Do not invent configuration examples in your summary. Point them at the project README, which
 documents every pane key, all sixteen built-in items, custom `command` items, derived items,

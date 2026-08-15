@@ -5,7 +5,7 @@ obj/
 # Publish output. The install flow builds into ${CLAUDE_PLUGIN_DATA}; this directory
 # is a local development target only and must never be committed -- it is ~21MB of
 # platform-specific binary that would be wrong on every machine but the one that built it.
-publish/
+publish*/
 
 # Local Claude Code session tooling: permission allow-lists, scheduler locks, and
 # agent-routing config. All machine-specific, none of it part of the product.
@@ -21,6 +21,10 @@ artifacts/
 [Rr]elease/
 [Bb]in/
 [Oo]bj/
+
+# The committed MCP launcher lives at repo-root bin/ (SPEC-90 §4.1), not build output --
+# un-ignore that one directory specifically; nested build bin/s elsewhere are unaffected.
+!/bin/
 
 # NuGet
 *.nupkg

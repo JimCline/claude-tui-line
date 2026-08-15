@@ -420,6 +420,18 @@ construct today.
 `--items` and `--preview` are also part of the CLI; see the blockquote near the top of this README,
 under Install, for their current status.
 
+## MCP tools
+
+The plugin also registers a stdio MCP server, built by `/claude-tui-line:setup` alongside the CLI.
+It exposes `get_config_schema`, which returns the same envelope as `--schema --json` (above) so an
+MCP-aware editor can introspect the config format — every pane/item/colour-rule shape, the accepted
+values for every closed-set key, and which item kinds it can safely construct — without shelling out
+to the CLI itself. An optional `sections` argument narrows the response to just the parts needed
+(`items`, `colors`, `accepted`, `structures`, `kindSupport`).
+
+A newly installed or updated plugin's MCP registration is picked up at the next session restart or
+`/reload-plugins` — it does not appear mid-session automatically.
+
 ## Layout, briefly
 
 Width is the hard constraint. The usable surface is `COLUMNS` minus a small reserve for Claude
