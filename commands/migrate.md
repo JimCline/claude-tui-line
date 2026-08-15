@@ -215,6 +215,10 @@ but it is a different kind of finding than a token silently dropped from the ren
    mapped
 4. the tier-3 list — and if it is empty, say "everything mapped" rather than omitting the section;
    an absent section reads as an oversight
+5. **What is at the config path now** — the path §5's search order resolves to, and whether a file
+   already exists there. If one does, say plainly that saying yes replaces it, and that the copy
+   taken at step 2 is the only way back. If none does, say the path is currently empty rather than
+   omitting the item.
 
 Then ask. If they say no, you have written nothing outside the backup directory and there is
 nothing to undo.
@@ -244,8 +248,11 @@ migrated config, original `statusLine`. Permanently, since rule 1 forbids removi
 
 Report, in this order:
 
-1. **The backup path and which ledger entry kind you appended** — first, before anything else, and
-   that `/claude-tui-line:revert` restores it.
+1. **The backup path and which ledger entry kind you appended** — first, before anything else. Say
+   that `/claude-tui-line:revert` restores the `statusLine` entry in `settings.json`; it does
+   **not** restore the config file. If step 7's item 5 found an existing config, name the
+   `configCopy` path recorded in this entry and say restoring it is a manual copy — the ledger
+   keeps it forever (§12.2 rule 1), but no command performs that copy for you.
 2. **The mapping table** — one row per inventoried element: what it was, what it became, which
    tier.
 3. **The tier-3 list**, as its own section.

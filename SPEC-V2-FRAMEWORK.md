@@ -6181,8 +6181,12 @@ that collision is what stopped these bullets from being promoted to subsections.
     implementation: migrate, edit, migrate again, revert — and assert the restored command is
     the user's, not claude-tui-line's. Assert too that a second `origin` is refused, that no
     command deletes or overwrites a backup file, and that a hand-edited `settings.json` is
-    reported rather than clobbered. This is the one area where a bug destroys something the
-    user cannot rebuild, so it is tested against the filesystem in a temp HOME, not mocked.
+    reported rather than clobbered. The second migrate is, by construction, the overwrite case
+    (§81): assert its consent gate discloses the existing config before writing — item 5's
+    exists-branch wording, naming the path the first migrate wrote — and that its report scopes
+    the `/revert` claim to `statusLine` rather than promising the config file back. This is the
+    one area where a bug destroys something the user cannot rebuild, so it is tested against the
+    filesystem in a temp HOME, not mocked.
 12. **`--check` never spawns a process; `--preview` always does** (§9.1.1). One config, one
     `command` item whose script touches a marker file. `--check` leaves no marker; `--preview`
     leaves one. This is bullet 9's marker technique again, and it is the *only* way to state the
@@ -6652,6 +6656,19 @@ two writes is free, and it is the whole fix.
 
 Migrate does **not** run the ledger procedure a second time at write. Its backup was taken before
 it read anything, and one entry per invocation is §12.2 rule 4.
+
+**The consent gate discloses whether a config already exists at the resolved path, because
+approving the migration replaces it.** The existence fact is free — §12.2's entry must already
+distinguish a captured config from `configCopy: null`, so the command holds it before the consent
+step runs. This is a disclosure, not a comparison: §12.6.11's compare-and-branch remains out of
+scope for `migrate` per #39, and reading the existing config's *contents* would reintroduce
+precisely the new-read cost that ruling rejected.
+
+**Migrate's report does not claim `/revert` restores the config file.** `commands/revert.md`
+deliberately restores only the `statusLine` entry in `settings.json` (§12.5), not the config, so a
+migration that replaced an existing config names the ledger's `configCopy` path and says restoring
+it back is a manual copy — the ledger keeps it forever (§12.2 rule 1), but no command performs that
+copy.
 
 #### 12.3.1 The fidelity check passes on the empty set
 
