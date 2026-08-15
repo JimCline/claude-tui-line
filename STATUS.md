@@ -4508,6 +4508,36 @@ green, 20 doc tokens checked, 0 disagree — one intermittent flake seen on the 
 `Preview_SplitPaneConfig_EveryRowCarriesItsOwnWidthMatchingItsText` failed on a JSON parse error,
 did not reproduce across 3 immediate reruns; filed as #65). Landed as merge commit `b793b7b`, pushed.
 
+### #58: §2.3.2 diagnostic-code coherence — census, not unification
+
+Investigated whether `leaf-only-key-on-split` / `border-inside-on-leaf` / `key-not-applicable` are
+really one predicate wearing three codes, per the follow-up filed during #24. Verdict: **do not
+unify.**
+
+- `border-inside-on-leaf` isn't the same predicate at all — `"border":"inside"` on a leaf pane IS
+  read (it silences the border); the repair is "pick a different value," not "delete the key." A
+  different repair means a different code, per the project's own established split rule.
+- `leaf-only-key-on-split` genuinely is the same predicate as `key-not-applicable` (both are
+  inert-key-delete-it cases) — the one real collapse candidate — but ruled against anyway on a
+  compatibility basis: §9.6 makes a shipped diagnostic code's meaning permanent, so retiring it
+  would change what code an existing config emits under `--check --json` today. It also carries
+  message specificity (naming `overflow`/`ellipsis` non-inheritance) a generic code would blur.
+
+What landed instead (doc-only, `SPEC-V2-FRAMEWORK.md`, no `.cs` changed): §2.3.2's "...and whatever
+the next one is" replaced with an explicit five-case census (distribute-on-horizontal,
+gutter-on-horizontal, items-with-nonempty-children, empty-children, childless-split — keeping the
+"predicate, not a closed list" framing per §9.4.1), plus prose explaining why the other two codes
+stay separate. §9.6.1's `key-not-applicable` table row updated to name all five cases (was stale at
+three since #24/#59 landed without updating it). Census-to-code mapping verified 1:1 against
+`ConfigCheck.cs`'s actual emissions.
+
+Flagged, not chased: the childless-split normalization behavior (`Config.cs:795`) has no section
+number citing it normatively in the spec — filed separately as #66 rather than inventing one.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1327/1327)
+and post-merge on `main` (1329/1329, build 0 warnings/0 errors, `check-all.sh` all five checks
+green, 20 doc tokens checked, 0 disagree). Landed as merge commit `0c51fce`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
