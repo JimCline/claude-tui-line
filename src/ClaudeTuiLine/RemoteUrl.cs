@@ -8,20 +8,39 @@ namespace ClaudeTuiLine;
 /// honors the user's own <c>url.&lt;base&gt;.insteadOf</c> rewrites. Synchronous: nothing awaits
 /// this (see <see cref="ItemContext.RemoteUrl"/>'s lazy property), so there is no async wrapper to
 /// block on — <see cref="Process.WaitForExit(int)"/> is already the blocking-with-timeout primitive
-/// this needs.
+/// this needs. Cached through <see cref="ItemCache"/> with the same
+/// <see cref="CommandProvider"/>-style TTL, since a shell re-rendering the statusline on every
+/// prompt would otherwise re-shell out to git for a value that rarely changes within a session.
 /// </summary>
 public static class RemoteUrl
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(2);
 
-    public static string? Probe(string? cwd)
+    // Matches CommandProvider.DefaultTtlSeconds: the same per-render subprocess-cost tradeoff
+    // applies here, and origin changes far less often than a typical command item's output.
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
+    private static readonly string[] Argv = { "git", "remote", "get-url", "origin" };
+    private static readonly IReadOnlyDictionary<string, string> NoExportedEnv = new Dictionary<string, string>();
+
+    public static string? Probe(string? cwd, string cacheDir)
     {
         if (string.IsNullOrEmpty(cwd))
         {
             return null;
         }
 
-        return Run(cwd);
+        // cwd is folded into the key so two repos (or the same session's cwd changing) never
+        // read or write each other's entry.
+        var key = ItemCache.KeyFor("remote-url", Argv, cwd, paneWidth: null, NoExportedEnv);
+        var cached = ItemCache.TryRead(cacheDir, key);
+        if (cached is { } fresh && DateTimeOffset.UtcNow - fresh.CapturedAt < CacheTtl)
+        {
+            return fresh.Value;
+        }
+
+        var value = Run(cwd);
+        ItemCache.Write(cacheDir, key, new CacheEntry(value, DateTimeOffset.UtcNow, ExitCode: 0));
+        return value;
     }
 
     private static string? Run(string cwd)
