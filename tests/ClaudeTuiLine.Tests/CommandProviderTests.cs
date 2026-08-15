@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace ClaudeTuiLine.Tests;
 
 /// <summary>
@@ -10,6 +12,13 @@ namespace ClaudeTuiLine.Tests;
 /// </summary>
 public class CommandProviderTests
 {
+    // ItemCache.Write persists one file per cache key under cacheDir/widthsDir, so a test that
+    // shares Path.GetTempPath() with earlier runs of itself can read back a value or note-emitting
+    // decision left over from a previous process — not the fresh, live-execution result the test
+    // body assumes. A fresh, per-call directory rules that out.
+    private static string IsolatedTempDir([CallerMemberName] string? testName = null) =>
+        Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "ctl-tests", $"{testName}-{Guid.NewGuid():N}")).FullName;
+
     [Fact]
     public async Task ShellTrueWithMultiElementCommand_ResolvesToNull()
     {
@@ -232,14 +241,14 @@ public class CommandProviderTests
     }
 
     [Fact]
-    public async Task MaxLinesSet_OutputExceedsCap_TruncatesAndEmitsPinnedNote()
+    public async Task MaxLinesSet_OutputExceedsCap_TruncatesAndEmitsMaxLinesNote()
     {
         var item = new PaneItem(null, null, null, null, Id: "maxlines-exceeded",
             Command: new[] { "printf 'a\\nb\\nc\\n'" }, Shell: true, MaxLines: 2);
         var notes = new RenderNoteCollector();
 
         var value = await CommandProvider.ResolveAsync(
-            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
+            item, rawStdinJson: null, cwd: null, cacheDir: IsolatedTempDir(), widthsDir: IsolatedTempDir(), surfaceWidth: null, paneWidthEligible: false,
             values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes);
 
         Assert.Equal("a\nb", value.Value);
