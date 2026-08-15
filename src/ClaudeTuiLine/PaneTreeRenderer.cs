@@ -40,7 +40,7 @@ public static class PaneTreeRenderer
             : pane.Border;
         var borderReserve = SizeResolver.OwnBorderReserve(effectiveBorder);
         var innerWidth = Math.Max(0, node.OuterWidth - borderReserve);
-        var suppressed = SizeResolver.ShouldSuppressBorder(pane, node.OuterWidth);
+        var suppressed = SizeResolver.ShouldSuppressBorder(pane, innerWidth);
 
         // §2.8.1/§2.8.2: node.ClipRows, when set, is the degrade ladder's authoritative row
         // budget for this (always leaf) pane — annotated onto this render attempt's ResolvedPane

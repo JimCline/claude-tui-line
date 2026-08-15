@@ -428,18 +428,20 @@ public class MinRowsDistributeTests
         Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: children need 48 columns at {surfaceWidth} columns");
     }
 
-    // §7 item 2, superseded by SPEC-2.3-drop-predicate.md (#67b): this used to characterize
-    // (not endorse) both panes surviving at 23 against an unenforced floor of 24. #67b's drop
-    // predicate now tests grants against floor(p) rather than `< 1`, so this is the deliberate
-    // inversion the #67 spec's own comment anticipated ("#67b may change this test deliberately if
-    // approved"). Each fill pane's floor is 24: MinUsableWidth (20, RowLayout.cs:19) plus a
-    // default-bordered leaf's 4-column OwnBorderReserve (no "border" key -> BoxBorder.Rounded,
-    // all four edges true, Config.cs ResolveBorder). Grant is 23 (46 avail / 2 fill panes, gutter:1
-    // costs the split's one boundary column out of surfaceWidth 47). 23 < 24 drops pane 2; 23 is
-    // also >= MinUsableWidth so ShouldSuppressBorder does not fire and the floor stays
-    // border-inclusive. The lone survivor is re-allocated the whole surface width.
+    // §7 item 2, superseded again by SPEC-2.3-suppression-predicate.md (#73): #67b's drop
+    // predicate tests grants against floor(p), and until #73, ShouldSuppressBorder tested outer
+    // width against MinUsableWidth — a mismatch that made suppression fire only where it could not
+    // save a pane and stay silent exactly where it could (see that spec's §2). #73 makes the
+    // predicate test the pane's own pre-suppression INNER width instead, so this test's own grant
+    // (23, unchanged) now lands inside the suppression band it always should have. Each fill pane's
+    // unsuppressed floor is 24: MinUsableWidth (20, RowLayout.cs:19) plus a default-bordered leaf's
+    // 4-column OwnBorderReserve (no "border" key -> BoxBorder.Rounded, all four edges true,
+    // Config.cs ResolveBorder). Grant is 23 (46 avail / 2 fill panes, gutter:1 costs the split's
+    // one boundary column out of surfaceWidth 47). Pre-suppression inner width is 23 - 4 = 19,
+    // under MinUsableWidth, so suppression now fires and the floor drops to 20; 23 >= 20 survives.
+    // Both panes survive, borderless, at their full grant.
     [Fact]
-    public void FloorSumExceedsBudget_Greedy_DropsPaneUnderFloor()
+    public void FloorSumExceedsBudget_Greedy_SurvivesBorderlessViaSuppression()
     {
         const string configJson = """
         {
@@ -476,9 +478,15 @@ public class MinRowsDistributeTests
 
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
 
-        Assert.Single(resolved.Children);
-        Assert.Equal(surfaceWidth, resolved.Children[0].OuterWidth);
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: 23 columns is under its 24-column floor at {surfaceWidth} columns");
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.Equal(23, resolved.Children[0].OuterWidth);
+        Assert.Equal(23, resolved.Children[1].OuterWidth);
+        Assert.Empty(notes.Notes);
+
+        var fillPane = pane.Children[0];
+        var reserve = SizeResolver.OwnBorderReserve(fillPane);
+        Assert.Equal(4, reserve);
+        Assert.True(SizeResolver.ShouldSuppressBorder(fillPane, 23 - reserve));
     }
 
     // §7 item 3: three candidates whose floors cannot fit in any combination — the loop must drop

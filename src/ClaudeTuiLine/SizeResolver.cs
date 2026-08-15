@@ -58,15 +58,19 @@ public static class SizeResolver
         ResolveNode(root, outerWidth, ctx, values, measureOverride, rowCountOverride, notes, collapse: false);
 
     /// <summary>
-    /// SPEC-V2-FRAMEWORK.md §2.3: <see cref="RowLayout.MinUsableWidth"/> governs viability for
+    /// SPEC-V2-FRAMEWORK.md §2.3 / SPEC-2.3-suppression-predicate.md §4: tests the pane's own
+    /// PRE-suppression inner width — <see cref="RowLayout.MinUsableWidth"/> governs viability for
     /// <c>fill</c> and percent panes only — the same panes <see cref="Floor"/> treats as having a
     /// real minimum. A <c>content</c> or fixed-size pane got exactly the width it asked for, so it
     /// is never "squeezed" and never suppresses its border no matter how narrow that width is —
-    /// see <see cref="PaneBorderRenderer"/>'s <c>suppressed</c> parameter.
+    /// see <see cref="PaneBorderRenderer"/>'s <c>suppressed</c> parameter. Non-circular: suppression
+    /// only ever removes reserve, so post-suppression inner width can only be greater than what is
+    /// tested here, never re-triggering the condition. Callers supply the inner width rather than
+    /// this method deriving it, since only they hold the collapse-aware excludes needed for it.
     /// </summary>
-    public static bool ShouldSuppressBorder(Pane pane, int outerWidth)
+    public static bool ShouldSuppressBorder(Pane pane, int innerWidth)
     {
-        if (pane.Border.Style is null || outerWidth >= RowLayout.MinUsableWidth)
+        if (pane.Border.Style is null || innerWidth >= RowLayout.MinUsableWidth)
         {
             return false;
         }
@@ -356,15 +360,18 @@ public static class SizeResolver
         };
     }
 
-    // SPEC-2.3-drop-predicate.md §3: the drop-retry loops' per-pane test — never below 1 cell (§3(a):
-    // Floor returns 0 for content panes, so a bare grant-vs-Floor test would never fire for them),
-    // and suppression-aware for fill/percent (§3(b)): border suppression is tested before the drop
-    // floor, and when it applies the floor drops to MinUsableWidth alone, since a suppressed border
-    // no longer needs OwnBorderReserve. Reuses ShouldSuppressBorder as-is rather than restating its
-    // condition, so the two checks cannot drift apart.
+    // SPEC-2.3-drop-predicate.md §3 / SPEC-2.3-suppression-predicate.md §4: the drop-retry loops'
+    // per-pane test — never below 1 cell (§3(a): Floor returns 0 for content panes, so a bare
+    // grant-vs-Floor test would never fire for them), and suppression-aware for fill/percent
+    // (§3(b)): border suppression is tested on the pane's own PRE-suppression inner width (grant
+    // minus its own border reserve, using the same excludes this call already received), and when
+    // it applies the floor drops to MinUsableWidth alone, since a suppressed border no longer needs
+    // OwnBorderReserve. Reuses ShouldSuppressBorder as-is rather than restating its condition, so
+    // the two checks cannot drift apart.
     private static int DropFloor(Pane pane, int grant, bool collapse, bool excludeLeft, bool excludeRight)
     {
-        var floor = ShouldSuppressBorder(pane, grant)
+        var preSuppressionInnerWidth = grant - OwnBorderReserve(pane, excludeLeft, excludeRight);
+        var floor = ShouldSuppressBorder(pane, preSuppressionInnerWidth)
             ? RowLayout.MinUsableWidth
             : Floor(pane, collapse, excludeLeft, excludeRight);
         return Math.Max(1, floor);
