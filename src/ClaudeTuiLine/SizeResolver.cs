@@ -162,7 +162,7 @@ public static class SizeResolver
 
         var alloc = pane.Distribute switch
         {
-            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, collapse),
+            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, notes, collapse),
             PaneDistribute.Even => ResolveVerticalEven(pane, outerWidth, collapse),
             _ => ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes, collapse),
         };
@@ -490,7 +490,7 @@ public static class SizeResolver
     // allocate differently enough (AllocateWithDrop threads a per-child request array that
     // min-rows has no equivalent of) that forcing a shared implementation would risk the
     // unchanged greedy path for a small amount of duplication.
-    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, bool collapse)
+    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes, bool collapse)
     {
         var current = split.Children;
 
@@ -513,6 +513,10 @@ public static class SizeResolver
                 return result;
             }
 
+            // §9.8.2: same message and position convention as AllocateWithDrop — the dropped pane
+            // is always the current list's last child, whose 1-based position in it equals
+            // current.Count before this truncation.
+            notes.Add($"pane {current.Count} dropped: no width remained at {splitOuterWidth} columns");
             current = current.Take(current.Count - 1).ToList();
         }
     }
