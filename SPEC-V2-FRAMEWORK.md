@@ -2714,7 +2714,9 @@ put two spellings on one behaviour. What a part adds is exactly one source, and 
 exactly one of:
 
 - `text` — a literal
-- `item` — a registry or `command` id, rendered as that item renders
+- `item` — a registry or `command` id, rendered as that item renders. Not a compound id: a
+  part naming another compound is the nesting this section forbids (`part-compound-source`,
+  §9.6.1)
 - `from` — a derived value, per §3.2's derivation rules
 
 **This is not a second rendering path.** A compound resolves to the same thing every item
@@ -2768,6 +2770,10 @@ Rules, each closing a silent failure:
   more edges; it is deferred deliberately rather than overlooked.
 - **Semantic colour precedence is unchanged.** A part naming a semantic item keeps its
   value-derived threshold colour unless that part sets `color` — §6's rule, applied one level in.
+  That authority extends one level further out: when another item selects this compound and sets
+  its own `color`, that colour is a floor only — it fills parts with no colour of their own and
+  never overrides a part's explicit or threshold colour (SPEC-87-compound-reference-resolution.md,
+  colour-precedence ruling).
 - **`--check` rejects** a part with zero or more than one source (`part-source-count`), a part
   containing `parts` or `link` (`part-forbidden-key`), a part naming an unknown id, and an unknown
   colour. A part that names nothing is not an empty part; it is a config the author got wrong.
@@ -5440,6 +5446,8 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `unknown-item-id` | `{ "item": … }` selector, derived `from`, or argv `{id}` naming nothing | error | 9.4.1 |
 | `from-derived-source` | derived `from` naming another derived item — present, but forbidden here | error | 9.4.1 |
 | `from-compound-source` | item-level or part-level `from` naming a compound item — a compound writes no value into the resolution dictionary, so this can never work | error | 3.3 |
+| `part-compound-source` | a compound part's `item` naming another compound — one compound inside another is the nesting §3.3 forbids | error | 3.3 |
+| `color-from-compound-source` | a colour rule's `from` naming a compound — a compound has a colour per part and no single value for a rule to read; the rule falls through to its default colour | warning | 3.3 |
 | `unknown-link-target` | `link` `{other-id}` naming nothing; link dropped, text survives | warning | 9.4.1 |
 | `unknown-color-source` | colour rule `from` naming nothing, inline or in the `colors` table | warning | 9.4.1 |
 | `unknown-color-token` | `@name` naming no entry **in the `colors` table** — a different namespace from item ids | warning | 6.3 |
