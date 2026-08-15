@@ -407,14 +407,16 @@ public class HeightLadderTests
 
         var (resolved, contribution) = HeightLadder.Resolve(root, 10, surfaceMaxRows: 2, Ctx, values, Tokens, new RenderNoteCollector());
 
-        // §2.8.1/§2.8.2: rung 3 empties the leaf's items entirely to fit surfaceMaxRows. The
-        // emptied leaf then collapses under §2.8.2's <3-row rule, and because that rule is
-        // evaluated per pane rather than leaf-only (item 4), the bordered root SPLIT collapses the
-        // same way once its own content (the leaf's now-zero rows) plus its own border falls
-        // under 3.
+        // §2.8.1/§2.8.2: rung 3 empties the leaf's items entirely to fit surfaceMaxRows, so the
+        // leaf itself vanishes (its own clipped budget is under 2, so the box genuinely cannot be
+        // drawn). That leaves the bordered root SPLIT with zero content rows of its own — but the
+        // root is on the natural-height path (ClipRows applies only to leaves), and a natural-
+        // height bordered pane with zero content rows renders an empty 2-row box rather than
+        // vanishing (SPEC-2.8.2 §1/§4): there is room for the box and nothing to gain by dropping
+        // it.
         Assert.Empty(resolved.Source.Children[0].Items);
         Assert.True(resolved.Children[0].ItemsEmptied);
-        Assert.Empty(contribution.Buffer.Rows);
+        Assert.Equal(2, contribution.Buffer.Rows.Count);
     }
 
     [Fact]

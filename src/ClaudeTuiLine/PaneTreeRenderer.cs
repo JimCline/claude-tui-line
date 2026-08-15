@@ -166,7 +166,12 @@ public static class PaneTreeRenderer
         }
 
         var borderColorMarkup = ColorResolution.Resolve(pane.Border.Color, values, tokens) ?? "grey";
-        var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, effectiveBorder, borderColorMarkup, suppressed, heightSuppressed);
+        // §2.8.2 reclaims the edge rows FOR content; with no content rows there is no beneficiary and
+        // suppression would erase the pane rather than shrink it. Below a 2-row budget the box cannot be
+        // drawn either way, so suppression still stands.
+        var budgetFitsBox = node.ClipRows is not int clip || clip >= 2;
+        var omitEdges = heightSuppressed && (contentRows.Count > 0 || !budgetFitsBox);
+        var borderedRows = PaneBorderRenderer.Wrap(contentRows, innerWidth, effectiveBorder, borderColorMarkup, suppressed, omitEdges);
         if (rowCounts is not null)
         {
             rowCounts[pane] = borderedRows.Count;
