@@ -1079,9 +1079,12 @@ bound was declared hard and the policy does not overrule it.
 
 **The search.** `minWidth(i, T)` is non-increasing in `T`, so `feasible(T)` is monotone: once a
 row count is achievable, every larger one is too. Scan `T` upward from 1 and stop at the first
-feasible value. `T` is bounded by the largest item count in any candidate pane — around 20 in
-practice — so a linear scan is both adequate and clearer than a binary search over `T`. The
-result is exact, not a heuristic.
+feasible value. `T` is bounded by the largest `rows_i` any candidate reports at its own `minSize`
+— see §2.3.3, which rules this bound and explains why the item count is not it. That ceiling is
+usually small but is not bounded by ~20; measured latency against this section's own acceptance
+condition below shows a linear scan over `T` still meets budget even under the corrected bound, so
+the scan remains linear rather than moving to a binary search. The result is exact, not a
+heuristic.
 
 **This is O(N) in the number of panes, which is why it is the algorithm and not merely one.** A
 search over allocations would be exponential in `N` and would have forced restricting the feature
@@ -6088,6 +6091,11 @@ that collision is what stopped these bullets from being promoted to subsections.
    clamped to its previous request and the loop must still terminate; (c) *the pass cap* — a
    stub that changes its request every pass must stop at 3 passes and render with the last
    resolved sizes rather than looping.
+   These three are `greedy`-path tests and are not parameterized over `distribute: min-rows`,
+   which replaces the fixpoint rather than refining it (§2.3.1). Min-rows carries its own
+   analogous set — monotonicity of `rows_i(w)`, the `T` ceiling of §2.3.3, and the empty-set case
+   at `T = 1` — since "3-pass cap" and "monotone clamp of a request" name nothing that exists in a
+   single `T`-search.
 7. **No pipe-diff-only verification.** Byte-parity against bash remains a useful regression
    check on the builtin path, but it cannot validate anything about the render surface, because
    both sides can share a wrong constant. Every width claim needs an invariant, not a diff.

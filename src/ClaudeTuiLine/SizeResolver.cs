@@ -26,18 +26,36 @@ public static class SizeResolver
     public sealed record ResolvedPane(Pane Source, int OuterWidth, IReadOnlyList<ResolvedPane> Children, int? ClipRows = null, bool ItemsEmptied = false);
 
     public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes, bool collapse = false) =>
-        ResolveNode(root, outerWidth, ctx, values, measureOverride: null, notes, collapse);
+        ResolveNode(root, outerWidth, ctx, values, measureOverride: null, rowCountOverride: null, notes, collapse);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §10.6's three fixpoint tests need a "content" pane whose reported
     /// request is independent of real segment measurement — a stub that requests more
     /// width when granted less (the monotone-clamp test), or that changes its request every pass
     /// (the pass-cap test). <paramref name="measureOverride"/>, when supplied, replaces
-    /// <see cref="MeasureRequest"/> for every content-kind pane in the tree; production callers
-    /// never pass it, so real rendering is unaffected.
+    /// <see cref="MeasureRequest"/> for every content-kind pane on the greedy path; production
+    /// callers never pass it, so real rendering is unaffected.
+    ///
+    /// On a <c>distribute: min-rows</c> subtree the override reaches exactly one site — the
+    /// content candidate's natural-width cap inside the surplus water-fill — because that is the
+    /// only <see cref="MeasureRequest"/> call min-rows makes. The row-count search itself
+    /// (<see cref="RowCountAt"/>) never calls <see cref="MeasureRequest"/> and is unaffected by
+    /// this override; the 7-arg overload below is the seam into that search instead.
     /// </summary>
     public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int> measureOverride, RenderNoteCollector notes) =>
-        ResolveNode(root, outerWidth, ctx, values, measureOverride, notes, collapse: false);
+        ResolveNode(root, outerWidth, ctx, values, measureOverride, rowCountOverride: null, notes, collapse: false);
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §2.3.1: min-rows' own tests need a seam into <see cref="RowCountAt"/>
+    /// — the packer-backed rows_i(w) the binary search in <see cref="MinWidthForRowCount"/>
+    /// assumes is non-increasing in w. <paramref name="rowCountOverride"/>, when supplied,
+    /// replaces <see cref="RowCountAt"/>'s real packer call for every candidate; production
+    /// callers never pass it, so real rendering is unaffected. Still increments
+    /// <see cref="MinRowsPackerInvocationCount"/> so cost assertions keep working under the
+    /// override.
+    /// </summary>
+    public static ResolvedPane Resolve(Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, RenderNoteCollector notes) =>
+        ResolveNode(root, outerWidth, ctx, values, measureOverride, rowCountOverride, notes, collapse: false);
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.3: <see cref="RowLayout.MinUsableWidth"/> governs viability for
@@ -145,7 +163,7 @@ public static class SizeResolver
     /// </summary>
     internal static int? FixedSize(Pane pane) => ClassifySize(pane.Size) is { Kind: SizeKind.Fixed } spec ? spec.FixedValue : null;
 
-    private static ResolvedPane ResolveNode(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, RenderNoteCollector notes, bool collapse)
+    private static ResolvedPane ResolveNode(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, RenderNoteCollector notes, bool collapse)
     {
         if (pane.Split == PaneSplit.None || pane.Children.Count == 0)
         {
@@ -155,21 +173,21 @@ public static class SizeResolver
         if (pane.Split == PaneSplit.Horizontal)
         {
             var horizontalChildren = pane.Children
-                .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride, notes, collapse))
+                .Select(c => ResolveNode(c, outerWidth, ctx, values, measureOverride, rowCountOverride, notes, collapse))
                 .ToList();
             return new ResolvedPane(pane, outerWidth, horizontalChildren);
         }
 
         var alloc = pane.Distribute switch
         {
-            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, notes, collapse),
+            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, measureOverride, rowCountOverride, notes, collapse),
             PaneDistribute.Even => ResolveVerticalEven(pane, outerWidth, collapse),
             _ => ResolveVertical(pane, outerWidth, ctx, values, measureOverride, notes, collapse),
         };
         var resolvedChildren = new List<ResolvedPane>(alloc.Children.Count);
         for (var i = 0; i < alloc.Children.Count; i++)
         {
-            resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride, notes, collapse));
+            resolvedChildren.Add(ResolveNode(alloc.Children[i], alloc.Grants[i], ctx, values, measureOverride, rowCountOverride, notes, collapse));
         }
 
         return new ResolvedPane(pane, outerWidth, resolvedChildren);
@@ -490,13 +508,13 @@ public static class SizeResolver
     // allocate differently enough (AllocateWithDrop threads a per-child request array that
     // min-rows has no equivalent of) that forcing a shared implementation would risk the
     // unchanged greedy path for a small amount of duplication.
-    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, RenderNoteCollector notes, bool collapse)
+    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, RenderNoteCollector notes, bool collapse)
     {
         var current = split.Children;
 
         while (true)
         {
-            var result = AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values, collapse);
+            var result = AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values, measureOverride, rowCountOverride, collapse);
 
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
@@ -513,9 +531,10 @@ public static class SizeResolver
                 return result;
             }
 
-            // §9.8.2: same message and position convention as AllocateWithDrop — the dropped pane
-            // is always the current list's last child, whose 1-based position in it equals
-            // current.Count before this truncation.
+            // §9.8.2: the dropped pane is always the current list's last child, whose 1-based
+            // position in it equals current.Count before this truncation — stable across repeated
+            // drops because only the tail is ever removed. §2.3.3:1220-1222 makes this note the
+            // stated observable consequence of min-rows' own over-constrained fallback.
             notes.Add($"pane {current.Count} dropped: no width remained at {splitOuterWidth} columns");
             current = current.Take(current.Count - 1).ToList();
         }
@@ -525,7 +544,7 @@ public static class SizeResolver
     // first, mirroring AllocateOnePass's own step order and matching R's own prose definition —
     // "the extent remaining after fixed and percent panes and gutters have taken theirs" — then
     // every content/fill pane is a candidate for the row-count search.
-    private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, bool collapse)
+    private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, bool collapse)
     {
         var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count, collapse));
 
@@ -565,7 +584,7 @@ public static class SizeResolver
         if (candidateIndices.Count > 0)
         {
             var r = Math.Max(0, rem);
-            var solved = SolveMinRows(children, candidateIndices, r, ctx, values);
+            var solved = SolveMinRows(children, candidateIndices, r, ctx, values, measureOverride, rowCountOverride);
             for (var ci = 0; ci < candidateIndices.Count; ci++)
             {
                 grants[candidateIndices[ci]] = solved[ci];
@@ -577,13 +596,13 @@ public static class SizeResolver
 
     // SPEC-V2-FRAMEWORK.md §2.3.1: T is the achievable row count, searched from 1 upward — the
     // first T for which every candidate's minWidth(i, T) fits within r wins, since feasible(T) is
-    // monotone (a larger T only relaxes each candidate's minWidth). Bounded by the most rows any
-    // candidate could ever need — its own rendered segment count, since no row holds more than
-    // one segment fewer than the next — never by an arbitrary constant. Falls back to every
-    // candidate at its own floor when no T up to that bound is feasible (the split as a whole is
-    // over-constrained), the same outcome AllocateOnePass's own step 4 falls back to; the outer
-    // drop-retry loop in ResolveVerticalMinRows exists for exactly this case.
-    private static int[] SolveMinRows(IReadOnlyList<Pane> children, IReadOnlyList<int> candidateIndices, int r, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    // monotone (a larger T only relaxes each candidate's minWidth). Bounded by the largest rows_i
+    // any candidate reports at its own floor (§2.3.3) — never by item count, which undercounts
+    // whenever an item wraps across more than one row. Falls back to every candidate at its own
+    // floor when no T up to that bound is feasible (the split as a whole is over-constrained), the
+    // same outcome AllocateOnePass's own step 4 falls back to; the outer drop-retry loop in
+    // ResolveVerticalMinRows exists for exactly this case.
+    private static int[] SolveMinRows(IReadOnlyList<Pane> children, IReadOnlyList<int> candidateIndices, int r, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride)
     {
         var n = candidateIndices.Count;
         var candidates = candidateIndices.Select(i => children[i]).ToList();
@@ -595,9 +614,9 @@ public static class SizeResolver
         }
 
         var maxT = 1;
-        foreach (var candidate in candidates)
+        for (var ci = 0; ci < n; ci++)
         {
-            maxT = Math.Max(maxT, CandidateSegments(candidate, ctx, values).Count);
+            maxT = Math.Max(maxT, RowCountAt(candidates[ci], lo[ci], ctx, values, rowCountOverride));
         }
 
         for (var t = 1; t <= maxT; t++)
@@ -608,7 +627,7 @@ public static class SizeResolver
 
             for (var ci = 0; ci < n; ci++)
             {
-                var w = MinWidthForRowCount(candidates[ci], lo[ci], hi[ci], t, ctx, values);
+                var w = MinWidthForRowCount(candidates[ci], lo[ci], hi[ci], t, ctx, values, rowCountOverride);
                 if (w is not int width)
                 {
                     feasible = false;
@@ -622,7 +641,7 @@ public static class SizeResolver
             if (feasible && sum <= r)
             {
                 var surplus = r - sum;
-                return WaterFillSurplus(candidates, minWidths, hi, surplus, ctx, values);
+                return WaterFillSurplus(candidates, minWidths, hi, surplus, ctx, values, measureOverride);
             }
         }
 
@@ -633,9 +652,9 @@ public static class SizeResolver
     // packer every other render path calls — achieves T rows or fewer. rows_i(w) is non-increasing
     // in w (more width never adds rows), so binary search over [lo, hi] is valid; returns null when
     // even hi cannot reach T rows.
-    private static int? MinWidthForRowCount(Pane candidate, int lo, int hi, int t, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    private static int? MinWidthForRowCount(Pane candidate, int lo, int hi, int t, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int, int>? rowCountOverride)
     {
-        if (RowCountAt(candidate, hi, ctx, values) > t)
+        if (RowCountAt(candidate, hi, ctx, values, rowCountOverride) > t)
         {
             return null;
         }
@@ -645,7 +664,7 @@ public static class SizeResolver
         while (low < high)
         {
             var mid = low + (high - low) / 2;
-            if (RowCountAt(candidate, mid, ctx, values) <= t)
+            if (RowCountAt(candidate, mid, ctx, values, rowCountOverride) <= t)
             {
                 high = mid;
             }
@@ -660,10 +679,17 @@ public static class SizeResolver
 
     // rows_i(w): candidate i's real row count at outer width w, via the same packer every leaf
     // actually renders through (PaneAssembler.RenderLeafRows's own path) — §2.3.1 requires "the
-    // existing packer, called unchanged", not a re-derived width twin.
-    private static int RowCountAt(Pane candidate, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    // existing packer, called unchanged", not a re-derived width twin. rowCountOverride, when
+    // supplied, replaces the real packer call for min-rows' own tests (§2.3.1); production callers
+    // never pass it.
+    private static int RowCountAt(Pane candidate, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int, int>? rowCountOverride)
     {
         MinRowsPackerInvocationCount++;
+
+        if (rowCountOverride is not null)
+        {
+            return rowCountOverride(candidate, outerWidth);
+        }
 
         var innerWidth = Math.Max(0, outerWidth - OwnBorderReserve(candidate));
         var segments = CandidateSegments(candidate, ctx, values);
@@ -683,7 +709,7 @@ public static class SizeResolver
     // it, so surplus flows on to whichever candidates can still use it. If every candidate is
     // capped and surplus remains, it is left unspent, exactly as greedy leaves an unconsumed
     // remainder.
-    private static int[] WaterFillSurplus(IReadOnlyList<Pane> candidates, int[] minWidths, int[] hi, int surplus, ItemContext ctx, IReadOnlyDictionary<string, string?> values)
+    private static int[] WaterFillSurplus(IReadOnlyList<Pane> candidates, int[] minWidths, int[] hi, int surplus, ItemContext ctx, IReadOnlyDictionary<string, string?> values, Func<Pane, int?, int>? measureOverride)
     {
         var n = candidates.Count;
         var widths = (int[])minWidths.Clone();
@@ -692,7 +718,7 @@ public static class SizeResolver
         for (var ci = 0; ci < n; ci++)
         {
             cap[ci] = ClassifySize(candidates[ci].Size).Kind == SizeKind.Content
-                ? Math.Min(hi[ci], MeasureRequest(candidates[ci], null, ctx, values))
+                ? Math.Min(hi[ci], measureOverride?.Invoke(candidates[ci], null) ?? MeasureRequest(candidates[ci], null, ctx, values))
                 : hi[ci];
         }
 
