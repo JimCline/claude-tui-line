@@ -4960,6 +4960,14 @@ RowLayout.Wrap rewritten with a one-row lookahead (PackRow/Compose helpers) per 
 
 CommandProviderTests.MaxLinesSet_OutputExceedsCap_TruncatesAndEmitsPinnedNote passed on a cold cache and failed deterministically on every subsequent run against the same commit — not a #65-style concurrency flake, but a #69-style fixed-temp-path defect: the test passed `cacheDir: Path.GetTempPath()` with a fixed id, so run 1 executed live (truncated, emitted the note, wrote the cache), and every run after served from cache (correct value, no note, because the note-emission code path never re-ran). Fix: added an `IsolatedTempDir([CallerMemberName] testName)` helper and applied it to this test's cacheDir/widthsDir (the only test in the file that asserts on notes, so the only one that noticed the shared-tempdir defect). CommandProvider.cs untouched — test-only change. Test renamed to `...TruncatesAndEmitsMaxLinesNote` (nothing in src/ emits a "pinned" note). Merged as c304a86.
 
+### #74: residual over-width pane clamp
+
+Added `ClampToAvail(AllocResult, avail, splitOuterWidth, RenderNoteCollector)` at SizeResolver.cs's two drop-loop exits (`AllocateWithDrop`, `ResolveVerticalMinRows`), applied strictly after the drop decision, fixing the over-width residual-pane render overflow from N1/#72. `ResolveVerticalEven` deliberately left untouched (tracked separately as #78). Render note: `"pane {n}: {requested} columns requested, clamped to {avail} at {splitOuterWidth} columns"`, pinned in SPEC-V2-FRAMEWORK.md §9.8.1. Merged as 44a3955.
+
+### #73 (defect B): border-suppression content-width reclaim
+
+Per SPEC-2.3-suppression-predicate.md's ruling on item 7 (§8, N1): a suppressed border's content reclaims the reserved column space rather than the prior outer-minus-reserve design standing undisturbed. PaneBorderRenderer.cs and PaneTreeRenderer.cs updated accordingly. Initially merged, then reverted after a false #31×#73b interaction suspicion (later diagnosed as an unrelated CommandProviderTests fixed-tempdir defect, see above) — re-verified clean against current main and re-merged as c0ef530.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
