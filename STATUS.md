@@ -4944,6 +4944,14 @@ Merged to main (commit 2a7def0). Fixes SizeResolver.ShouldSuppressBorder to guar
 
 Item 7 (§8) — whether a suppressed border's content reclaims the reserved column space, or the current outer-minus-reserve design stands as documented — is still open, routed to the architect alongside #74 (same PaneBorderRenderer.Wrap exit sites). Task #73 stays in_progress until that's ruled.
 
+### #19: §10.1 blank-surface controls for layout tests
+
+Added blank-surface controls (BlankSurfaceControl.cs helper: Blank(ItemContext) and BlankValues(dict)) to 17 qualifying tests across 7 files (SplitAcceptanceTests, HeightLadderTests, NarrowSplitPaneTests, EvenDistributeTests, BorderGridTests, MinRowsDistributeTests) to assert layout invariants hold independent of item content, per §10.1's distinguishability floor. Many candidate tests were vetted and excluded as vacuous (no items, content-irrelevant assertions, or structurally incompatible with blanking). Surfaced a real product bug in the process, filed separately as #80 (bordered pane with 0 content rows renders zero rows instead of an empty box).
+
+### #31: §4.0.1 maxLines opt-in per-item cap
+
+Removed the prior unconditional 1-line stdout cap for command items; maxLines is now a pure opt-in ceiling with no default, per §4.0.1's explicit "Default: no cap" and the §3 erratum retiring the single-line stdout reading. Implementation reuses #75's SplitBlockLines (D2-compliant trailing-newline strip, general multi-line splitting) for both the block-model path and the newly-uncapped output, confirmed safe against embedded-newline and trailing-newline edge cases by direct empirical test through the production render path. New CheckMaxLines diagnostic rejects maxLines <= 0. Render note on truncation: `item '{id}' emitted {n} lines; {kept} kept (maxLines)`.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
