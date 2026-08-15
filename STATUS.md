@@ -4873,6 +4873,31 @@ text unpinned), fixed and re-verified clean — build+full suite
 (1356/1356)+`check-all.sh` clean pre- and post-merge. Landed as merge commit
 `41abc03` (pushed).
 
+### #46: cite §1.1.3 instead of reopening size's undecomposed exemption
+
+Investigation found SPEC-V2-FRAMEWORK.md §1.1.3 had already ruled, deliberately,
+that `size`'s accepted-values exemption stays undecomposed. Architect confirmed:
+don't reopen without a genuinely new fact — reopening would require amending
+§1.1.1/§1.1.2/§1.1.3 together and flipping `AcceptedCommandTests.cs`'s
+byte-identical-string test. Fix is a one-line comment in
+`src/ClaudeTuiLine/AcceptedCommand.cs` citing §1.1.3 so the next reader doesn't
+re-litigate it. Verified via `cdtui-worker`: build+full suite (1349/1349)
++`check-all.sh` clean pre- and post-merge. Landed as merge commit `972ae80`
+(pushed).
+
+### #36: emit the §9.3.1 synthetic fixture from the binary (§12.3.1/§12.7.1)
+
+New `--fixture` CLI mode (mutually exclusive with the other six modes) and
+`SyntheticFixture.WithRealCwd(string cwd)`, so `migrate.md` step 6, `setup.md`
+step 5, and `revert.md` step 7 now consume `<binary> --fixture` instead of a
+literal two-field payload — keeping the docs' fixture in lockstep with the
+binary's own definition. New pin test
+`WithRealCwd_MatchesInputInEveryFieldExceptCwd`. Flag name (`--fixture`) chosen
+by the implementor without explicit spec text authorizing it (spec only ever
+said "a flag") — noted for review, not blocking. Verified via `cdtui-worker`:
+build+full suite (1350/1350, then 1357/1357 combined with #46)+`check-all.sh`
+clean pre- and post-merge. Landed as merge commit (pushed alongside #46).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
