@@ -5749,6 +5749,12 @@ it, and refuse or silently substitute. The output therefore carries the distinct
 }
 ```
 
+This `alsoAccepted` text describes how a *configured* `colorSystem` renders a value in the
+statusline itself — it says nothing about how `--colors`' own swatches render, and deliberately:
+the swatches always render at `standard` (§9.6.3.1 below), independent of any `colorSystem:
+truecolor` a project has configured, because `--colors` predicts the render path's *default*, not
+a caller's override.
+
 `themeMapped` is the reason to recommend these nineteen at all, and it is the honest form of the
 advice: the sixteen follow the user's terminal theme, so a statusline built from them stays
 readable when the theme changes, and one built from hex does not. That is a recommendation with a
@@ -5781,14 +5787,25 @@ value?*
 
 `--colors --json` stays unstyled, per §9's own bullet — a program consuming the list wants names.
 
-**"Through the user's terminal" means that terminal's real capability, and not the forced-ANSI
-console the renderer uses.** Bare `--colors` writes through the ordinary auto-detecting
-`AnsiConsole`, which degrades to bare names under a pipe or a redirect. The render path deliberately
-builds its own console with `Ansi = AnsiSupport.Yes` because the statusline's one consumer is Claude
-Code, which captures stdout through a pipe and still expects styling — that is a workaround for a
-specific caller, and exporting it to a human-facing flag would generalise a special case into a
-default. A colour-listing command that ignores what the terminal reports is also the one command
-that has no business overriding it.
+**"Through the user's terminal" governs `Ansi` support specifically — whether escapes are emitted
+at all — and not the terminal's real capability along every axis, nor the forced-ANSI console the
+renderer uses.** Bare `--colors` writes through an auto-detecting console, which degrades to bare
+names under a pipe or a redirect. The render path deliberately builds its own console with
+`Ansi = AnsiSupport.Yes` because the statusline's one consumer is Claude Code, which captures
+stdout through a pipe and still expects styling — that is a workaround for a specific caller, and
+exporting it to a human-facing flag would generalise a special case into a default. A colour-listing
+command that ignores what the terminal reports is also the one command that has no business
+overriding it.
+
+**The colour system is a second, independent axis, and it is pinned rather than detected.**
+`AnsiConsoleSettings` separates *whether* to emit escapes (`Ansi`) from *which encoding* to emit
+them in (`ColorSystem` — 4-bit indexed, 8-bit, or 24-bit truecolor). Bare `--colors` auto-detects
+the first and pins the second to `ColorSystemSupport.Standard` — the same colour system §6.2
+defaults to for the render path. A terminal that negotiates truecolor (e.g. via `COLORTERM`) would
+otherwise let the sixteen names render as raw RGB, bypassing the terminal's own ANSI palette
+remapping entirely — defeating this section's reason for recommending them, since the theme-mapping
+property belongs to indexed SGR, not to the names themselves. `tools/colors.sh:21,23` fixes the
+sixteen names' SGR codes (`30`–`37`, `90`–`97`); bare `--colors` must reproduce them exactly.
 
 The degraded case is not a payload loss, because the payload has a correct destination one flag
 away: `--json` is the form for a consumer that is not a terminal, and it is the contract. Forcing
@@ -5857,7 +5874,8 @@ they follow the terminal theme, which is the one thing the field means.
   those were all there were and silently stopped being the whole list the moment `--preview` was
   added. §9.4.4 states the rule the enumeration was standing in for.
 - It **reads no config and probes nothing**, so it cannot reach exit 3 and always exits 0 — the
-  same standing as `--items` in §9.6.2.2.
+  same standing as `--items` in §9.6.2.2. It renders at §6.2's *default* colour system
+  (`standard`), never a configured one — see §9.6.3.1's colour-system-pinning paragraph.
 - The plain form is a **convenience view; the JSON is the contract.** Column layout may change
   without that being a compatibility break. Stated for the same reason as §9.6.2.2's version of
   this ruling: a human-readable output nobody labels becomes a frozen surface by default.

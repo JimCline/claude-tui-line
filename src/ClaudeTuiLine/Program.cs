@@ -130,7 +130,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
 // SPEC-V2-FRAMEWORK.md §2.4 rule 5: panes are sized by this file's own arithmetic, not by
 // Spectre — Profile.Width stays at the sentinel for all pane rendering so Spectre never
 // re-wraps a row the pane pipeline deliberately laid out. §9.3.2: `--preview` renders through
-// this exact console (instance and configuration alike), not the auto-detecting static instance
+// this exact console (instance and configuration alike), not the ColorsConsole.Create instance
 // `--colors` uses, so its stdout is what the no-argv render path would have produced.
 static IAnsiConsole CreateRenderConsole(ResolvedConfig topLevel, TextWriter? output = null)
 {
@@ -708,8 +708,9 @@ static int RunItems(bool json)
 // §9.6.3/§9.6.3.1: reads no config and probes nothing — every value comes from the registry, so
 // there is no failure mode here beyond a crash. Always exits 0. Bare (non-JSON) output is the
 // deliberate exception to §9.6.2.2's plain-only rule: a colour swatch has no payload except the
-// colour, so this goes through Spectre's own terminal-capability detection rather than the
-// forced-ANSI instance the main render path uses for its piped consumer.
+// colour, so this goes through ColorsConsole.Create, which auto-detects Ansi support (so piping
+// still degrades to bare names) but pins ColorSystem to Standard so the swatch matches the main
+// render path's default rather than the terminal's maximum capability.
 static int RunColors(bool json)
 {
     var result = ColorsCommand.Build();
@@ -720,9 +721,11 @@ static int RunColors(bool json)
     }
     else
     {
+        var console = ColorsConsole.Create(Console.Out);
+
         foreach (var line in ColorsCommand.RenderMarkupLines(result))
         {
-            AnsiConsole.MarkupLine(line);
+            console.MarkupLine(line);
         }
     }
 
