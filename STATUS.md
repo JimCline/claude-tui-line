@@ -4846,6 +4846,33 @@ worked example of each value. Doc-only, no behaviour touched. Verified via
 `cdtui-worker`: build+full suite (1349/1349)+`check-all.sh` clean pre- and
 post-merge. Landed as merge commit `7b55390` (pushed).
 
+### #71/#67b: drop predicate is now floor-based, not `< 1`
+
+Both drop-retry loops (`AllocateWithDrop`, `ResolveVerticalMinRows`) now test
+`grant < DropFloor(pane, grant, ...)` instead of `grant < 1`, per
+SPEC-2.3-drop-predicate.md. `DropFloor` returns `MinUsableWidth` (20) when
+the pane would suppress its border, else its ordinary `Floor`. Drop notes
+split into two reason-selected messages — below-floor keeps the existing
+floor wording, over-allocation gets a new "children need {sum} columns at
+{w} columns" message; when both conditions hold in one iteration,
+over-allocation wins as the stated cause (§4). Both new note-text forms
+pinned in SPEC-V2-FRAMEWORK.md §9.8.1. New
+`tests/ClaudeTuiLine.Tests/DropFloorPredicateTests.cs`, including an item-2
+invariant test (architect-revised): on the min-rows path every surviving
+grant is `>= Floor(i)`, pinning the fact that `SolveMinRows`'s infeasible
+fallback structurally cannot produce a below-floor grant.
+
+Item 4 (§3(b) suppress-then-test boundary) was explicitly skipped per prior
+agreement — turned out to matter: the architect found `ShouldSuppressBorder`
+testing outer width instead of the spec's inner width is a live regression
+this change introduced (suppression on the drop path currently never changes
+any outcome). Follow-up fix tracked as #73, dispatched immediately.
+
+Verified via `cdtui-worker`: pre-merge failed check-all.sh once (new note
+text unpinned), fixed and re-verified clean — build+full suite
+(1356/1356)+`check-all.sh` clean pre- and post-merge. Landed as merge commit
+`41abc03` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
