@@ -4968,6 +4968,10 @@ Added `ClampToAvail(AllocResult, avail, splitOuterWidth, RenderNoteCollector)` a
 
 Per SPEC-2.3-suppression-predicate.md's ruling on item 7 (§8, N1): a suppressed border's content reclaims the reserved column space rather than the prior outer-minus-reserve design standing undisturbed. PaneBorderRenderer.cs and PaneTreeRenderer.cs updated accordingly. Initially merged, then reverted after a false #31×#73b interaction suspicion (later diagnosed as an unrelated CommandProviderTests fixed-tempdir defect, see above) — re-verified clean against current main and re-merged as c0ef530.
 
+### #78: `ResolveVerticalEven` parity fix
+
+Per SPEC-2.3-even-split-parity.md, `ResolveVerticalEven` was the one of the three width-allocation-with-drop loops (`AllocateWithDrop`, `ResolveVerticalMinRows`, `ResolveVerticalEven`) never brought up to parity across #71/#67b's `DropFloor` predicate, #67a's over-allocation check, and #74's `ClampToAvail`. Ported all five: threaded `RenderNoteCollector`, replaced the hardcoded `Grants[i] < 1` check with `DropFloor` using `AllocateWithDrop`'s collapse-aware form (confirmed correct: `AllocateEvenOnePass` does consult `collapse`, via `BoundaryCost`), added the over-allocation check with drop-note wording byte-identical to the siblings, and wrapped the exit in `ClampToAvail`. `AllocateEvenOnePass` itself untouched. Also added a structural tripwire test asserting all three loops emit drop notes with the shared wording, so a future fix landing in two of three loops (as happened here) fails a test instead of shipping silently. 1409/1409 tests pass. Branch `task-78` off `main @ ec32257`, not yet merged.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
