@@ -2,10 +2,13 @@
 # One-shot dev build+confidence script. Mechanizes README.md's "By hand" install steps
 # (dotnet publish + settings.json wiring) and adds a freshness proof, so it is always
 # possible to tell from the script's own output whether the running binary matches the
-# checked-out commit. Safe to rerun: publish output directories are overwritten in place.
+# checked-out commit. Safe to rerun: publish output directories are overwritten in place,
+# and an existing symlink/settings.json entry from a previous run is updated in place.
 #
-# Does NOT touch ~/.claude/settings.json, and does NOT run `git pull` or touch git state —
-# it reports what is checked out and builds it, nothing more.
+# Only touches ~/.claude/settings.json if the interactive settings.json prompt (step 7) is
+# accepted — and then only the statusLine key, with a timestamped backup taken first. Never
+# runs `git pull` or touches git state — it reports what is checked out and builds it,
+# nothing more.
 
 set -euo pipefail
 
@@ -76,7 +79,35 @@ else
 fi
 echo
 
-# 4. Build: claude-tui-line-mcp
+# 4. Symlink into the user's bin path, so settings.json doesn't need the full repo path.
+# Never creates a bin directory and never touches $PATH — only uses a candidate that's
+# already a directory on $PATH. A previous run's symlink (pointing at any clone) is
+# updated in place; a real file already at that path is left alone.
+echo "4. Symlink"
+bin_dir=""
+for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+    if [[ -d "$candidate" ]] && [[ ":$PATH:" == *":$candidate:"* ]]; then
+        bin_dir="$candidate"
+        break
+    fi
+done
+
+symlink_path=""
+if [[ -z "$bin_dir" ]]; then
+    warn "no bin dir on PATH (checked \$HOME/.local/bin, \$HOME/bin) — skipping symlink, settings.json wire-up will use the full path"
+else
+    link_target="$bin_dir/claude-tui-line"
+    if [[ -e "$link_target" && ! -L "$link_target" ]]; then
+        warn "$link_target already exists and is not a symlink — skipping, settings.json wire-up will use the full path"
+    else
+        ln -sf "$cli_bin" "$link_target"
+        symlink_path="$link_target"
+        pass "symlinked -> $symlink_path"
+    fi
+fi
+echo
+
+# 5. Build: claude-tui-line-mcp
 #
 # ClaudeTuiLineMcp.csproj is OutputType=Exe with its own Program.cs and Microsoft.Extensions
 # .Hosting — a real standalone MCP server process, not a library referenced only by other
@@ -87,7 +118,7 @@ echo
 # ProjectReference to the self-contained (PublishAot) ClaudeTuiLine.csproj currently trips
 # NETSDK1151 during publish — a pre-existing conflict between those two project files, tracked
 # separately, unrelated to the CLI build above.
-echo "4. Build: claude-tui-line-mcp"
+echo "5. Build: claude-tui-line-mcp"
 mcp_log="$log_dir/mcp-publish.log"
 if dotnet publish src/ClaudeTuiLineMcp/ClaudeTuiLineMcp.csproj -c Release -o publish-mcp > "$mcp_log" 2>&1; then
     mcp_bin="$(pwd)/publish-mcp/claude-tui-line-mcp"
@@ -97,8 +128,8 @@ else
 fi
 echo
 
-# 5. Freshness proof
-echo "5. Freshness"
+# 6. Freshness proof
+echo "6. Freshness"
 bin_version=$("$cli_bin" --version)
 bin_mtime_epoch=$(mtime_epoch "$cli_bin")
 pass "binary version: $bin_version"
@@ -111,26 +142,67 @@ else
 fi
 echo
 
-# 6. Wire-up instructions — printed, never applied. ~/.claude/settings.json is the user's
-# global Claude Code config, outside this repo, and out of scope for an unattended edit.
-echo "6. Wire-up (~/.claude/settings.json)"
-info "Add or update the statusLine block, with the path just built already substituted in:"
-echo
-cat <<EOF
+# 7. Wire-up (~/.claude/settings.json) — interactive when run from a real terminal: on
+# acceptance, updates ONLY the statusLine key (via jq, never hand-rolled JSON surgery) and
+# backs up the existing file first. Non-interactive (CI, piped stdin) always falls back to
+# print-only, so this step is safe to run unattended.
+echo "7. Wire-up (~/.claude/settings.json)"
+wire_command="$cli_bin"
+[[ -n "$symlink_path" ]] && wire_command="$symlink_path"
+settings_file="$HOME/.claude/settings.json"
+
+print_snippet() {
+    info "Add or update the statusLine block, with the path just built already substituted in:"
+    echo
+    cat <<EOF
     {
       "statusLine": {
         "type": "command",
-        "command": "$cli_bin",
+        "command": "$wire_command",
         "refreshInterval": 1
       }
     }
 EOF
-echo
-info "This script does not modify ~/.claude/settings.json — paste the block above by hand."
+    echo
+    info "This script does not modify ~/.claude/settings.json — paste the block above by hand."
+}
+
+if [[ ! -t 0 ]]; then
+    print_snippet
+else
+    printf "  Update %s's statusLine to point at %s? [y/N] " "$settings_file" "$wire_command"
+    read -r reply || reply=""
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+        if ! command -v jq >/dev/null 2>&1; then
+            warn "jq not found on PATH — required to edit settings.json safely, skipping the write"
+            print_snippet
+        else
+            tmp_settings=$(mktemp)
+            if [[ -f "$settings_file" ]]; then
+                backup="$settings_file.bak-$(date +%Y%m%d%H%M%S)"
+                cp "$settings_file" "$backup"
+                jq --arg cmd "$wire_command" \
+                    '.statusLine = {"type": "command", "command": $cmd, "refreshInterval": 1}' \
+                    "$settings_file" > "$tmp_settings"
+                mv "$tmp_settings" "$settings_file"
+                pass "updated $settings_file (backup: $backup)"
+            else
+                mkdir -p "$(dirname "$settings_file")"
+                jq -n --arg cmd "$wire_command" \
+                    '{"statusLine": {"type": "command", "command": $cmd, "refreshInterval": 1}}' \
+                    > "$tmp_settings"
+                mv "$tmp_settings" "$settings_file"
+                pass "created $settings_file (no prior file to back up)"
+            fi
+        fi
+    else
+        print_snippet
+    fi
+fi
 echo
 
-# 7. Preview — visual proof the new build works, using the freshly built binary.
-echo "7. Preview (--preview)"
+# 8. Preview — visual proof the new build works, using the freshly built binary.
+echo "8. Preview (--preview)"
 "$cli_bin" --preview
 echo
 
