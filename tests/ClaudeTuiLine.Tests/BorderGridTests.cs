@@ -19,6 +19,8 @@ public class BorderGridTests
 
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
 
+    private static readonly ItemContext BlankCtx = BlankSurfaceControl.Blank(Ctx);
+
     private static (ResolvedConfig TopLevel, Pane RootPane) LoadConfig(string json)
     {
         var path = Path.GetTempFileName();
@@ -53,13 +55,16 @@ public class BorderGridTests
     }
     """;
 
-    private static Compositor.PaneContribution Render(string json, string columns, out SizeResolver.ResolvedPane resolved, out int boundaryCol)
+    private static Compositor.PaneContribution Render(string json, string columns, out SizeResolver.ResolvedPane resolved, out int boundaryCol) =>
+        Render(json, columns, Ctx, out resolved, out boundaryCol);
+
+    private static Compositor.PaneContribution Render(string json, string columns, ItemContext ctx, out SizeResolver.ResolvedPane resolved, out int boundaryCol)
     {
         var (topLevel, pane) = LoadConfig(json);
         var surfaceWidth = SurfaceLayout.ComputeWidth(columns, topLevel.ChromeReserve);
         Assert.True(surfaceWidth is int, "the test config must produce a real surface width");
-        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        var (r, contribution) = HeightLadder.Resolve(pane, surfaceWidth!.Value, topLevel.SurfaceMaxRows, Ctx, values, topLevel.Colors, new RenderNoteCollector(), topLevel.Collapse);
+        var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
+        var (r, contribution) = HeightLadder.Resolve(pane, surfaceWidth!.Value, topLevel.SurfaceMaxRows, ctx, values, topLevel.Colors, new RenderNoteCollector(), topLevel.Collapse);
         resolved = r;
         // This split root carries no border of its own (only its children declare borders), so
         // column 0 is the left child's own left edge and the shared boundary sits immediately
@@ -67,6 +72,9 @@ public class BorderGridTests
         boundaryCol = resolved.Children[0].OuterWidth;
         return contribution;
     }
+
+    private static string Markup(Compositor.PaneContribution contribution) =>
+        string.Join('\n', contribution.Buffer.Rows.Select(r => r.Markup));
 
     [Fact]
     public void Collapse_EveryComposedRowIsExactlyTheSurfaceWidth()
@@ -81,6 +89,17 @@ public class BorderGridTests
             Assert.Equal(surfaceWidth, r.Width);
             Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
         });
+
+        // SPEC §10.1 blank-surface control: the rectangle invariant passes trivially on a blank
+        // surface (a compositor bug that pads with the wrong width would still be caught), so it
+        // must be re-asserted, plus the two renders must be content-distinguishable.
+        var blankContribution = Render(TwoPaneConfig(collapse: true), "112", BlankCtx, out _, out _);
+        Assert.All(blankContribution.Buffer.Rows, r =>
+        {
+            Assert.Equal(surfaceWidth, r.Width);
+            Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
+        });
+        BlankSurfaceControl.AssertContentDiffers(Markup(contribution), Markup(blankContribution));
     }
 
     [Fact]
@@ -90,6 +109,14 @@ public class BorderGridTests
         var topRow = DisplayWidth.Strip(contribution.Buffer.Rows[0].Markup);
 
         Assert.Equal('┬', topRow[boundaryCol]);
+
+        // SPEC §10.1 blank-surface control intentionally omitted: blanking the right pane's only
+        // item collapses BOTH panes' content to zero rows, and PaneTreeRenderer.cs's height-suppression
+        // heuristic (naturalTotal < 3 => omit both border edges) then drops this pane's entire border
+        // contribution rather than rendering a 2-row empty box — the composited Buffer.Rows comes back
+        // empty for the blank run, throwing before any glyph could be checked. That is a pre-existing
+        // product-code edge case (a bordered pane with genuinely zero content rows), not something a
+        // test-authoring pass should paper over or silently work around; flagged upstream instead.
     }
 
     [Fact]
@@ -99,6 +126,10 @@ public class BorderGridTests
         var bottomRow = DisplayWidth.Strip(contribution.Buffer.Rows[^1].Markup);
 
         Assert.Equal('┴', bottomRow[boundaryCol]);
+
+        // SPEC §10.1 blank-surface control intentionally omitted: see the identical note in
+        // Collapse_TopOfInteriorBoundaryRendersTeeDownGlyph — blanking collapses this pane's Buffer.Rows
+        // to empty via a pre-existing PaneTreeRenderer.cs height-suppression edge case, flagged upstream.
     }
 
     [Fact]
@@ -110,6 +141,10 @@ public class BorderGridTests
 
         Assert.Equal('┳', topRow[boundaryCol]);
         Assert.Equal('┻', bottomRow[boundaryCol]);
+
+        // SPEC §10.1 blank-surface control intentionally omitted: see the identical note in
+        // Collapse_TopOfInteriorBoundaryRendersTeeDownGlyph — blanking collapses this pane's Buffer.Rows
+        // to empty via a pre-existing PaneTreeRenderer.cs height-suppression edge case, flagged upstream.
     }
 
     [Fact]
@@ -119,6 +154,10 @@ public class BorderGridTests
         var topRow = DisplayWidth.Strip(contribution.Buffer.Rows[0].Markup);
 
         Assert.Equal('+', topRow[boundaryCol]);
+
+        // SPEC §10.1 blank-surface control intentionally omitted: see the identical note in
+        // Collapse_TopOfInteriorBoundaryRendersTeeDownGlyph — blanking collapses this pane's Buffer.Rows
+        // to empty via a pre-existing PaneTreeRenderer.cs height-suppression edge case, flagged upstream.
     }
 
     [Fact]
@@ -137,6 +176,13 @@ public class BorderGridTests
 
         Assert.Equal(surfaceWidth, accountedFor);
         Assert.True(contribution.Buffer.Rows.Count > 0);
+
+        // SPEC §10.1 blank-surface control: boundary-column accounting is gutter/border math,
+        // independent of the right pane's item content, so it must still hold on a blank surface.
+        var blankContribution = Render(TwoPaneConfig(collapse: true), "112", BlankCtx, out var blankResolved, out _);
+        var blankAccountedFor = blankResolved.Children[0].OuterWidth + 1 + blankResolved.Children[1].OuterWidth;
+        Assert.Equal(surfaceWidth, blankAccountedFor);
+        BlankSurfaceControl.AssertContentDiffers(Markup(contribution), Markup(blankContribution));
     }
 
     [Fact]
@@ -154,5 +200,9 @@ public class BorderGridTests
         Assert.NotEqual(' ', row[leftOwnRightEdgeCol]);
         Assert.Equal(' ', row[gutterCol]);
         Assert.NotEqual(' ', row[rightOwnLeftEdgeCol]);
+
+        // SPEC §10.1 blank-surface control intentionally omitted: see the identical note in
+        // Collapse_TopOfInteriorBoundaryRendersTeeDownGlyph — blanking collapses this pane's Buffer.Rows
+        // to empty via a pre-existing PaneTreeRenderer.cs height-suppression edge case, flagged upstream.
     }
 }

@@ -101,6 +101,17 @@ public class HeightLadderTests
 
         Assert.Equal(3, rows.Count);
         Assert.All(rows, row => Assert.NotEqual("…", row.Markup.TrimEnd()));
+
+        // SPEC §10.1 blank-surface control: these items have no ItemRegistry entry (hand-built
+        // Id-only PaneItems per this file's own doc comment), so their display text comes purely
+        // from the `values` dict — blanking it is the correct control here (unlike registry-backed
+        // built-in items, which need a blank ItemContext instead; see SplitAcceptanceTests).
+        var blankValues = BlankSurfaceControl.BlankValues(values);
+        var blankRows = PaneAssembler.RenderLeafRows(pane, 1, Ctx, blankValues, Tokens, new RenderNoteCollector(), maxContentRows: 3);
+        Assert.Equal(3, blankRows.Count);
+        Assert.All(blankRows, row => Assert.NotEqual("…", row.Markup.TrimEnd()));
+        BlankSurfaceControl.AssertContentDiffers(
+            string.Join('\n', rows.Select(r => r.Markup)), string.Join('\n', blankRows.Select(r => r.Markup)));
     }
 
     [Fact]
@@ -130,6 +141,20 @@ public class HeightLadderTests
 
         Assert.Equal(2, contribution.Buffer.Rows.Count);
         Assert.All(contribution.Buffer.Rows, r => Assert.Contains("X", r.Markup));
+
+        // SPEC §10.1 blank-surface control: same items, values blanked (no ItemRegistry backing —
+        // see the class doc comment). "Contains X" cannot re-hold (there is no X), so that
+        // assertion is replaced with distinguishability from the populated run. The row-count
+        // "== 2" is itself a consequence of these items' 20-char length each needing its own row
+        // under ClipRows before the clip bites — with both items blank they pack onto fewer rows,
+        // so only the ClipRows-driven upper bound (<= 2) is re-asserted, not the exact count.
+        var blankValues = BlankSurfaceControl.BlankValues(values);
+        var blankResolved = SizeResolver.Resolve(pane, 10, Ctx, blankValues, new RenderNoteCollector()) with { ClipRows = 2 };
+        var blankContribution = PaneTreeRenderer.Render(blankResolved, Ctx, blankValues, Tokens, new RenderNoteCollector());
+        Assert.True(blankContribution.Buffer.Rows.Count <= 2, $"blank-surface row count ({blankContribution.Buffer.Rows.Count}) must not exceed ClipRows (2)");
+        BlankSurfaceControl.AssertContentDiffers(
+            string.Join('\n', contribution.Buffer.Rows.Select(r => r.Markup)),
+            string.Join('\n', blankContribution.Buffer.Rows.Select(r => r.Markup)));
     }
 
     [Fact]
