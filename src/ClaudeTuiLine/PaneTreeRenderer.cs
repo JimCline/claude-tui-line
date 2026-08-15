@@ -17,6 +17,7 @@ public static class PaneTreeRenderer
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        IReadOnlyDictionary<string, Segment> compounds,
         RenderNoteCollector notes,
         int? targetOuterHeight = null,
         IDictionary<Pane, int>? rowCounts = null,
@@ -73,7 +74,7 @@ public static class PaneTreeRenderer
         IReadOnlyList<PaneRow> contentRows;
         if (node.Children.Count == 0)
         {
-            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, notes, maxContentRows, node.ItemsEmptied);
+            contentRows = PaneAssembler.RenderLeafRows(pane, innerWidth, ctx, values, tokens, compounds, notes, maxContentRows, node.ItemsEmptied);
         }
         else if (node.EffectiveSplit == PaneSplit.Vertical)
         {
@@ -101,7 +102,7 @@ public static class PaneTreeRenderer
             {
                 var childExcludeLeft = collapse && i > 0;
                 var childExcludeRight = collapse && i < node.Children.Count - 1;
-                return Render(c, ctx, values, tokens, notes, rowCounts: rowCounts, collapse: collapse,
+                return Render(c, ctx, values, tokens, compounds, notes, rowCounts: rowCounts, collapse: collapse,
                     excludeLeft: childExcludeLeft, excludeRight: childExcludeRight,
                     rowStart: innerRow0, colStart: childColStarts[i], grid: grid);
             }).ToList();
@@ -129,7 +130,7 @@ public static class PaneTreeRenderer
                 var childExcludeLeft = collapse && i > 0;
                 var childExcludeRight = collapse && i < node.Children.Count - 1;
                 var contribution = natural[i].Buffer.Rows.Count < childHeight && !childIsContentHeight
-                    ? Render(node.Children[i], ctx, values, tokens, notes, childHeight, rowCounts, collapse,
+                    ? Render(node.Children[i], ctx, values, tokens, compounds, notes, childHeight, rowCounts, collapse,
                         childExcludeLeft, childExcludeRight, innerRow0, childColStarts[i], grid)
                     : natural[i];
                 contributions.Add(contribution);
@@ -144,7 +145,7 @@ public static class PaneTreeRenderer
             var rows = new List<PaneRow>();
             foreach (var child in node.Children)
             {
-                var contribution = Render(child, ctx, values, tokens, notes, rowCounts: rowCounts, collapse: collapse,
+                var contribution = Render(child, ctx, values, tokens, compounds, notes, rowCounts: rowCounts, collapse: collapse,
                     rowStart: cursorRow, colStart: innerCol0, grid: grid);
                 rows.AddRange(contribution.Buffer.Rows);
                 cursorRow += contribution.Buffer.Rows.Count;

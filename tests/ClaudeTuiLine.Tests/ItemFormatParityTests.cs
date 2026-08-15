@@ -51,8 +51,8 @@ public class ItemFormatParityTests
 
         var item = new PaneItem(id, null, null, null);
         var values = new Dictionary<string, string?> { [id] = rawValue };
-        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
 
         Assert.Equal(defaultText, decision.Text);
     }
@@ -69,8 +69,8 @@ public class ItemFormatParityTests
 
         var item = new PaneItem(id, null, null, null);
         var values = new Dictionary<string, string?> { [id] = rawValue };
-        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
         var color = ColorResolution.Resolve(item.Color, values, new Dictionary<string, ColorResolution.ColorRule>());
         var renderedSegment = SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color);
 
@@ -91,8 +91,8 @@ public class ItemFormatParityTests
         var item = new PaneItem("context", null, new ColorResolution.ColorExpr.Literal("red"), null);
         var rawValue = ItemRegistry.Find("context")!.ResolveValue(Ctx);
         var values = new Dictionary<string, string?> { ["context"] = rawValue };
-        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
         var color = ColorResolution.Resolve(item.Color, values, new Dictionary<string, ColorResolution.ColorRule>());
         var renderedSegment = SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color);
 
@@ -134,8 +134,8 @@ public class ItemFormatParityTests
         var item = new PaneItem("model", null, new ColorResolution.ColorExpr.Literal("yellow"), null);
         var rawValue = ItemRegistry.Find("model")!.ResolveValue(Ctx);
         var values = new Dictionary<string, string?> { ["model"] = rawValue };
-        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
         var color = ColorResolution.Resolve(item.Color, values, new Dictionary<string, ColorResolution.ColorRule>());
         var renderedSegment = SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color);
 
@@ -160,8 +160,8 @@ public class ItemFormatParityTests
         var item = new PaneItem("rate-limits", null, new ColorResolution.ColorExpr.Literal("red"), null);
         var rawValue = ItemRegistry.Find("rate-limits")!.ResolveValue(Ctx);
         var values = new Dictionary<string, string?> { ["rate-limits"] = rawValue };
-        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, Ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
         var color = ColorResolution.Resolve(item.Color, values, new Dictionary<string, ColorResolution.ColorRule>());
         var renderedSegment = SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color);
 

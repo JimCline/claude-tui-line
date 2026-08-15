@@ -110,8 +110,13 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // §9.3.2: which pipeline runs and whether a border wraps the result is decided by
         // ComputeRows, shared with RunPreview below, so the real render and a preview capture
         // can't compute that decision two different ways.
+        // SPEC-87 §12.7.1: one compound id -> Segment map, built once above both entry points
+        // (this pipeline's ComputeRows and its own transitive SizeResolver.Resolve call) so the
+        // two never resolve a compound to a different Segment instance.
+        var compounds = LeafItems.BuildCompoundMap(pane, values, ctx, tokens);
+
         var (rows, renderingPanel, boxBorder, borderColor) =
-            ComputeRows(pane, surfaceWidth, ctx, values, tokens, notes, input.Cwd, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
+            ComputeRows(pane, surfaceWidth, ctx, values, tokens, compounds, notes, input.Cwd, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
         DrawRows(console, rows, renderingPanel, boxBorder, borderColor, surfaceWidth);
 
         return 0;
@@ -158,6 +163,7 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
     ItemContext ctx,
     IReadOnlyDictionary<string, string?> values,
     IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+    IReadOnlyDictionary<string, Segment> compounds,
     RenderNoteCollector notes,
     string? cwd,
     string widthsDir,
@@ -174,7 +180,7 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
         // sizing ever sees them, so a collapsed pane never reserves width or draws a border, and a
         // fully-collapsed root emits zero rows — the same shape as the empty-segments short-circuit
         // the legacy leaf path below already takes.
-        var collapsedPane = PaneCollapse.Collapse(pane, values, ctx, unavailableIds);
+        var collapsedPane = PaneCollapse.Collapse(pane, values, ctx, compounds, unavailableIds);
         if (collapsedPane is null)
         {
             return (Array.Empty<PaneRow>(), false, null, Style.Plain);
@@ -183,7 +189,7 @@ static (IReadOnlyList<PaneRow> Rows, bool RenderingPanel, BoxBorder? BoxBorder, 
         // SPEC-V2-FRAMEWORK.md §2.8.1: surfaceMaxRows and every pane's own maxRows are enforced
         // by the degrade ladder, which resolves both the sized tree and its rendered contribution
         // in one pass so a rejected intermediate attempt's width resolution never leaks out.
-        var (resolvedRoot, rootContribution) = HeightLadder.Resolve(collapsedPane, surfaceWidth!.Value, surfaceMaxRows, ctx, values, tokens, notes, collapseBorders);
+        var (resolvedRoot, rootContribution) = HeightLadder.Resolve(collapsedPane, surfaceWidth!.Value, surfaceMaxRows, ctx, values, tokens, compounds, notes, collapseBorders);
         // §5.0.1/§9.3.4: unconditional now that the widths store is keyed by resolved surface
         // width — a --preview at one width and a live render at another write distinct entries,
         // so stamping here can no longer corrupt a render at a different width.
@@ -384,13 +390,17 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
         unavailableIds = UnresolvedCommandIds(pane);
     }
 
+    // SPEC-87 §12.7.1: one compound id -> Segment map, built once above both entry points this
+    // preview pipeline reaches (ComputeRows and its own transitive SizeResolver.Resolve call).
+    var compounds = LeafItems.BuildCompoundMap(pane, values, ctx, tokens);
+
     if (json)
     {
         // §5.0.1/§9.3.4: stamping here is safe unconditionally — the widths store is keyed by
         // resolved surface width, so a preview at one width and a live render at another write
         // distinct entries and can't corrupt each other's stamped pane width.
         var (jsonRows, jsonRenderingPanel, jsonBoxBorder, jsonBorderColor) =
-            ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
+            ComputeRows(pane, usableColumns, ctx, values, tokens, compounds, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
 
         // §9.3.4: a row is a line of the rendered surface, borders included — the same draw the
         // bare form produces, captured through the same console configuration rather than a second
@@ -450,7 +460,7 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     }
 
     var (bareRows, renderingPanel, boxBorder, borderColor) =
-        ComputeRows(pane, usableColumns, ctx, values, tokens, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
+        ComputeRows(pane, usableColumns, ctx, values, tokens, compounds, notes, cwd: null, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
 
     // §9.3.2: bare --preview writes through the render path's own console configuration (forced
     // ANSI, not the auto-detecting instance --colors uses), captured first so the columns/notes

@@ -154,8 +154,8 @@ public class HyperlinkTests
         var item = new PaneItem("model-short", null, null, null, Link: "https://x/{missing-id}");
         var values = new Dictionary<string, string?> { ["model-short"] = ItemRegistry.Find("model-short")!.ResolveValue(ctx) };
 
-        var resolved = LeafItems.Resolve(new[] { item }, values, ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
 
         Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
         Assert.Equal("Opus 4.5", decision.Text);
@@ -173,8 +173,8 @@ public class HyperlinkTests
             ["other"] = "resolved-value",
         };
 
-        var resolved = LeafItems.Resolve(new[] { item }, values, ctx).Single();
-        var decision = LeafContent.Decide(resolved, values);
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
 
         Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
         Assert.Equal("https://x/resolved-value", url);
@@ -270,8 +270,8 @@ public class HyperlinkTests
         var ctx = new ItemContext(new StatusInput(), gitBranch: null, engram: null, remoteUrlProbe: () => url);
         var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new RenderNoteCollector());
-        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings
@@ -343,8 +343,8 @@ public class HyperlinkTests
 
         Assert.Equal(remoteUrl, values.GetValueOrDefault("remote-url"));
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new RenderNoteCollector());
-        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings
@@ -451,5 +451,57 @@ public class HyperlinkTests
         Assert.True(resetIndex >= 0, "expected the raw SGR reset to appear in rendered output");
         Assert.True(worldIndex >= 0, "expected the neighboring segment's text to appear in rendered output");
         Assert.True(resetIndex < worldIndex, "the reset must close the unterminated red before the next segment's text");
+    }
+
+    // SPEC-87 §12.1/§12.4: a `link` template naming a compound id declared in a different pane
+    // resolves via the same whole-tree compound map LeafItems.Resolve consults — only the
+    // compound's Plain substitutes, with no markup/ANSI bytes carried into the URL.
+    [Fact]
+    public void LinkTemplate_NamingCompoundDeclaredInAnotherPane_SubstitutesPlainTextOnly()
+    {
+        var compoundPart = new PaneItemPart(Text: null, Item: null, From: "agent", Extract: "[^:]+$", Case: "upper", Format: null,
+            Color: new ColorResolution.ColorExpr.Literal("aqua"));
+        var declaringItem = new PaneItem(Item: null, Format: null, Color: null, Overflow: null, Id: "agent-badge", Parts: new[] { compoundPart });
+        var declaringPane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "auto", NoBorder, OverflowMode.Truncate, "…", null, new[] { declaringItem });
+        var root = new Pane(PaneSplit.Horizontal, new[] { declaringPane }, "auto", NoBorder, null, "…", null, Array.Empty<PaneItem>());
+
+        var values = new Dictionary<string, string?> { ["agent"] = "team:worker-7" };
+        var ctx = new ItemContext(new StatusInput(), gitBranch: null, engram: null, remoteUrlProbe: () => null);
+        var compounds = LeafItems.BuildCompoundMap(root, values, ctx, null);
+
+        var linkItem = new PaneItem(Item: null, Format: null, Color: null, Overflow: null, Id: "anchor", Link: "https://x/{agent-badge}");
+        var resolved = new LeafItems.ResolvedItem(linkItem, "click", new Segment(Markup.Escape("click"), "click"));
+
+        var decision = LeafContent.Decide(resolved, values, compounds);
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://x/WORKER-7", url);
+        Assert.DoesNotContain('', url);
+    }
+
+    // SPEC-87 §12.3/§6.8: a compound suppressed by BuildCompoundMap (every value-part empty) has
+    // no map entry, so a `link` naming it hits the ordinary missing-placeholder path — the link
+    // is dropped entirely rather than substituting an empty string.
+    [Fact]
+    public void LinkTemplate_NamingSuppressedCompound_DropsTheLinkEntirely()
+    {
+        var emptyPart = new PaneItemPart(Text: null, Item: null, From: "missing-source", Extract: null, Case: null, Format: null, Color: null);
+        var declaringItem = new PaneItem(Item: null, Format: null, Color: null, Overflow: null, Id: "empty-badge", Parts: new[] { emptyPart });
+        var declaringPane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "auto", NoBorder, OverflowMode.Truncate, "…", null, new[] { declaringItem });
+        var root = new Pane(PaneSplit.Horizontal, new[] { declaringPane }, "auto", NoBorder, null, "…", null, Array.Empty<PaneItem>());
+
+        var values = new Dictionary<string, string?>();
+        var ctx = new ItemContext(new StatusInput(), gitBranch: null, engram: null, remoteUrlProbe: () => null);
+        var compounds = LeafItems.BuildCompoundMap(root, values, ctx, null);
+        Assert.Empty(compounds);
+
+        var linkItem = new PaneItem(Item: null, Format: null, Color: null, Overflow: null, Id: "anchor", Link: "https://x/{empty-badge}");
+        var ownMarkup = Markup.Escape("click");
+        var resolved = new LeafItems.ResolvedItem(linkItem, "click", new Segment(ownMarkup, "click"));
+
+        var decision = LeafContent.Decide(resolved, values, compounds);
+
+        Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
+        Assert.Equal(ownMarkup, decision.Markup);
     }
 }

@@ -22,6 +22,7 @@ public static class PaneAssembler
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        IReadOnlyDictionary<string, Segment> compounds,
         RenderNoteCollector notes,
         int? maxContentRows = null,
         bool itemsEmptied = false)
@@ -31,7 +32,7 @@ public static class PaneAssembler
         // look identical on Items.Count alone, so the caller passes itemsEmptied to tell them apart.
         var units = pane.Items.Count == 0
             ? (itemsEmptied ? Array.Empty<RenderUnit>() : RenderDefaultRows(pane, innerWidth, ctx, notes))
-            : RenderItemRows(pane, innerWidth, ctx, values, tokens, notes);
+            : RenderItemRows(pane, innerWidth, ctx, values, tokens, compounds, notes);
 
         var rawRows = ApplyRowBudget(units, maxContentRows, pane, innerWidth, notes);
 
@@ -115,6 +116,7 @@ public static class PaneAssembler
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        IReadOnlyDictionary<string, Segment> compounds,
         RenderNoteCollector notes)
     {
         var overflow = ResolveOverflow(pane);
@@ -133,14 +135,14 @@ public static class PaneAssembler
             packedGroup.Clear();
         }
 
-        foreach (var resolved in LeafItems.Resolve(pane.Items, values, ctx))
+        foreach (var resolved in LeafItems.Resolve(pane.Items, values, ctx, compounds, tokens))
         {
             if (resolved.Value is null)
             {
                 continue;
             }
 
-            var decision = LeafContent.Decide(resolved, values);
+            var decision = LeafContent.Decide(resolved, values, compounds);
             var color = ColorResolution.Resolve(resolved.Config.Color, values, tokens);
             // SPEC-85 §12.5/D-B: a compound's item-level colour is already consumed per-part
             // (as each part's default) by LeafItems, so the single-line path must not wrap it

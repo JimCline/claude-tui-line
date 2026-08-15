@@ -115,6 +115,37 @@ public static class SegmentBuilder
     public static Segment BuildCompoundSegment(IReadOnlyList<StyledSpan> spans) =>
         new(string.Concat(spans.Select(s => s.Markup)), string.Concat(spans.Select(s => s.Plain)), spans);
 
+    /// <summary>
+    /// SPEC-87 §12.9: applies a selecting item's colour as a floor onto a compound's spans — only
+    /// where a span carries no colour of its own (its markup is exactly its escaped plain text,
+    /// the shape <see cref="BuildSpanMarkup"/> produces for a null colour). A part's own colour,
+    /// explicit or value-derived, is never overridden.
+    /// </summary>
+    internal static Segment ApplyColorFloor(Segment compound, string? floorColor)
+    {
+        if (string.IsNullOrEmpty(floorColor) || compound.Spans is not { Count: > 0 } spans)
+        {
+            return compound;
+        }
+
+        var changed = false;
+        var merged = new List<StyledSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            if (span.Markup == Markup.Escape(span.Plain))
+            {
+                merged.Add(new StyledSpan(span.Plain, BuildSpanMarkup(span.Plain, floorColor)));
+                changed = true;
+            }
+            else
+            {
+                merged.Add(span);
+            }
+        }
+
+        return changed ? BuildCompoundSegment(merged) : compound;
+    }
+
     internal static Segment? BuildDirectory(string? cwd) =>
         string.IsNullOrEmpty(cwd) ? null : SingleColor("teal", Basename(cwd));
 

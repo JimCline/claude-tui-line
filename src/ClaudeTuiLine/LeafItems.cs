@@ -25,6 +25,7 @@ public static class LeafItems
         IReadOnlyList<PaneItem> items,
         IReadOnlyDictionary<string, string?> values,
         ItemContext ctx,
+        IReadOnlyDictionary<string, Segment> compounds,
         IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens = null)
     {
         var resolved = new List<ResolvedItem>(items.Count);
@@ -46,10 +47,67 @@ public static class LeafItems
             var key = item.Id ?? item.Item;
             var value = key is { } id ? values.GetValueOrDefault(id) : null;
             var display = ResolveDisplay(item, key, value, ctx);
+
+            // SPEC-87 §12.4: an item-level `item` selector naming a compound id finds nothing in
+            // `values` (a compound never writes there, §0/§12.2) and so misses the ordinary path
+            // above — only then is `compounds` consulted, and only by the id the ordinary path
+            // already tried. A suppressed compound has no entry (§12.3), so this falls through to
+            // the same empty-value path as any other unresolved id, giving §2.3 for free.
+            if (display is null && key is { } selectorId && compounds.TryGetValue(selectorId, out var compoundSegment))
+            {
+                // SPEC-87 §12.9: the selecting item's own `color`, if any, is a floor over the
+                // compound's spans — it fills in only where a part has none of its own.
+                var floorColor = ColorResolution.Resolve(item.Color, values, tokens ?? EmptyTokens);
+                var merged = SegmentBuilder.ApplyColorFloor(compoundSegment, floorColor);
+                value = merged.Plain;
+                display = merged;
+            }
+
             resolved.Add(new ResolvedItem(item, value, display));
         }
 
         return resolved;
+    }
+
+    // SPEC-87 §12.3/§12.7: one id -> Segment map, covering every compound declared anywhere in the
+    // pane tree (§12.1 — whole-tree, matching --check's CompoundItemIds), built once per render
+    // (§12.7.1) and threaded into Resolve/TryBuildLink as a required parameter rather than looked
+    // up ambiently (§12.10.3). A compound that suppresses as one unit (BuildCompound returns null)
+    // is omitted, not present-with-null — callers rely on that for §2.3/§6.8's suppression.
+    public static IReadOnlyDictionary<string, Segment> BuildCompoundMap(
+        Pane root,
+        IReadOnlyDictionary<string, string?> values,
+        ItemContext ctx,
+        IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens)
+    {
+        var map = new Dictionary<string, Segment>(StringComparer.Ordinal);
+        CollectCompounds(root, values, ctx, tokens, map);
+        return map;
+    }
+
+    private static void CollectCompounds(
+        Pane pane,
+        IReadOnlyDictionary<string, string?> values,
+        ItemContext ctx,
+        IReadOnlyDictionary<string, ColorResolution.ColorRule>? tokens,
+        Dictionary<string, Segment> map)
+    {
+        foreach (var item in pane.Items)
+        {
+            if (item.Id is { Length: > 0 } id && item.Parts is { } parts)
+            {
+                var segment = BuildCompound(item, parts, values, ctx, tokens);
+                if (segment is not null)
+                {
+                    map[id] = segment;
+                }
+            }
+        }
+
+        foreach (var child in pane.Children)
+        {
+            CollectCompounds(child, values, ctx, tokens, map);
+        }
     }
 
     private static Segment? ResolveDisplay(PaneItem item, string? key, string? value, ItemContext ctx)

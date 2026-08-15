@@ -26,7 +26,7 @@ public class SizeResolverFixpointTests
     private static SizeResolver.ResolvedPane ResolveWithStub(Func<int?, int> contentRequest)
     {
         var root = Split(Leaf("fill"), Leaf("content"));
-        return SizeResolver.Resolve(root, 50, Ctx, new Dictionary<string, string?>(),
+        return SizeResolver.Resolve(root, 50, Ctx, new Dictionary<string, string?>(), new Dictionary<string, Segment>(),
             (p, granted) => p.Size == "content" ? contentRequest(granted) : 0, new RenderNoteCollector());
     }
 

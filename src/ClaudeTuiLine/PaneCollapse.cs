@@ -22,6 +22,7 @@ public static class PaneCollapse
         Pane pane,
         IReadOnlyDictionary<string, string?> values,
         ItemContext ctx,
+        IReadOnlyDictionary<string, Segment> compounds,
         IReadOnlyCollection<string> unavailableIds)
     {
         if (pane.Split != PaneSplit.None && pane.Children.Count > 0)
@@ -30,7 +31,7 @@ public static class PaneCollapse
             var changed = false;
             foreach (var child in pane.Children)
             {
-                var collapsedChild = Collapse(child, values, ctx, unavailableIds);
+                var collapsedChild = Collapse(child, values, ctx, compounds, unavailableIds);
                 if (collapsedChild is null)
                 {
                     changed = true;
@@ -58,13 +59,14 @@ public static class PaneCollapse
             return pane;
         }
 
-        return IsStructurallyEmpty(pane, values, ctx, unavailableIds) ? null : pane;
+        return IsStructurallyEmpty(pane, values, ctx, compounds, unavailableIds) ? null : pane;
     }
 
     private static bool IsStructurallyEmpty(
         Pane pane,
         IReadOnlyDictionary<string, string?> values,
         ItemContext ctx,
+        IReadOnlyDictionary<string, Segment> compounds,
         IReadOnlyCollection<string> unavailableIds)
     {
         if (pane.Items.Count == 0)
@@ -72,7 +74,7 @@ public static class PaneCollapse
             return true;
         }
 
-        foreach (var resolved in LeafItems.Resolve(pane.Items, values, ctx))
+        foreach (var resolved in LeafItems.Resolve(pane.Items, values, ctx, compounds))
         {
             if (resolved.Value is not null)
             {

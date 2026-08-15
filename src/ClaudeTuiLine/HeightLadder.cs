@@ -34,35 +34,36 @@ public static class HeightLadder
         ItemContext ctx,
         IReadOnlyDictionary<string, string?> values,
         IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
+        IReadOnlyDictionary<string, Segment> compounds,
         RenderNoteCollector notes,
         bool collapse = false)
     {
         var current = root;
         var clipBudgets = new Dictionary<string, int>();
         var emptiedPaths = new HashSet<string>();
-        var (rootRows, rowCounts, _, _) = Measure(current, outerWidth, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+        var (rootRows, rowCounts, _, _) = Measure(current, outerWidth, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
 
         if (!InBudget(current, rootRows, rowCounts, surfaceMaxRows))
         {
-            (current, rootRows, rowCounts) = DemoteWrapToTruncate(current, rootRows, rowCounts, outerWidth, surfaceMaxRows, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+            (current, rootRows, rowCounts) = DemoteWrapToTruncate(current, rootRows, rowCounts, outerWidth, surfaceMaxRows, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
         }
 
         if (!InBudget(current, rootRows, rowCounts, surfaceMaxRows))
         {
-            (current, rootRows, rowCounts) = DropTrailingItems(current, rootRows, rowCounts, outerWidth, surfaceMaxRows, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+            (current, rootRows, rowCounts) = DropTrailingItems(current, rootRows, rowCounts, outerWidth, surfaceMaxRows, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
         }
 
         if (!InBudget(current, rootRows, rowCounts, surfaceMaxRows))
         {
-            (current, rootRows, rowCounts) = ClipTallest(current, rootRows, rowCounts, outerWidth, surfaceMaxRows, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+            (current, rootRows, rowCounts) = ClipTallest(current, rootRows, rowCounts, outerWidth, surfaceMaxRows, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
         }
 
         // Final render against the caller's real notes collector — every rung above measures
         // through a throwaway collector so a rejected/superseded attempt's notes never reach the
         // caller.
-        var resolved = Annotate(SizeResolver.Resolve(current, outerWidth, ctx, values, notes, collapse), Array.Empty<int>(), clipBudgets, emptiedPaths);
+        var resolved = Annotate(SizeResolver.Resolve(current, outerWidth, ctx, values, compounds, notes, collapse), Array.Empty<int>(), clipBudgets, emptiedPaths);
         var grid = collapse ? BorderGrid.Build(resolved, rowCounts, values, tokens) : null;
-        var contribution = PaneTreeRenderer.Render(resolved, ctx, values, tokens, notes, collapse: collapse, grid: grid);
+        var contribution = PaneTreeRenderer.Render(resolved, ctx, values, tokens, compounds, notes, collapse: collapse, grid: grid);
         return (resolved, contribution);
     }
 
@@ -73,7 +74,7 @@ public static class HeightLadder
     private static (Pane Root, int RootRows, IReadOnlyDictionary<Pane, int> RowCounts) DemoteWrapToTruncate(
         Pane root, int rootRows, IReadOnlyDictionary<Pane, int> rowCounts, int outerWidth, int surfaceMaxRows,
         ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
-        Dictionary<string, int> clipBudgets, HashSet<string> emptiedPaths, bool collapse)
+        IReadOnlyDictionary<string, Segment> compounds, Dictionary<string, int> clipBudgets, HashSet<string> emptiedPaths, bool collapse)
     {
         var flat = Flatten(root);
         for (var i = flat.Count - 1; i >= 0; i--)
@@ -86,7 +87,7 @@ public static class HeightLadder
             }
 
             root = ReplaceAt(root, path, 0, p => p with { Overflow = OverflowMode.Truncate });
-            (rootRows, rowCounts, _, _) = Measure(root, outerWidth, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+            (rootRows, rowCounts, _, _) = Measure(root, outerWidth, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
             if (InBudget(root, rootRows, rowCounts, surfaceMaxRows))
             {
                 break;
@@ -105,7 +106,7 @@ public static class HeightLadder
     private static (Pane Root, int RootRows, IReadOnlyDictionary<Pane, int> RowCounts) DropTrailingItems(
         Pane root, int rootRows, IReadOnlyDictionary<Pane, int> rowCounts, int outerWidth, int surfaceMaxRows,
         ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
-        Dictionary<string, int> clipBudgets, HashSet<string> emptiedPaths, bool collapse)
+        IReadOnlyDictionary<string, Segment> compounds, Dictionary<string, int> clipBudgets, HashSet<string> emptiedPaths, bool collapse)
     {
         while (!InBudget(root, rootRows, rowCounts, surfaceMaxRows))
         {
@@ -123,7 +124,7 @@ public static class HeightLadder
             }
 
             root = ReplaceAt(root, path, 0, p => p with { Items = newItems });
-            (rootRows, rowCounts, _, _) = Measure(root, outerWidth, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+            (rootRows, rowCounts, _, _) = Measure(root, outerWidth, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
         }
 
         return (root, rootRows, rowCounts);
@@ -139,7 +140,7 @@ public static class HeightLadder
     private static (Pane Root, int RootRows, IReadOnlyDictionary<Pane, int> RowCounts) ClipTallest(
         Pane root, int rootRows, IReadOnlyDictionary<Pane, int> rowCounts, int outerWidth, int surfaceMaxRows,
         ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
-        Dictionary<string, int> clipBudgets, HashSet<string> emptiedPaths, bool collapse)
+        IReadOnlyDictionary<string, Segment> compounds, Dictionary<string, int> clipBudgets, HashSet<string> emptiedPaths, bool collapse)
     {
         while (!InBudget(root, rootRows, rowCounts, surfaceMaxRows))
         {
@@ -153,7 +154,7 @@ public static class HeightLadder
             var key = PathKey(path);
             var floor = clipBudgets.TryGetValue(key, out var budget) ? budget : (rowCounts.TryGetValue(pane, out var count) ? count : 0);
             clipBudgets[key] = Math.Max(0, floor - 1);
-            (rootRows, rowCounts, _, _) = Measure(root, outerWidth, ctx, values, tokens, clipBudgets, emptiedPaths, collapse);
+            (rootRows, rowCounts, _, _) = Measure(root, outerWidth, ctx, values, tokens, compounds, clipBudgets, emptiedPaths, collapse);
         }
 
         return (root, rootRows, rowCounts);
@@ -189,12 +190,12 @@ public static class HeightLadder
 
     private static (int RootRows, IReadOnlyDictionary<Pane, int> RowCounts, SizeResolver.ResolvedPane Resolved, Compositor.PaneContribution Contribution) Measure(
         Pane root, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens,
-        IReadOnlyDictionary<string, int> clipBudgets, IReadOnlySet<string> emptiedPaths, bool collapse)
+        IReadOnlyDictionary<string, Segment> compounds, IReadOnlyDictionary<string, int> clipBudgets, IReadOnlySet<string> emptiedPaths, bool collapse)
     {
         var scratchNotes = new RenderNoteCollector();
-        var resolved = Annotate(SizeResolver.Resolve(root, outerWidth, ctx, values, scratchNotes, collapse), Array.Empty<int>(), clipBudgets, emptiedPaths);
+        var resolved = Annotate(SizeResolver.Resolve(root, outerWidth, ctx, values, compounds, scratchNotes, collapse), Array.Empty<int>(), clipBudgets, emptiedPaths);
         var rowCounts = new Dictionary<Pane, int>(ReferenceEqualityComparer.Instance);
-        var contribution = PaneTreeRenderer.Render(resolved, ctx, values, tokens, scratchNotes, rowCounts: rowCounts);
+        var contribution = PaneTreeRenderer.Render(resolved, ctx, values, tokens, compounds, scratchNotes, rowCounts: rowCounts);
         return (contribution.Buffer.Rows.Count, rowCounts, resolved, contribution);
     }
 

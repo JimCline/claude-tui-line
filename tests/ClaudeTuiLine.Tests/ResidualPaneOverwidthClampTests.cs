@@ -63,12 +63,12 @@ public class ResidualPaneOverwidthClampTests
         var (topLevel, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(20, resolved.Children[0].OuterWidth);
         Assert.Contains(notes.Notes, n => n.Message == "pane 1: 50 columns requested, clamped to 20 at 20 columns");
 
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         Assert.NotEmpty(rendered.Buffer.Rows);
         Assert.All(rendered.Buffer.Rows, row => Assert.Equal(20, row.Width));
     }
@@ -95,7 +95,7 @@ public class ResidualPaneOverwidthClampTests
         var (_, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(15, resolved.Children[0].OuterWidth);
         Assert.Empty(notes.Notes);
@@ -127,7 +127,7 @@ public class ResidualPaneOverwidthClampTests
         var (_, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Single(resolved.Children);
         Assert.Equal(20, resolved.Children[0].OuterWidth);
@@ -159,7 +159,7 @@ public class ResidualPaneOverwidthClampTests
         var (_, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
@@ -194,12 +194,12 @@ public class ResidualPaneOverwidthClampTests
         var (topLevel, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 0, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 0, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(0, resolved.Children[0].OuterWidth);
         Assert.Contains(notes.Notes, n => n.Message == "pane 1: 50 columns requested, clamped to 0 at 0 columns");
 
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         Assert.All(rendered.Buffer.Rows, row => Assert.Equal(0, row.Width));
     }
 
@@ -252,7 +252,7 @@ public class ResidualPaneOverwidthClampTests
         var (_, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(20, resolved.Children[0].OuterWidth);
         Assert.Contains(notes.Notes, n => n.Message == "pane 1: 50 columns requested, clamped to 20 at 20 columns");
@@ -285,8 +285,8 @@ public class ResidualPaneOverwidthClampTests
         var (topLevel, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
-        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
+        var rendered = PaneTreeRenderer.Render(resolved, Ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
         Assert.All(rendered.Buffer.Rows, row => Assert.Equal(20, row.Width));
     }
@@ -317,7 +317,7 @@ public class ResidualPaneOverwidthClampTests
         var (_, pane, values) = LoadResolved(json);
 
         var grants = new[] { 19, 20, 21, 22 }
-            .Select(w => SizeResolver.Resolve(pane, w, Ctx, values, new RenderNoteCollector()).Children[0].OuterWidth)
+            .Select(w => SizeResolver.Resolve(pane, w, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()).Children[0].OuterWidth)
             .ToArray();
 
         for (var i = 1; i < grants.Length; i++)
@@ -325,7 +325,7 @@ public class ResidualPaneOverwidthClampTests
             Assert.True(grants[i] >= grants[i - 1], $"grant at outer {19 + i} ({grants[i]}) must be >= grant at outer {18 + i} ({grants[i - 1]})");
         }
 
-        Assert.Equal(outerWidth, SizeResolver.Resolve(pane, outerWidth, Ctx, values, new RenderNoteCollector()).Children[0].OuterWidth);
+        Assert.Equal(outerWidth, SizeResolver.Resolve(pane, outerWidth, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()).Children[0].OuterWidth);
     }
 
     // Item 10: a split with a border still clamps to avail, not to splitOuterWidth. Item 1's
@@ -351,7 +351,7 @@ public class ResidualPaneOverwidthClampTests
         var (_, pane, values) = LoadResolved(json);
         var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values, notes);
+        var resolved = SizeResolver.Resolve(pane, 20, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(16, resolved.Children[0].OuterWidth);
         Assert.Contains(notes.Notes, n => n.Message == "pane 1: 50 columns requested, clamped to 16 at 20 columns");

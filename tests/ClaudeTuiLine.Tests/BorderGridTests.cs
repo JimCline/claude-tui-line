@@ -64,7 +64,7 @@ public class BorderGridTests
         var surfaceWidth = SurfaceLayout.ComputeWidth(columns, topLevel.ChromeReserve);
         Assert.True(surfaceWidth is int, "the test config must produce a real surface width");
         var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
-        var (r, contribution) = HeightLadder.Resolve(pane, surfaceWidth!.Value, topLevel.SurfaceMaxRows, ctx, values, topLevel.Colors, new RenderNoteCollector(), topLevel.Collapse);
+        var (r, contribution) = HeightLadder.Resolve(pane, surfaceWidth!.Value, topLevel.SurfaceMaxRows, ctx, values, topLevel.Colors,new Dictionary<string, Segment>(),  new RenderNoteCollector(), topLevel.Collapse);
         resolved = r;
         // This split root carries no border of its own (only its children declare borders), so
         // column 0 is the left child's own left edge and the shared boundary sits immediately
