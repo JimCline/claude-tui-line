@@ -98,20 +98,19 @@ Read the `statusLine.command` value back out of `~/.claude/settings.json` and ru
 verbatim**:
 
 ```bash
-echo '{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}' \
+<the exact binary path from settings.json> --fixture \
   | COLUMNS=80 <the exact command string now in settings.json>
 ```
 
 80 is written out rather than measured, and must stay that way (§12.1.1): you have no terminal, so
 `tput cols` returns terminfo's static 80 while looking like it adapted. Report "at 80 columns".
 
-**That payload is a placeholder, and the fix for it is not to make it bigger here.** SPEC §12.7.1
-rules that this preview should run against §9.3.1's complete fixture, so the user sees the whole
-statusline rather than a `cwd` and a model name. It cannot yet: the fixture lives inside the binary
-with no way to pipe it out, and step 5 must run `statusLine.command` verbatim, which rules out
-`--preview`'s empty-stdin fallback. Until the binary can emit it, this literal stays exactly as it
-is. Do not hand-roll a fuller one — §9.3 requires exactly one synthetic payload, and a second
-standing fixture in a command file is the defect §12.7.1 names, written once more.
+**This previews at §9.3.1's complete fixture, not a placeholder.** §12.7.1 rules that setup should
+show the user the whole statusline rather than a `cwd` and a model name — the payload above is
+`--fixture`'s emission of §9.3.1's fixture with `cwd` set to the real working directory (§12.7.2),
+so every item that depends on workspace, session, usage, or editor-state fields renders instead of
+sitting blank. Do not hand-roll a payload here — §9.3 requires exactly one synthetic payload, and a
+second standing fixture in a command file is the defect §12.7.1 names, written once more.
 
 **Not `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`.** That path was already proven in step 2 and is
 not what is in doubt. The one untested thing after step 4 is *the expansion* — whether the absolute
@@ -129,10 +128,11 @@ Show the output, and **split the two failures the way `/claude-tui-line:revert` 
 observation, same conclusion, because this is the paragraph above's rule applied to itself:
 
 - **A nonzero exit, or anything on stderr** → a real finding. Say it plainly and now.
-- **Empty stdout, exit 0** → *inconclusive*, not a symptom. Two ordinary causes have nothing to do
-  with the install: this renders at 80 columns rather than the user's width, and the payload is
-  minimal. Say it produced no output, say both reasons, and hand them the one-liner to run in their
-  own terminal rather than chasing it here.
+- **Empty stdout, exit 0** → *inconclusive*, not a symptom. This can still render at 80 columns
+  rather than the user's width, and the fixture's `cwd` is the real directory but its `session_id`,
+  `workspace.repo`, and similar fields are fixed placeholder values (§9.3.1) — an item keyed to a
+  real session or a real PR number still renders absent here. Say it produced no output, say why,
+  and hand them the one-liner to run in their own terminal rather than chasing it here.
 
 **This does not weaken what step 5 is for.** The failure it exists to catch — an unexpanded
 `${CLAUDE_PLUGIN_DATA}` or a wrong absolute path written into settings.json — cannot present as
@@ -140,11 +140,12 @@ empty stdout, because a command that does not exist does not run: the shell exit
 "command not found" on stderr, landing in the first bucket. The bucket that got softer is the one
 that never held this check's quarry.
 
-Then say that the sample payload is **minimal**: real payloads carry workspace, session and usage
-fields this one does not, so items that depend on them render absent here and will appear once it
-is live. Otherwise a correct install reads as a half-broken one, and the user's first act is to
-debug something that is working — which is the same reason empty stdout is inconclusive above,
-stated for the partial case instead of the total one.
+Then say that the payload is **synthetic**: `--fixture`'s output is invented data with the real
+working directory substituted in, not the user's actual session, PR, or usage state, so the render
+shows what the statusline looks like rather than what it says right now. Otherwise a correct install
+reads as reporting live data, and the user's first act is questioning numbers that were never real —
+which is the same reason empty stdout is inconclusive above, stated for the populated case instead
+of the blank one.
 
 ## 6. Tell them what happens next
 

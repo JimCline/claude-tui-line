@@ -485,6 +485,7 @@ static async Task<int> RunCli(string[] args)
     var colors = false;
     var preview = false;
     var accepted = false;
+    var fixture = false;
     string? configPath = null;
     int? columns = null;
 
@@ -509,6 +510,9 @@ static async Task<int> RunCli(string[] args)
                 break;
             case "--accepted":
                 accepted = true;
+                break;
+            case "--fixture":
+                fixture = true;
                 break;
             case "--json":
                 break;
@@ -538,14 +542,14 @@ static async Task<int> RunCli(string[] args)
         }
     }
 
-    // §9.4.4: --check, --version, --items, --colors, --preview, and --accepted are modes —
-    // exactly zero or one may appear in argv. This replaces the old pairwise mutual-exclusion
-    // table (unmaintainable past four commands: six pairs become ten on a fifth), so the rule
-    // holds for a sixth command without being edited.
-    var modeCount = new[] { check, version, items, colors, preview, accepted }.Count(selected => selected);
+    // §9.4.4: --check, --version, --items, --colors, --preview, --accepted, and --fixture are
+    // modes — exactly zero or one may appear in argv. This replaces the old pairwise mutual-
+    // exclusion table (unmaintainable past four commands: six pairs become ten on a fifth), so the
+    // rule holds for a seventh command without being edited.
+    var modeCount = new[] { check, version, items, colors, preview, accepted, fixture }.Count(selected => selected);
     if (modeCount > 1)
     {
-        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, and --accepted are mutually exclusive");
+        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, --accepted, and --fixture are mutually exclusive");
     }
 
     // §9.4.4: --json, --columns, and --config are modifiers, not modes — each mode's accepted set
@@ -558,6 +562,7 @@ static async Task<int> RunCli(string[] args)
         : colors ? ("--colors", new[] { "json" })
         : preview ? ("--preview", new[] { "json", "columns", "config" })
         : accepted ? ("--accepted", new[] { "json" })
+        : fixture ? ("--fixture", Array.Empty<string>())
         : ("rendering", new[] { "config" });
 
     if (json && !acceptedModifiers.Contains("json"))
@@ -614,7 +619,23 @@ static async Task<int> RunCli(string[] args)
         return RunAccepted();
     }
 
+    if (fixture)
+    {
+        return RunFixture();
+    }
+
     return RunCheck(json, configPath);
+}
+
+// §12.3.1/§12.7.1/§12.7.2: writes §9.3.1's fixture to stdout with cwd replaced by the process's
+// real working directory — the one payload commands/migrate.md, commands/setup.md, and
+// commands/revert.md pipe into --preview or the user's own script instead of each hand-rolling
+// its own incomplete literal.
+static int RunFixture()
+{
+    var payload = SyntheticFixture.WithRealCwd(Environment.CurrentDirectory);
+    Console.Out.WriteLine(JsonSerializer.Serialize(payload, StatusInputJsonContext.Default.StatusInput));
+    return 0;
 }
 
 // §9.1.1: static by construction — reads and resolves the config, runs nothing, spawns no

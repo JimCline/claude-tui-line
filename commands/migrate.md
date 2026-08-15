@@ -132,10 +132,11 @@ standing between a typo and a statusline that renders short forever.
 
 ## 6. Check fidelity against the original — content, not bytes
 
-Run both against the same stdin payload:
+Run both against the same stdin payload — §9.3.1's fixture, with `cwd` replaced by the real working
+directory, emitted by the binary itself rather than hand-rolled here:
 
 ```bash
-payload='{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}'
+payload="$(<binary> --fixture)"
 echo "$payload" | COLUMNS=80 <original command>
 echo "$payload" | COLUMNS=80 <binary> --preview --columns 80 --config <temp path> 2>/tmp/preview-notes
 cat /tmp/preview-notes
@@ -182,32 +183,26 @@ catch.
 If the original script errors on this synthetic payload, say so rather than treating its empty
 output as a match. Two blank lines are not parity.
 
-**Neither is silence.** The payload above carries `cwd` and `model` and nothing else. A real Claude
-Code payload carries workspace, session, usage and editor-state fields besides — do not take that
-phrase for the list, and do not write the list into this file: it is a snapshot of a schema the
-binary owns, it goes stale on the next field added, and a field missing from it is a field you will
-not know to check. The payload in front of you is the authority for what is carried; treat every
-top-level key it does not have as absent.
-An element of the original that reads one of those produces **no output at all** under this payload,
-without erroring, so the check above holds for it vacuously: nothing on the left, nothing on the
-right, and the comparison passes on the empty set. That is the same success-message-over-a-silent-
-drop this step exists to catch, arriving through the check instead of around it.
+**The fixture carries every `StatusInput` field, so this check no longer passes on the empty
+set.** §12.3.1 found the old hand-rolled two-field payload (`cwd` and `model`, nothing else) made
+the check hold vacuously for any element reading `session_id`, `context_window`, `rate_limits`,
+`pr`, `vim`, `agent`, `effort`, `thinking`, `output_style`, `worktree`, or `workspace`: nothing on
+either side, and a silent drop reported as a match. `--fixture`'s payload is §9.3.1's fixture, whose
+first rule is exactly "every field is populated, including the ones real payloads usually omit" —
+so every element you mapped is actually exercised here, not skipped past.
 
-So, for any element you mapped whose value comes from a field this payload does not carry:
+**One payload now covers both halves.** §12.3.1 originally required a second run at the real `$PWD`
+because the fixture's own `cwd` (`/home/you/code/acme-web`) is deliberately fake, so filesystem-
+derived elements would resolve blank under it — the same vacuous pass one layer down. `--fixture`
+already substitutes the real working directory for `cwd` (§12.7.2), so the one payload above
+exercises both the stdin-derived and the filesystem-derived halves at once; a second run is not
+needed.
 
-- **Do not record it as verified.** It was not compared; it was skipped.
-- **Put it on the tier-3 list as `unverified` rather than `unmappable`**, with the field it needs
-  named. The user is being asked to approve a migration in step 7, and "I could not check this one,
-  and here is why" is information they can act on. "Everything mapped" when a third of it was never
-  exercised is not.
-- If you can construct a payload carrying that field and re-run both sides against it, do that
-  first and report the real comparison. Extend the literal above for the run; do not commit a second
-  standing fixture to this file — SPEC §9.3 requires exactly one, and §12.3.1 rules that the binary
-  is what will eventually emit it.
-
-This is SPEC §12.3.1, and §9.3.1's first rule is the same finding for a different consumer: a
-payload built to look like a real one omits the fields real payloads usually omit, and then the
-thing that renders from it is silently empty.
+**A disagreement in a machine-probed value (git branch, remote URL) is still not a finding.** The
+fixture payload is piped through stdin, so `--preview` takes its real-probe branch rather than the
+canned one `--items`' `example` field uses — it probes the same repository the original script
+does, and on a real `cwd` the two should agree by construction. If they don't, that is worth noting,
+but it is a different kind of finding than a token silently dropped from the render.
 
 ## 7. Show the user, and wait
 

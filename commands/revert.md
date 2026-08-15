@@ -109,24 +109,31 @@ Print the restored command verbatim — a user reaching for revert is already ha
 deserves to see exactly what they got back — then render it:
 
 ```bash
-echo '{"cwd":"'"$PWD"'","model":{"display_name":"Claude Opus 5"}}' \
+<the restored binary path> --fixture \
   | COLUMNS=80 <the restored command>
 ```
 
 80 is written out rather than measured, and must stay that way (§12.1.1): you have no terminal, so
 `tput cols` returns terminfo's static 80 while looking like it adapted to the user's window.
 
+The payload is `--fixture`'s emission of §9.3.1's fixture with `cwd` set to the real working
+directory (§12.7.2) — the same one `commands/migrate.md` and `commands/setup.md` use. §12.7.1 rules
+this for consistency across all three commands, not because revert's own case was broken: an empty
+render here already demonstrates the command ran, but three copies of a hand-rolled literal is how
+a fourth gets written, so revert uses the flag too.
+
 **Errors and empty output are not the same finding, and this is where that matters most.**
 
 - **A nonzero exit, or anything on stderr** → a real finding about the backup. Say it plainly and
   now, not next session.
-- **Empty stdout, exit 0** → *inconclusive*, and reporting it as damage is its own harm. Two
-  ordinary causes have nothing to do with the backup: this renders at 80 columns rather than the
-  user's width, and the payload above is minimal — real payloads carry workspace, session and usage
-  fields, so a script reading them renders absent here and will fill in once it is live.
+- **Empty stdout, exit 0** → *inconclusive*, and reporting it as damage is its own harm. This can
+  still render at 80 columns rather than the user's width, and the fixture's `session_id`,
+  `workspace.repo`, and similar fields are fixed placeholder values (§9.3.1), so a script keyed to
+  the user's real session or PR still renders absent here.
 
-  Say it produced no output, say both reasons, and hand them the check rather than performing it:
-  the one-liner above, run in their own terminal, where the real width exists. Do not chase it.
+  Say it produced no output, say why, and hand them the check rather than performing it: the
+  one-liner above, run in their own terminal, where the real width and real session state exist. Do
+  not chase it.
 
 Either way, do not report a revert as successful on the strength of having written the file.
 
