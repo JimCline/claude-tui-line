@@ -951,8 +951,8 @@ public static class ConfigChecker
     private static IEnumerable<Diagnostic> CheckHorizontalSplitChildren(Pane split, string path)
     {
         // A horizontal split gives every child the full parent width (§2.8 not yet implemented), so
-        // there is no sum to check — only whether any single child's own fixed size already exceeds
-        // the width it will be given.
+        // there is no sum to check — only whether any single child's own fixed size or floor already
+        // exceeds the width it will be given.
         var parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize;
         if (parentBound is not int bound)
         {
@@ -961,10 +961,17 @@ public static class ConfigChecker
 
         for (var i = 0; i < split.Children.Count; i++)
         {
-            if (SizeResolver.FixedSize(split.Children[i]) is int childFixed && childFixed > bound)
+            var child = split.Children[i];
+
+            if (SizeResolver.FixedSize(child) is int childFixed && childFixed > bound)
             {
                 yield return new Diagnostic($"{path}/children/{i}", DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
                     $"this pane's fixed size ({childFixed}) exceeds its parent's bound ({bound}); a horizontal split gives every child the full parent width");
+            }
+            else if (child.MinSize is int childMin && childMin > bound)
+            {
+                yield return new Diagnostic($"{path}/children/{i}", DiagnosticSeverity.Error, "fixed-sizes-exceed-parent",
+                    $"this pane's minSize ({childMin}) exceeds its parent's bound ({bound}); a horizontal split gives every child the full parent width");
             }
         }
     }

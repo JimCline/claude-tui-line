@@ -1862,6 +1862,177 @@ public class ConfigCheckTests
         Assert.DoesNotContain(diagnostics, d => d.Code == "fixed-sizes-exceed-parent");
     }
 
+    [Fact]
+    public void HorizontalSplitChildMinSizeExceedsMaxSizeParent_ReportsFixedSizesExceedParent()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Single(diagnostics);
+        Assert.Equal("fixed-sizes-exceed-parent", diagnostics[0].Code);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostics[0].Severity);
+        Assert.Equal("/surface/pane/children/0", diagnostics[0].Path);
+        Assert.Contains("50", diagnostics[0].Message);
+        Assert.Contains("40", diagnostics[0].Message);
+    }
+
+    [Fact]
+    public void HorizontalSplitChildMinSizeExceedsFixedParent_ReportsFixedSizesExceedParent()
+    {
+        // Guards §5.3(a): a bound computed from `split.MaxSize` alone (mirroring CheckSplitBounds:940)
+        // would miss this, since the parent here is fixed-size, not maxSize.
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                    Size = "10",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 20, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Single(diagnostics);
+        Assert.Equal("fixed-sizes-exceed-parent", diagnostics[0].Code);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostics[0].Severity);
+        Assert.Equal("/surface/pane/children/0", diagnostics[0].Path);
+        Assert.Contains("20", diagnostics[0].Message);
+        Assert.Contains("10", diagnostics[0].Message);
+    }
+
+    [Fact]
+    public void HorizontalSplitChildMinSizeUnderUnboundedParent_ProducesNoStructuralDiagnostic()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 999, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "fixed-sizes-exceed-parent");
+    }
+
+    [Fact]
+    public void HorizontalSplitChildWithBothSizeAndMinSizeOverBound_ReportsAtMostOneDiagnostic()
+    {
+        // §5.3(c): `else if`, not independent `if` — at most one diagnostic per child even when
+        // both the fixed size and the minSize exceed the bound. The fixed size wins when both are
+        // declared and both exceed; the minSize is still caught when the fixed size alone does not.
+        UserConfig Config(string? size, int minSize) => new()
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                    Size = "10",
+                    Children = new List<PaneConfig>
+                    {
+                        new() { Size = size, MinSize = minSize, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var fixedWins = ConfigChecker.Check(Config("20", 30));
+        Assert.Single(fixedWins);
+        Assert.Equal("fixed-sizes-exceed-parent", fixedWins[0].Code);
+        Assert.Contains("20", fixedWins[0].Message);
+        Assert.DoesNotContain("30", fixedWins[0].Message);
+
+        var minSizeCaught = ConfigChecker.Check(Config("5", 30));
+        Assert.Single(minSizeCaught);
+        Assert.Equal("fixed-sizes-exceed-parent", minSizeCaught[0].Code);
+        Assert.Contains("30", minSizeCaught[0].Message);
+    }
+
+    [Fact]
+    public void HorizontalSplitChildMinSizeDiagnostic_NamesBoundWithNoBoundaryCost()
+    {
+        // §5.3(b): the per-child form gives every child the full parent extent, so no divider is
+        // reserved and the bound named in the message is the parent's bound unadjusted — here 40,
+        // not 40 minus any boundary cost.
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Single(diagnostics);
+        Assert.Contains("(40)", diagnostics[0].Message);
+    }
+
+    [Fact]
+    public void HorizontalSplitChildMinSizeOverBound_ProducesAtLeastOneErrorSeverityDiagnostic()
+    {
+        // §13 V8: pins the same gate RunCheck applies (diagnostics.Any(Error) => exit 1, ok: false).
+        // RunCheck itself is untouched by #91 (§12) and not re-tested here.
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "horizontal",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50, Items = new List<PaneItemJsonConfig> { new() { Item = "directory" } } },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+    }
+
     // ---- SPEC-V2-FRAMEWORK.md §4.2.1: argv-placeholder declaration faults ----
 
     [Fact]
