@@ -4913,6 +4913,30 @@ editing so the branch read current wording, not stale history. Verified via
 +`check-notes.sh`+`check-doc-tokens.sh`+`check-all.sh` clean pre- and
 post-merge. Landed as merge commit `8f4f14e` (pushed).
 
+### #75: SPEC-3.1 multi-row command block model
+
+`PaneAssembler.cs`'s `RenderItemRows` now classifies each resolved item as a
+block (multi-line, per the D2 split rule) or packed (single line), per SPEC-3.1
+D1-D8. A block flushes the current packed group, renders each of its own lines
+independently through the unmodified `RowLayout.Wrap`, and is appended with no
+separator/blank row on either edge (D4/D6, no separator confirmed by Jim).
+Wrapping a long single-line item never promotes it to a block, and a block's
+own line still wraps if too wide (D5). New `SplitBlockLines(string)` helper
+implements D2 exactly: strip one trailing `\n` (+ a `\r` immediately before
+it), split, `TrimEnd('\r')` each line — `"foo\n"` is 1 line (not a block),
+`"foo\n\n"` is 2 lines (a block, with a real blank row preserved). Surfaced and
+fixed a pre-existing leak along the way: a lone trailing-`\n` single line was
+pushing raw untrimmed text into the packed segment, leaking a literal `\n`
+into row markup. `RowLayout.Wrap` itself, `RenderLeaf`'s §2.5.1 cache-key
+tuple, and valign — all untouched, as required. §6's single-concatenation-site
+obligation (for #27's future splice) is `RenderItemRows`'s `rows` list, fed
+from exactly two call sites — confirmed PaneRow-typed, not Segment-backed;
+architect confirmed this is sufficient for #27, spec's "Segment-backed"
+phrasing wasn't load-bearing. 10 new tests in `PaneAssemblerBlockTests.cs`
+covering SPEC-3.1 §8's verification items 1-9. Verified via `cdtui-worker`:
+build+full suite (1359/1359, then 1367/1367 post-merge)+`check-all.sh` clean
+pre- and post-merge. Landed as merge commit `c4b93d2` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
