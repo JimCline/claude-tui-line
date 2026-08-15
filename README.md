@@ -397,6 +397,11 @@ binary actually accepts:
 A key with no closed set — `size` is the current example — reports `"accepted":null` and its
 possible forms in `alsoAccepted` instead.
 
+`--schema --json` aggregates `--items --json`, `--colors --json` and `--accepted --json` into one
+envelope, plus a `structures` table describing the shape of a config document (root, pane, item,
+colour rule, ...) and a `kindSupport` table noting which item kinds an MCP-side editor can safely
+construct today.
+
 `--items` and `--preview` are also part of the CLI; see the blockquote near the top of this README,
 under Install, for their current status.
 

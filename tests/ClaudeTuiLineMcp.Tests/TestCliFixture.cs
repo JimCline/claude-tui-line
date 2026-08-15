@@ -3,9 +3,11 @@ namespace ClaudeTuiLineMcp.Tests;
 /// <summary>
 /// Stands up a fake "claude-tui-line" CLI binary under a temp CLAUDE_PLUGIN_DATA directory, so
 /// tests can exercise CliRunner's spawn path without touching the real compiled CLI. The fake
-/// answers `--items --json` with a trivial success payload (the presence probe) and `--check
+/// answers `--items --json` with a trivial success payload (the presence probe), `--check
 /// --config &lt;path&gt; --json` by inspecting the candidate file: a config file containing the literal
-/// marker "FORCE_INVALID" is reported invalid, everything else reported valid.
+/// marker "FORCE_INVALID" is reported invalid, everything else reported valid, and `--schema --json`
+/// with a minimal but complete envelope (all five top-level sections present) for GetConfigSchema's
+/// section-filtering tests.
 ///
 /// Also saves/restores CLAUDE_PLUGIN_DATA, HOME and CLAUDE_TUI_LINE_CONFIG so tests never leak
 /// environment state into one another (the whole assembly runs serialized — see AssemblyInfo.cs).
@@ -65,6 +67,10 @@ public sealed class TestCliFixture : IDisposable
             exit 1
           fi
           echo '{"ok":true,"diagnostics":[]}'
+          exit 0
+        fi
+        if [ "$1" = "--schema" ]; then
+          echo '{"version":"test","items":{"items":[],"kinds":{}},"colors":{"version":"test","colors":[]},"accepted":{"version":"test","keys":[]},"kindSupport":{"builtin":{"supported":true,"unsupportedKeys":[]},"derived":{"supported":true,"unsupportedKeys":[]},"command":{"supported":true,"unsupportedKeys":[]},"compound":{"supported":false,"unsupportedKeys":["parts"]}},"structures":[]}'
           exit 0
         fi
         exit 0

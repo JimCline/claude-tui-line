@@ -467,7 +467,7 @@ values." A third sibling is both correct and consistent with what is already the
 | **`--accepted`** | **Chosen.** One bare word, matching `--check` / `--version` / `--items` / `--colors` / `--preview`. It is the codebase's own noun: `Accepted`, `AcceptedTokens`, `FormatAccepted`, and `ColorsCommand`'s `alsoAccepted` field. |
 | `--tokens` | **Rejected.** "Token" already means a colour token here — `@name`, the `colors` table, `ColorTokenExtractors`, `ColorTokenReference`. On this binary `--tokens` reads as "dump my colour tokens," which is a different command. |
 | `--enums` | **Rejected.** `size` is in this surface and is not an enum; a name that excludes one of its own rows by definition is a name that will be argued with later. |
-| `--schema` | **Rejected.** Promises a full config schema — types, nesting, required-ness — that this does not deliver. Over-promising a public surface name is worse than a longer one. |
+| `--schema` | **Rejected for `--accepted`** — it promises a full config schema (types, nesting, required-ness) that `--accepted`'s flat key→tokens payload does not deliver. **Taken by `--schema --json` (task #84)**, which does deliver it: item kinds, accepted values, colour names, and the structural shape of the config document. See SPEC-84-mcp-schema-explorer.md §5.0. |
 | `--accepted-values` | **Runner-up.** Accurate, but the five existing modes are all single bare words and there is no reason to be the first exception. |
 
 ###### `--accepted` requires `--json`
@@ -5883,6 +5883,41 @@ they follow the terminal theme, which is the one thing the field means.
 - The plain form is a **convenience view; the JSON is the contract.** Column layout may change
   without that being a compatibility break. Stated for the same reason as §9.6.2.2's version of
   this ruling: a human-readable output nobody labels becomes a frozen surface by default.
+
+### 9.6.4 `--schema --json` — the config schema, aggregated and structural (task #84)
+
+`--schema --json` is the fourth sibling in this family, and the one that finally delivers what
+§9.6's `--accepted` naming discussion (above) said `--schema` promises: types, nesting, and
+required-ness for the config document itself, not just item kinds or accepted tokens. Full design
+in SPEC-84-mcp-schema-explorer.md; this entry records the shape as a public surface, per that spec's
+D5.
+
+The envelope embeds `--items --json`, `--colors --json`, and `--accepted --json`'s own results
+**verbatim** — the same record instances those commands' `Build()` methods return, never a
+re-derived copy — under `items`, `colors`, and `accepted` respectively, plus two new sections:
+
+- **`kindSupport`** — one entry per item kind (`builtin`, `derived`, `command`, `compound`), each
+  carrying `supported: bool` and `unsupportedKeys: string[]`, computed by diffing the kind's
+  advertised `required ∪ optional` keys against `PaneItemJsonConfig`'s real `[JsonPropertyName]`
+  properties. This is why `compound` reports `supported: false` today (SPEC-3.3) and will flip to
+  `true` automatically once task #85 adds `parts` to the model — no coordination and no code change
+  in this command.
+- **`structures`** — twelve hand-authored entries, one per structural node type in the config
+  document (`config`, `border`, `borderEdges`, `layout`, `surface`, `pane`, `item`, `colorRule`,
+  `threshold`, `match`, `colorExpr`, `compoundPart`), each naming the `Config.cs` record it
+  describes (`null` for `compoundPart`, which has no backing type yet), its wire keys, and a minimal
+  worked example.
+
+Like `--accepted`, it reads no config and probes nothing, so it always exits 0; bare `--schema` (no
+`--json`) is a usage error naming `--schema --json`, exit 2, for the same reason `--accepted` requires
+`--json` (§9.6.3's discussion, restated in SPEC-84-mcp-schema-explorer.md §5.4): requiring `--json`
+now, while the surface has no users, keeps a future plain-text form purely additive. `--schema` is a
+mode, exclusive with every other mode, per §9.4.4.
+
+**This is a public, frozen surface from its first release** (SPEC-84-mcp-schema-explorer.md §9 Q2,
+D5), the same tier as `--accepted --json`: its key names, and the `structures` entry shape, are a
+compatibility commitment — adding a section or field later is additive, renaming or removing one is
+breaking.
 
 ### 9.7 `--version`, and the two places a version number wants to live
 

@@ -99,6 +99,21 @@ flagged rather than silently reconciled; §2.3.1 is now corrected.
 
 Recently landed, pending the last of its per-defect checks:
 
+- **MCP schema explorer** (task #84) — new `get_config_schema` MCP tool, backed by a new public
+  CLI subcommand `--schema --json` (spawned by MCP via the existing `CliRunner`/`CliLocator`
+  pattern — MCP still has zero `ProjectReference` to the core `ClaudeTuiLine` project, per #83's
+  allow-list). The envelope embeds `--items`/`--colors`/`--accepted --json` verbatim plus new
+  `structures` (12 hand-authored records, one per config shape — `config`, `border`,
+  `borderEdges`, `layout`, `surface`, `pane`, `item`, `colorRule`, `threshold`, `match`,
+  `colorExpr`, `compoundPart`) and `kindSupport` (per-kind `supported: bool` +
+  `unsupportedKeys: string[]`, computed by reflection diff against `PaneItemJsonConfig`'s real
+  properties, so it self-corrected the moment #85 landed `Parts` — `compound` now reports
+  `supported: true` with no code change to the diff logic itself). `--schema` reclaims a CLI name
+  previously rejected for `--accepted` in §1.1.3 (that rejection was scoped to `--accepted`'s flat
+  payload overpromising structure; `--schema` now genuinely delivers it). `--schema --json` is a
+  public, frozen surface — its key names and `structures` shape are a compatibility commitment.
+  1444/1444 CLI tests, 22/22 MCP tests. AOT publish needs no new `[JsonSerializable]` registration;
+  MCP publish shows no NETSDK1151 regression.
 - **Compound items** (§3.3, task #85) — `parts`, so one item can hold several sources with a
   colour each and no separator between them (a dim `agent:` label against an aqua value).
   `Segment.Spans` decomposition (SPEC-85 §5.1/§5.2) is now actually wired into the production

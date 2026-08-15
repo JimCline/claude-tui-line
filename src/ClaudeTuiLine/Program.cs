@@ -486,6 +486,7 @@ static async Task<int> RunCli(string[] args)
     var preview = false;
     var accepted = false;
     var fixture = false;
+    var schema = false;
     string? configPath = null;
     int? columns = null;
 
@@ -513,6 +514,9 @@ static async Task<int> RunCli(string[] args)
                 break;
             case "--fixture":
                 fixture = true;
+                break;
+            case "--schema":
+                schema = true;
                 break;
             case "--json":
                 break;
@@ -542,14 +546,14 @@ static async Task<int> RunCli(string[] args)
         }
     }
 
-    // §9.4.4: --check, --version, --items, --colors, --preview, --accepted, and --fixture are
-    // modes — exactly zero or one may appear in argv. This replaces the old pairwise mutual-
+    // §9.4.4: --check, --version, --items, --colors, --preview, --accepted, --fixture, and --schema
+    // are modes — exactly zero or one may appear in argv. This replaces the old pairwise mutual-
     // exclusion table (unmaintainable past four commands: six pairs become ten on a fifth), so the
-    // rule holds for a seventh command without being edited.
-    var modeCount = new[] { check, version, items, colors, preview, accepted, fixture }.Count(selected => selected);
+    // rule holds for an eighth command without being edited.
+    var modeCount = new[] { check, version, items, colors, preview, accepted, fixture, schema }.Count(selected => selected);
     if (modeCount > 1)
     {
-        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, --accepted, and --fixture are mutually exclusive");
+        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, --accepted, --fixture, and --schema are mutually exclusive");
     }
 
     // §9.4.4: --json, --columns, and --config are modifiers, not modes — each mode's accepted set
@@ -563,6 +567,7 @@ static async Task<int> RunCli(string[] args)
         : preview ? ("--preview", new[] { "json", "columns", "config" })
         : accepted ? ("--accepted", new[] { "json" })
         : fixture ? ("--fixture", Array.Empty<string>())
+        : schema ? ("--schema", new[] { "json" })
         : ("rendering", new[] { "config" });
 
     if (json && !acceptedModifiers.Contains("json"))
@@ -576,6 +581,13 @@ static async Task<int> RunCli(string[] args)
     if (accepted && !json)
     {
         return WriteUsageError(json, "bare --accepted is not supported; use --accepted --json");
+    }
+
+    // §5.4: --schema follows --accepted's precedent exactly — requiring --json now, while the
+    // surface has no users, makes a plain-text form purely additive later.
+    if (schema && !json)
+    {
+        return WriteUsageError(json, "bare --schema is not supported; use --schema --json");
     }
 
     if (columns is not null && !acceptedModifiers.Contains("columns"))
@@ -622,6 +634,11 @@ static async Task<int> RunCli(string[] args)
     if (fixture)
     {
         return RunFixture();
+    }
+
+    if (schema)
+    {
+        return RunSchema();
     }
 
     return RunCheck(json, configPath);
@@ -740,6 +757,17 @@ static int RunAccepted()
 {
     var result = AcceptedCommand.Build();
     Console.Out.WriteLine(JsonSerializer.Serialize(result, AcceptedJsonContext.Default.AcceptedResultJson));
+    return 0;
+}
+
+// SPEC-84-mcp-schema-explorer.md §5.5: reads no config and probes nothing — every value comes from
+// ItemsCommand/ColorsCommand/AcceptedCommand's own results plus the hand-authored structures table,
+// so there is no failure mode here beyond a crash. Always exits 0. No plain-text form: --schema
+// requires --json, enforced before this is ever reached.
+static int RunSchema()
+{
+    var result = SchemaCommand.Build();
+    Console.Out.WriteLine(JsonSerializer.Serialize(result, SchemaJsonContext.Default.SchemaResultJson));
     return 0;
 }
 

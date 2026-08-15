@@ -149,6 +149,57 @@ public sealed class ConfigTools
         }
     }
 
+    /// <summary>SPEC-84-mcp-schema-explorer.md §5.1: the section names an agent may request via <see cref="GetConfigSchema"/>'s <c>sections</c> filter.</summary>
+    private static readonly string[] ValidSchemaSections = { "items", "colors", "accepted", "structures", "kindSupport" };
+
+    [McpServerTool(Name = "get_config_schema")]
+    [Description(
+        "The claude-tui-line config schema, read live from the installed binary: every item kind and "
+        + "its required/optional keys, every config key's accepted values, the recommended colour "
+        + "names, and the structural shape of a config document (root, pane, split, item, colour "
+        + "rule). Use this before writing or editing a config instead of consulting documentation — "
+        + "documentation can be stale, this is what the binary actually accepts.")]
+    public static async Task<object> GetConfigSchema(
+        [Description("Limit the response to these sections: items, colors, accepted, structures, kindSupport. Omit for all.")]
+        string[]? sections = null)
+    {
+        var result = await CliRunner.RunSchemaAsync().ConfigureAwait(false);
+        if (!result.CliFound)
+        {
+            return McpResults.CliNotFound(result.SearchedPaths);
+        }
+
+        if (result.ExitCode != 0 || result.Payload is not JsonObject envelope)
+        {
+            return McpResults.Failure(
+                "schema-unavailable",
+                $"claude-tui-line --schema --json exited {result.ExitCode} or produced output that did not parse as JSON; the schema is not available.",
+                null);
+        }
+
+        if (sections is null || sections.Length == 0)
+        {
+            return envelope;
+        }
+
+        var unknown = sections.Where(s => !ValidSchemaSections.Contains(s, StringComparer.Ordinal)).ToList();
+        if (unknown.Count > 0)
+        {
+            return McpResults.Failure(
+                "unknown-section",
+                $"unrecognized section(s): {string.Join(", ", unknown)}. Valid sections: {string.Join(", ", ValidSchemaSections)}.",
+                null);
+        }
+
+        var filtered = new JsonObject { ["version"] = envelope["version"]?.DeepClone() };
+        foreach (var section in sections)
+        {
+            filtered[section] = envelope[section]?.DeepClone();
+        }
+
+        return filtered;
+    }
+
     // SPEC-V2-FRAMEWORK.md §12.6.2: an explicit configPath argument overrides resolution outright.
     // Otherwise mirrors ConfigPath.ResolveConfigPath()'s search order ($CLAUDE_TUI_LINE_CONFIG,
     // then $HOME/.claude/claude-tui-line.json) so source can report which branch fired — "env",

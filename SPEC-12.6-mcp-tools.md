@@ -589,3 +589,35 @@ atomic temp-file-then-rename writer? §7.1's conditional allow-list extension tu
 are absent the server implements them locally and V4 asserts a one-member list; if present, V4
 asserts two or three. **Either way #10 proceeds** — this only decides which line V4 asserts, so do
 not hold implementation on it. Report the finding back and amend §7.1 in place.
+
+---
+
+## 12.6 `get_config_schema` (task #84)
+
+A third tool alongside `get_config`/`set_config`, added by SPEC-84-mcp-schema-explorer.md. Read-only,
+takes no config path — it describes the config format itself, not any particular file's contents.
+
+**Signature.** `get_config_schema(sections?: string[])`. `sections` is an optional allow-list filter
+over `items`, `colors`, `accepted`, `structures`, `kindSupport`; omitted or empty returns the full
+envelope. An unrecognized name in `sections` fails the call outright (code `unknown-section`) rather
+than silently dropping it — see SPEC-84 §5.1/§6.3.
+
+**Mechanism.** Spawns the CLI via `CliRunner.RunSchemaAsync()` (`ClaudeTuiLineMcp/CliRunner.cs`),
+which runs `<cli> --schema --json` with no other arguments — the same spawn shape as
+`RunCheckAsync`, reusing the `CliCheckResult` record. This follows §1's rule that the server spawns
+the CLI rather than linking the core in-process; a successful spawn is itself evidence the installed
+binary produces a schema, which an in-process link could not demonstrate.
+
+**Response shape.** On success, returns the CLI's `--schema --json` envelope verbatim (or, when
+`sections` is given, `{ version, <each requested section> }`) — see SPEC-84 §5 for the envelope's
+full shape (`version`, `items`, `colors`, `accepted`, `kindSupport`, `structures`).
+
+**Failure modes**, mirroring `get_config`'s pattern:
+- `cli-not-found` — `CliLocator` could not locate the binary (same shape as the other two tools;
+  `McpResults.CliNotFound`).
+- `schema-unavailable` — the CLI was found but exited non-zero or its stdout did not parse as JSON.
+- `unknown-section` — `sections` named something outside the five valid names; the error message
+  lists the valid set.
+
+No config file is read, no config path is resolved, and no checkpoint/write path is touched — this
+tool cannot fail for any reason `get_config`/`set_config` can.
