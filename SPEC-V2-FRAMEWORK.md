@@ -5994,6 +5994,7 @@ site:
 ```
 pane {n} dropped: {grant} columns is under its {floor}-column floor at {columns} columns
 pane {n} dropped: children need {sum} columns at {columns} columns
+pane {n}: {requested} columns requested, clamped to {avail} at {columns} columns
 segment truncated to fit {columns} columns
 item '{id}' emitted {n} lines; {kept} kept (maxLines)
 ```

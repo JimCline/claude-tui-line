@@ -509,7 +509,7 @@ public static class SizeResolver
 
             if ((!tooSmall && !overAllocated) || current.Count <= 1)
             {
-                return result;
+                return ClampToAvail(result, avail, splitOuterWidth, notes);
             }
 
             // §9.8.2: the dropped pane is always the current list's last child, whose 1-based
@@ -531,6 +531,36 @@ public static class SizeResolver
             current = current.Take(current.Count - 1).ToList();
             currentRequests = currentRequests.Take(current.Count).ToList();
         }
+    }
+
+    // SPEC-2.3-residual-pane-overwidth.md §4.1/§4.2: both drop loops above exit their
+    // `current.Count <= 1` branch unconditionally, even when the sole surviving child's grant
+    // still exceeds what the split actually has — the per-pane tooSmall check never fires for a
+    // single fixed-size child, and overAllocated stops being consulted once no further pane is
+    // left to drop. Called at both loop exits, strictly after the drop decision, so it only ever
+    // tightens a result the drop loop already settled on, never substitutes for it.
+    private static AllocResult ClampToAvail(AllocResult result, int avail, int splitOuterWidth, RenderNoteCollector notes)
+    {
+        if (result.Grants.Count == 0)
+        {
+            return result;
+        }
+
+        int[]? grants = null;
+        for (var i = 0; i < result.Grants.Count; i++)
+        {
+            if (result.Grants[i] <= avail)
+            {
+                continue;
+            }
+
+            grants ??= result.Grants.ToArray();
+            var requested = grants[i];
+            grants[i] = avail;
+            notes.Add($"pane {i + 1}: {requested} columns requested, clamped to {avail} at {splitOuterWidth} columns");
+        }
+
+        return grants is null ? result : new AllocResult(result.Children, grants);
     }
 
     // ---- vertical axis: min-rows distribution (§2.3.1) ----
@@ -593,7 +623,7 @@ public static class SizeResolver
 
             if ((!tooSmall && !overAllocated) || current.Count <= 1)
             {
-                return result;
+                return ClampToAvail(result, avail, splitOuterWidth, notes);
             }
 
             // §9.8.2: the dropped pane is always the current list's last child, whose 1-based
