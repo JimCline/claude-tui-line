@@ -5115,9 +5115,9 @@ Adding both roots costs two new exempt rows and buys the coverage:
 `Pane`'s remaining members — `Split`, `Overflow`, `MaxRows`, `MinSize`, `MaxSize`, `Gutter`, `Valign`,
 `Align`, `Distribute` — are enums and numerics, excluded by filter rule 4.
 
-###### Covered (6) — confirmed
+###### Covered (7) — confirmed
 
-These map one-to-one onto the five `ReferenceExtractors` and the single `ColorTokenExtractors` entry at
+These map one-to-one onto the five `ReferenceExtractors` and the two `ColorTokenExtractors` entries at
 `ItemValueResolver.cs:140–189`, verified against each extractor body:
 
 | Member | Extractor | Form |
@@ -5127,15 +5127,16 @@ These map one-to-one onto the five `ReferenceExtractors` and the single `ColorTo
 | `PaneItem.From` | #2 | `DerivedFrom` |
 | `PaneItem.Link` | #3, via `LeafContent.LinkPlaceholderIds` | `LinkPlaceholder` |
 | `ColorRule.From` | #4 (inline) and #5 (`colors`-table token) | `ColorFrom` |
-| `ColorExpr.TokenRef.Name` | colour-token extractor | `ColorTokenReference` |
+| `ColorExpr.TokenRef.Name` | colour-token extractor | `ColorTokenReference` (top/border position, unrestricted) |
+| `ColorValue.TokenRef.Name` | colour-token extractor | `ColorTokenReference` (rule-branch position, restricted to constant tokens — SPEC-44-color-token-in-rule-branches.md §3.2/§4.3) |
 
-Note on `ColorRule.From`: `Config.cs:540` parses an inline rule as
+Note on `ColorRule.From`: `Config.cs:865` parses an inline rule as
 `new Inline(ParseColorRule(rule, rule.From ?? owningItemId))`, so `From` is populated with the owning
 item's id even when the config omits it — extractor #4 then yields that id and it must resolve. For a
-border, `Config.cs:512` passes `owningItemId: null`, so a border's `from`-less rule yields no candidate.
+border, `Config.cs:828` passes `owningItemId: null`, so a border's `from`-less rule yields no candidate.
 That is the behaviour `ColorResolution.cs:30` already documents, and it is correct.
 
-###### Exempt — nine confirmed, one rejected
+###### Exempt — seven confirmed, one rejected
 
 **`PaneItem.Command` is not exempt.** The proposed reason was "a literal/config value, not a
 reference." `ItemValueResolver.cs:135–139` says the opposite in the codebase's own words:
@@ -5150,7 +5151,7 @@ undifferentiated "exempt" bucket as `PaneItem.Case` means that when §4.2 ships,
 to revisit the row — the test stays green across the one change it was built to catch. See below for
 the fix.
 
-The other nine hold, several for stronger reasons than first given — the reason is the durable part of
+The other seven hold, several for stronger reasons than first given — the reason is the durable part of
 a row; "a config value" tells a future reader nothing they can check:
 
 | Member | Reason |
@@ -5158,21 +5159,38 @@ a row; "a config value" tells a future reader nothing they can check:
 | `PaneItem.Format` | A format string substitutes `{}` with the item's **own** value and nothing else — `LeafItems.cs:53` is a literal `.Replace("{}", value)`, not a pattern match. Contrast `Link`, whose `LeafContent.cs:22` regex `\{([^{}]*)\}` matches `{other-id}` and *is* a reference form. `LeafContent.cs:65–67` states outright that a `format` string has no bearing on the URL. |
 | `PaneItem.Extract` | A regex pattern applied to the item's own value (`ExtractValue`). Never an id. |
 | `PaneItem.Case` | One of a closed set of case-transform tokens. Never an id. |
-| `ColorRule.Default` | A literal colour spec. `ColorResolution.cs:82` returns it directly to `ResolveLiteral`; never re-entered into `ColorExpr` parsing. `Config.cs:537` is the **only** `@`-prefix site in the codebase, so a `@token` cannot hide here. |
-| `ColorExpr.Literal.Spec` | Same: `ColorResolution.cs:59` returns it as a spec. Anything `@`-prefixed became a `TokenRef` at parse time (`Config.cs:537–538`) and is therefore already covered. |
-| `MatchRule.Color` | Same species as `Default` — a literal colour spec, no `@` handling. |
-| `ThresholdRule.Color` | Same. |
+| `ColorExpr.Literal.Spec` | `ColorResolution.cs:59` returns it as a spec. Anything `@`-prefixed became a `ColorExpr.TokenRef` at parse time (`Config.cs:862–863`) and is therefore already covered. |
+| `ColorValue.Literal.Spec` | Same species, at the rule-branch leaf: a literal colour spec; anything `@`-prefixed became a `ColorValue.TokenRef` at parse time (`Config.cs:872–873`) and is therefore already covered. See SPEC-44-color-token-in-rule-branches.md §4.1. |
 | `MatchRule.Contains` | A predicate over an item's **value**, not over ids. |
 | `MatchRule.EqualsValue` | Same. |
 
-The four colour-valued strings share one reason, worth stating once: **`@name` is resolved into a
-`TokenRef` at parse time, so any string still holding an `@` prefix at runtime is a literal, not a
-reference.** That single fact is what makes all four safe, and it is the fact that would change if
-anyone ever taught a rule branch to accept a token.
+`ColorRule.Default`, `ThresholdRule.Color`, and `MatchRule.Color` are **not** exempt rows — each is
+typed `ColorValue`/`ColorValue?`, so a walk recurses into `ColorValue` rather than treating the member
+itself as a candidate (SPEC-44-color-token-in-rule-branches.md §4.3):
 
-> Aside, not a ruling: a consequence of the above is that a colour token cannot be used *inside* a rule
-> branch — only in the `ColorExpr` position. Whether that is a deliberate product decision or an
-> accident is unresolved.
+| Member | Disposition | Reason |
+|---|---|---|
+| `ColorRule.Default` | recursed | → `ColorValue` |
+| `ThresholdRule.Color` | recursed | → `ColorValue` |
+| `MatchRule.Color` | recursed | → `ColorValue` |
+
+The two colour-valued literal strings share one reason, worth stating once, in the generalized form of
+SPEC-44-color-token-in-rule-branches.md §4.1: **every colour-valued string passes through one of exactly
+two sigil-inspecting parse sites — `ParseColorExpr`'s (`Config.cs:862–863`, producing `ColorExpr.TokenRef`)
+or `ParseColorValue`'s (`Config.cs:872–873`, producing `ColorValue.TokenRef`) — so any string still
+holding an `@` prefix at runtime remains a literal, not a reference.** That single fact is what makes
+both safe. It used to be the fact that would change if anyone ever taught a rule branch to accept a
+token; SPEC-44-color-token-in-rule-branches.md is exactly that change, and the fact survives in this
+generalized two-site form rather than being lost — see that spec for the full model
+(`ColorValue`, the constant-token restriction, and the new `non-constant-color-token` diagnostic).
+
+**Note against `ColorResolution.cs:139`'s `StandardThreshold`.** `ResolveStandardThreshold`
+(`ColorResolution.cs:152–153`) assumes every branch of `StandardThreshold` is a `ColorValue.Literal` —
+it pattern-matches on `Literal` and falls back to a bare `"green"` otherwise. That is safe only because
+`StandardThreshold` is a fixed, source-constructed ladder with no `TokenRef` branches. If
+`StandardThreshold` ever becomes config-driven, a `ColorValue.TokenRef` could reach that line and would
+silently coerce to `"green"` instead of resolving through the colour-token table — revisit that line
+first (already flagged in-source at `ColorResolution.cs:144–150`).
 
 ###### Exemptions come in two kinds
 
@@ -5245,8 +5263,8 @@ fraction of the cost. Recorded so the choice is a decision rather than a drift.
 ###### Verification
 
 1. The enforcement test enumerates candidates from roots
-   `{Pane, PaneBorder, PaneItem, ColorExpr, ColorRule, ThresholdRule, MatchRule}` by the filter above,
-   and every candidate is covered, `NeverAReference`, or `PendingForm`.
+   `{Pane, PaneBorder, PaneItem, ColorExpr, ColorValue, ColorRule, ThresholdRule, MatchRule}` by the
+   filter above, and every candidate is covered, `NeverAReference`, or `PendingForm`.
 2. Deleting a `ReferenceExtractors` row fails the test for every member that loses **all** its
    covering rows, naming each. This is per-member, not per-row: a row may carry more than one member
    (row 1 carries both `PaneItem.Id` and `PaneItem.Item`), and two rows may deliberately cover the
@@ -5257,8 +5275,10 @@ fraction of the cost. Recorded so the choice is a decision rather than a drift.
 3. Adding a `string? Foo` to `PaneItem`, to `Pane`, **or to `PaneBorder`** fails the test until
    classified. The `PaneBorder` case is the one the original root set could not catch and is the reason
    this section exists.
-4. Adding a `string` member to the `ColorExpr` **abstract base** fails the test (guards the
-   `DeclaredOnly` footgun above).
+4. Adding a `string` member to the `ColorExpr` **or `ColorValue`** abstract base fails the test (guards
+   the `DeclaredOnly` footgun above). `ColorValue` is a second abstract root with nested concrete
+   subtypes, same shape as `ColorExpr` (`Literal`/`TokenRef`) — the walk-both-declared-and-subtype rule
+   above applies to it unchanged.
 5. The exemption table distinguishes `NeverAReference` from `PendingForm`, and `PaneItem.Command` is the
    latter, citing §4.2.
 6. The fixture assertion passes, and fails if `ItemValueResolver.cs:110` is deleted.
