@@ -4679,6 +4679,42 @@ Merged cleanly (no conflicts). Verified via `cdtui-worker`: pre-merge 3x full
 runs clean (1329/1329 each), post-merge 2x full runs clean (1335/1335 each),
 `check-all.sh` clean. Landed as merge commit `4d35daf` (pushed).
 
+### #67 / #70 (#67a): SolveMinRows and AllocateWithDrop both had unbounded
+over-allocation
+
+§2.3.1 (min-rows) and §2 (greedy) each had a fallback path that granted panes
+more total width than was available, with no check catching it: `SolveMinRows`'s
+over-constrained fallback returned `lo` without verifying Σgrants stayed within
+`avail`, and `AllocateWithDrop`'s `tooSmall` check explicitly exempted
+`SizeKind.Fixed`, so two `size:30` panes in a 46-column split both got granted
+30 with no drop and no note.
+
+Fixed in `ResolveVerticalMinRows`'s drop-retry loop (#67, `cdtui-impl3`) and in
+`AllocateWithDrop` (#70/#67a, `cdtui-impl4`) with the same shape: recompute
+`avail` via `BoundaryCost` fresh each iteration (gutter count falls with each
+drop), add an `overAllocated = grants.Sum() > avail` check alongside the
+existing `tooSmall` check, and keep dropping until neither fires. #67 also
+caught a real regression in its own pre-existing #25 test — two unclamped
+`size:500` fixed panes now correctly get dropped instead of silently
+overflowing, since the new Σgrants≤avail guard fires on the min-rows side too.
+
+New tests: `MinRowsDistributeTests.cs` (5 cases per the architect's
+SPEC-2.3.1-min-rows-floor-sum.md §7, including a byte-identical feasible-path
+check and a per-iteration-BoundaryCost boundary case) and
+`FixedSizeOverAllocationDropTests.cs` (greedy repro: two `size:30` panes in 46
+columns, gutter 0).
+
+Not in scope here, filed separately: #67b (drop predicate `grants[i] < 1` vs
+a floor-based threshold — product call, Jim approved changing to floor-based,
+architect wrote SPEC-2.3-drop-predicate.md, dispatch pending) and N1/#72
+(compositor behavior on an over-width single-pane residual — unobserved,
+needs a render-level check).
+
+Merged cleanly (#70's `SizeResolver.cs` edit auto-merged alongside #67's).
+Verified via `cdtui-worker`: pre-merge full suites clean for both (1340/1340
+and 1336/1336), post-merge full suite clean (1341/1341), `check-all.sh` clean.
+Landed as `Merge #67: 8c55dee` → `Merge #70/#67a: 473b01b` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
