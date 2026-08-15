@@ -4471,6 +4471,43 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 and post-merge on `main` (1327/1327, build 0 warnings/0 errors, `check-all.sh` all five checks
 green, 20 doc tokens checked, 0 disagree). Landed as merge commit `54d20a4`, pushed.
 
+### #62: §2.3.3 verification — SolveMinRows's floor-fallback vs. AllocateOnePass step 4 (no code change)
+
+Investigation only, no code changes. Confirmed equivalence: for a content-kind pane with no
+`MinSize` set, `Floor(p)` (`SizeResolver.cs:307-339`) resolves to `p.MinSize ?? 0`, exactly the
+`minSize` `AllocateOnePass` step 4 (`:381-397`) clamps against. In the fully over-constrained case
+(`Σ minSize_i > budget`), the per-pane cap telescopes below its own floor for *every* candidate
+simultaneously (not just some), which is algebraically identical to `SolveMinRows:625`'s `return lo`
+(every candidate at `Floor(candidates[ci])`). The existing `SizeResolver.cs:574-581` comment already
+states this correctly, citing `AllocateOnePass`'s step 4 by name — no tightening needed.
+
+One adjacent, unconfirmed wire flagged in passing (not verified as a defect, filed separately —
+see below): §2.3.3 describes the over-constrained fallback as surfacing the `pane {n} dropped`
+note (§9.8.1), but neither `AllocateOnePass` nor `SolveMinRows` itself emits it — the drop-retry
+loop lives in the outer caller `ResolveVerticalMinRows` (`:493-518`), which takes no
+`RenderNoteCollector` parameter at all. Whether that path actually surfaces the note was outside
+what #62 asked; filed as #64.
+
+### #63: RunPreview real-stdin path test coverage
+
+Traced `ParseInput`/`StatusInput` (`Program.cs:783-798`): malformed or unparseable stdin JSON
+returns an all-null `StatusInput`, silently, no exception. `usedSynthetic` is decided purely by
+whether raw stdin was blank (`Program.cs:308`) — not by whether it parsed — so malformed-but-nonempty
+stdin is a third branch distinct from both "no stdin" and "valid stdin", previously untested by #48.
+
+Added `RunCliWithStdin(string stdin, params string[] cliArgs)` to `PreviewCliTests.cs` (same
+process-launch structure as the existing `RunCli`, but writes to `StandardInput` before closing
+instead of closing immediately — `RunCli` can never exercise this path since closed/empty stdin is
+indistinguishable from "no stdin given" to `RunPreview`). Two tests: real JSON stdin drives
+rendering and is not treated as synthetic; malformed-but-nonempty stdin parses to an empty
+`StatusInput` rather than falling back to the synthetic fixture.
+
+Merged cleanly, independently verified via task-gopher both pre-merge on the worktree (1329/1329)
+and post-merge on `main` (1329/1329, build 0 warnings/0 errors, `check-all.sh` all five checks
+green, 20 doc tokens checked, 0 disagree — one intermittent flake seen on the first post-merge run,
+`Preview_SplitPaneConfig_EveryRowCarriesItsOwnWidthMatchingItsText` failed on a JSON parse error,
+did not reproduce across 3 immediate reruns; filed as #65). Landed as merge commit `b793b7b`, pushed.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
