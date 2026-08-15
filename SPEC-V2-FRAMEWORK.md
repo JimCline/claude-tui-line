@@ -874,11 +874,28 @@ duplicate of an output, and the version that goes stale is always the one no tes
 special "the surface is too tight" mode is describing this formula's *outcome* — there is no
 second code path, and implementing one violates §1.
 
-No child may resolve below 1 cell; children that would are **dropped entirely** rather than
-rendered at a nonsense width, and the freed space is redistributed. A **`fill` or percent** pane
-whose resolved inner width falls under `MinUsableWidth` (20) suppresses its own border first
-(SPEC.md §6b narrow-width suppression, now applied per pane rather than per surface), and is
-dropped only if it still does not fit.
+No child may resolve below its **drop floor**, and children granted less are **dropped entirely**
+rather than rendered at a nonsense width, with the freed space redistributed. A pane's drop floor
+is its `floor(p)` from the table above, never less than 1 cell — a `content` pane's `floor(p)` is
+0, because it asked for its width and was granted it, so 1 cell is the operative minimum there and
+the only pane it ever drops is one granted nothing at all.
+
+A **`fill` or percent** pane whose resolved inner width falls under `MinUsableWidth` (20)
+suppresses its own border first (SPEC.md §6b narrow-width suppression, now applied per pane rather
+than per surface), and is dropped only if it still does not fit. **Suppression precedes the drop
+test, and lowers the floor it is tested against**: once the border is gone the pane no longer needs
+the reserve that paid for it, so its drop floor is `MinUsableWidth` alone. Testing the
+border-inclusive floor against a pane that would have survived without its border drops a pane §2.3
+requires be kept.
+
+**The allocator must test this predicate; deriving the floor is not enough.** Every allocation path
+in §2.3.1 can hand back a grant below the floor it just computed, because none of them subtract the
+floor from anything: the fill divide splits whatever remains, which may be less than the floors it
+was divided among, and §2.3.3's over-constrained fixpoint returns floors that were never summed
+against the budget at all. A grant below its floor that is not dropped is a `minSize` the author
+declared and the renderer silently ignored — the failure this floor exists to prevent. An
+implementation that computes `floor(p)` for allocation and then drops on "was anything left" has
+not implemented this rule.
 
 `MinUsableWidth` governs `fill` and percent panes **only** — for border suppression exactly as
 it does for the viability floor above, and for the same reason: *a pane sized to its own content
@@ -5942,7 +5959,7 @@ than through an arrangement of its own.
 { "columns": 112, "usableColumns": 109,
   "rows": [ { "text": "…", "width": 109 } ],
   "notes": [
-    { "message": "pane 2 dropped: no width remained at 109 columns" },
+    { "message": "pane 2 dropped: 23 columns is under its 24-column floor at 109 columns" },
     { "message": "item 'diffstat' emitted 7 lines; 3 kept (maxLines)", "item": "diffstat" }
   ] }
 ```
@@ -5971,7 +5988,8 @@ site:
 
 <!-- pinned-notes: checked against the collector's call sites by tools/check-notes.sh -->
 ```
-pane {n} dropped: no width remained at {columns} columns
+pane {n} dropped: {grant} columns is under its {floor}-column floor at {columns} columns
+pane {n} dropped: children need {sum} columns at {columns} columns
 segment truncated to fit {columns} columns
 item '{id}' emitted {n} lines; {kept} kept (maxLines)
 ```
@@ -5982,15 +6000,23 @@ already decayed once. `tools/check-notes.sh` reads every `RenderNoteCollector.Ad
 `src/` and fails if its text is not in the list, and `check-docs.sh` runs it — a check whose only
 runner is an unproven runner is not in service, which §9.6.2.2 learned the expensive way.
 
-The first two are the live producers §9.8.2 adds; the third is §4.0.1's and does not fire until
-`maxLines` exists. Adding a producer means adding a line here in the same change — this list is
-the definition, and the call site is a use of it.
+The first two are the live producers §9.8.2 adds — two messages, not one, because §2.3's drop-retry
+loops fire for two different reasons (SPEC-2.3-drop-predicate.md #67b): a pane granted less than its
+own drop floor, and a split whose children together claim more than it has. The two repairs differ
+(lower `minSize` or widen the terminal, versus shrink the declared fixed/percent sizes), so naming
+the wrong one sends the reader to the wrong knob — see that spec's §4 for the ruling and the
+precedence rule when both conditions hold on the same drop. The third line is §4.0.1's and does not
+fire until `maxLines` exists. Adding a producer means adding a line here in the same change — this
+list is the definition, and the call site is a use of it.
 
-Two things about the wording are deliberate rather than incidental. The pane note says *no width
-remained* because for that pane none did; the segment note must **not** borrow the phrase, because
-width plainly remained — there were `{columns}` of it — and it was merely insufficient. And each
-text names the width it happened at, since a note that cannot be tied to a width is unusable in a
-tool whose entire subject is what changes with width.
+Two things about the wording are deliberate rather than incidental. Neither pane-drop message says
+*no width remained* — that phrasing was ruled inaccurate for both cases it used to cover: a pane
+under its floor was not granted zero, and an over-allocated split's children claimed too much, not
+too little. The segment-truncation note keeps its own, different wording for the same reason: width
+plainly remained there too — there were `{columns}` of it — and it was merely insufficient, which is
+a third distinct cause from either pane-drop reason. And every text names the width it happened at,
+since a note that cannot be tied to a width is unusable in a tool whose entire subject is what
+changes with width.
 
 #### 9.8.2 A note channel with no producer, and the collector that fixes it
 

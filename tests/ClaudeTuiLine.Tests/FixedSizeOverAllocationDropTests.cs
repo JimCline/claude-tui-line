@@ -67,7 +67,7 @@ public class FixedSizeOverAllocationDropTests
 
         _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
 
-        Assert.Contains(notes.Notes, n => n.Message.StartsWith("pane 2 dropped: no width remained at", StringComparison.Ordinal));
+        Assert.Contains(notes.Notes, n => n.Message == "pane 2 dropped: children need 60 columns at 46 columns");
         Assert.Single(resolved.Children);
         Assert.Equal(30, resolved.Children[0].OuterWidth);
     }

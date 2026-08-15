@@ -323,8 +323,8 @@ public class MinRowsDistributeTests
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
 
         Assert.Equal(1, resolved.Children.Count);
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: no width remained at {surfaceWidth} columns");
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 1000 columns at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: children need 1000 columns at {surfaceWidth} columns");
     }
 
     // SPEC-2.3.1-min-rows-seam-and-bound.md §4a: the seam previously reached zero call sites in
@@ -425,14 +425,21 @@ public class MinRowsDistributeTests
 
         Assert.Equal(1, resolved.Children.Count);
         Assert.True(resolved.Children.Sum(c => c.OuterWidth) <= surfaceWidth);
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: children need 48 columns at {surfaceWidth} columns");
     }
 
-    // §7 item 2: the identical config under `greedy`, characterizing (not endorsing) today's
-    // behavior — both panes granted 23 against a floor of 24, no drop, no note. #67 does not touch
-    // greedy; #67b (routed separately) may change this test deliberately if approved.
+    // §7 item 2, superseded by SPEC-2.3-drop-predicate.md (#67b): this used to characterize
+    // (not endorse) both panes surviving at 23 against an unenforced floor of 24. #67b's drop
+    // predicate now tests grants against floor(p) rather than `< 1`, so this is the deliberate
+    // inversion the #67 spec's own comment anticipated ("#67b may change this test deliberately if
+    // approved"). Each fill pane's floor is 24: MinUsableWidth (20, RowLayout.cs:19) plus a
+    // default-bordered leaf's 4-column OwnBorderReserve (no "border" key -> BoxBorder.Rounded,
+    // all four edges true, Config.cs ResolveBorder). Grant is 23 (46 avail / 2 fill panes, gutter:1
+    // costs the split's one boundary column out of surfaceWidth 47). 23 < 24 drops pane 2; 23 is
+    // also >= MinUsableWidth so ShouldSuppressBorder does not fire and the floor stays
+    // border-inclusive. The lone survivor is re-allocated the whole surface width.
     [Fact]
-    public void FloorSumExceedsBudget_Greedy_CharacterizationGrantsBothPanesUnderFloor()
+    public void FloorSumExceedsBudget_Greedy_DropsPaneUnderFloor()
     {
         const string configJson = """
         {
@@ -465,12 +472,13 @@ public class MinRowsDistributeTests
 
         var surfaceWidth = SurfaceLayout.ComputeWidth("50", topLevel.ChromeReserve)!.Value;
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+        var notes = new RenderNoteCollector();
 
-        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, new RenderNoteCollector());
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
 
-        Assert.Equal(2, resolved.Children.Count);
-        Assert.Equal(23, resolved.Children[0].OuterWidth);
-        Assert.Equal(23, resolved.Children[1].OuterWidth);
+        Assert.Single(resolved.Children);
+        Assert.Equal(surfaceWidth, resolved.Children[0].OuterWidth);
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: 23 columns is under its 24-column floor at {surfaceWidth} columns");
     }
 
     // §7 item 3: three candidates whose floors cannot fit in any combination — the loop must drop
@@ -516,8 +524,8 @@ public class MinRowsDistributeTests
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
 
         Assert.Equal(1, resolved.Children.Count);
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: no width remained at {surfaceWidth} columns");
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 72 columns at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: children need 48 columns at {surfaceWidth} columns");
     }
 
     // §7 item 4: a config where a feasible `T` exists must be byte-identical to pre-#67 behavior
@@ -584,7 +592,7 @@ public class MinRowsDistributeTests
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
 
         Assert.Equal(2, resolved.Children.Count);
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: no width remained at {surfaceWidth} columns");
-        Assert.DoesNotContain(notes.Notes, n => n.Message == $"pane 2 dropped: no width remained at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 72 columns at {surfaceWidth} columns");
+        Assert.DoesNotContain(notes.Notes, n => n.Message.StartsWith("pane 2 dropped", StringComparison.Ordinal));
     }
 }
