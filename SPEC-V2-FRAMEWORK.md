@@ -6053,7 +6053,9 @@ terminal width can resolve.
 - `minSize` greater than `maxSize` on the same pane. Code: `min-exceeds-max`. This is an
   **error**; §9.4 listed it as a warning in an earlier draft and has been corrected there rather
   than here.
-- Children's `minSize` sum, plus **the same boundary cost**, exceeding the parent's `maxSize`.
+- Children's `minSize` sum, plus **the same boundary cost**, exceeding the parent's own **bounded**
+  size — bounded in the same sense as the first bullet: the parent is itself fixed, or carries a
+  `maxSize`.
   Same code as the first: it is the same contradiction with the floor rather than the exact size —
   and therefore the same arithmetic, taken from §2.10. Two bullets computing one boundary two ways
   is how the double-count gets back in through the door the bullet above just closed.
