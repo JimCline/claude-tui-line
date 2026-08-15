@@ -137,6 +137,57 @@ public class PreviewCliTests
         }
     }
 
+    // §9.3: real stdin, not the synthetic fixture — RunCli above always closes stdin immediately,
+    // so it can only ever exercise the usedSynthetic branch. ParseInput/StatusInput (Program.cs)
+    // had no test entry point at all before this.
+    [Fact]
+    public void Preview_RealStdinJson_IsParsedAndDrivesRendering()
+    {
+        var configPath = WriteTempConfig("""
+        {
+          "surface": { "pane": { "items": [ { "item": "model" } ] } }
+        }
+        """);
+        try
+        {
+            var stdin = """{ "model": { "display_name": "Test-Model-XYZ" } }""";
+            var (exitCode, stdout, stderr) = RunCliWithStdin(stdin, "--preview", "--columns", "60", "--config", configPath);
+
+            Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
+            Assert.Contains("Test-Model-XYZ", stdout);
+            Assert.DoesNotContain("no stdin given", stderr);
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
+    // ParseInput (Program.cs) swallows a JsonException and returns an empty StatusInput rather
+    // than throwing or falling back to the synthetic fixture — malformed stdin is still "real"
+    // stdin (usedSynthetic is decided by whether raw stdin was blank, not by parse success).
+    [Fact]
+    public void Preview_RealStdinMalformedJson_ParsesToEmptyStatusInputRatherThanSynthetic()
+    {
+        var configPath = WriteTempConfig("""
+        {
+          "surface": { "pane": { "items": [ { "item": "model" } ] } }
+        }
+        """);
+        try
+        {
+            var (exitCode, stdout, stderr) = RunCliWithStdin("{ this is not valid json", "--preview", "--columns", "60", "--config", configPath);
+
+            Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
+            Assert.DoesNotContain("no stdin given", stderr);
+            Assert.DoesNotContain("Claude Sonnet 5", stdout);
+        }
+        finally
+        {
+            File.Delete(configPath);
+        }
+    }
+
     static string WriteTempConfig(string json)
     {
         var path = Path.Combine(Path.GetTempPath(), $"preview-cli-{Guid.NewGuid():N}.json");
@@ -205,6 +256,60 @@ public class PreviewCliTests
         }
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("failed to start claude-tui-line process");
+        process.StandardInput.Close();
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return (process.ExitCode, stdout, stderr);
+    }
+
+    // Same process-launch structure as RunCli above, but writes real JSON to the child's stdin
+    // instead of closing it immediately — RunCli can only ever exercise RunPreview's usedSynthetic
+    // branch, since a closed/empty stdin is indistinguishable from "no stdin given".
+    static (int ExitCode, string StdOut, string StdErr) RunCliWithStdin(string stdin, params string[] cliArgs)
+    {
+        var bin = Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_BIN");
+        ProcessStartInfo psi;
+        if (!string.IsNullOrWhiteSpace(bin) && File.Exists(bin))
+        {
+            psi = new ProcessStartInfo(bin)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+            };
+        }
+        else
+        {
+            var repoRoot = FindRepoRoot();
+            var csproj = Path.Combine(repoRoot, "src", "ClaudeTuiLine", "ClaudeTuiLine.csproj");
+            psi = new ProcessStartInfo("dotnet")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add("run");
+            psi.ArgumentList.Add("--project");
+            psi.ArgumentList.Add(csproj);
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("Release");
+            psi.ArgumentList.Add("-v");
+            psi.ArgumentList.Add("quiet");
+            psi.ArgumentList.Add("--");
+        }
+
+        foreach (var arg in cliArgs)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        psi.Environment.Remove("COLUMNS");
+
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("failed to start claude-tui-line process");
+        process.StandardInput.Write(stdin);
         process.StandardInput.Close();
         var stdout = process.StandardOutput.ReadToEnd();
         var stderr = process.StandardError.ReadToEnd();
