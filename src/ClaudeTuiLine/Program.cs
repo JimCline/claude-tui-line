@@ -88,7 +88,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         IReadOnlyCollection<string> unavailableIds;
         try
         {
-            var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir, widthsDir, surfaceWidth).ConfigureAwait(false);
+            var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir, widthsDir, surfaceWidth, notes).ConfigureAwait(false);
             values = resolution.Values;
             unavailableIds = resolution.UnavailableIds;
         }
@@ -368,11 +368,12 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
     var tokens = topLevel.Colors;
     var cacheDir = ItemCache.ResolveCacheDir();
     var widthsDir = ItemCache.ResolveWidthsCacheDir();
+    var notes = new RenderNoteCollector();
     IReadOnlyDictionary<string, string?> values;
     IReadOnlyCollection<string> unavailableIds;
     try
     {
-        var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir, widthsDir, usableColumns).ConfigureAwait(false);
+        var resolution = await ItemValueResolver.ResolveAsync(pane, ctx, tokens, rawInput, cacheDir, widthsDir, usableColumns, notes).ConfigureAwait(false);
         values = resolution.Values;
         unavailableIds = resolution.UnavailableIds;
     }
@@ -381,8 +382,6 @@ static async Task<int> RunPreview(bool json, string? explicitConfigPath, int? co
         values = ItemValueResolver.Resolve(pane, ctx, tokens);
         unavailableIds = UnresolvedCommandIds(pane);
     }
-
-    var notes = new RenderNoteCollector();
 
     if (json)
     {

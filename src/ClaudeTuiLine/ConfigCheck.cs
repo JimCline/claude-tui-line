@@ -79,7 +79,22 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckOverflowPosition(root, rootPath));
         diagnostics.AddRange(CheckEmptyPanes(root, rootPath));
         diagnostics.AddRange(CheckUnknownKeys(config));
+        diagnostics.AddRange(CheckMaxLines(root, rootPath));
         return diagnostics;
+    }
+
+    // ---- §4.0.1: maxLines is an opt-in ceiling — zero or negative has no meaningful reading ----
+
+    private static IEnumerable<Diagnostic> CheckMaxLines(Pane root, string rootPath)
+    {
+        foreach (var (item, path) in ItemValueResolver.WalkItems(root, rootPath))
+        {
+            if (item.MaxLines is int maxLines && maxLines <= 0)
+            {
+                yield return new Diagnostic(path + "/maxLines", DiagnosticSeverity.Error, "invalid-max-lines",
+                    $"maxLines ({maxLines}) must be a positive integer");
+            }
+        }
     }
 
     // ---- §9.4.1/§9.5: id and colour-token references, via ItemValueResolver.ScanReferences ----

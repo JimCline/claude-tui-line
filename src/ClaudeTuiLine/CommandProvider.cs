@@ -32,7 +32,7 @@ public static class CommandProvider
 
     public static async Task<CommandResolution> ResolveAsync(
         PaneItem item, string? rawStdinJson, string? cwd, string cacheDir, string widthsDir, int? surfaceWidth, bool paneWidthEligible,
-        IReadOnlyDictionary<string, string?> values, IReadOnlyCollection<string> unavailableIds)
+        IReadOnlyDictionary<string, string?> values, IReadOnlyCollection<string> unavailableIds, RenderNoteCollector notes)
     {
         if (item.Id is not { Length: > 0 } id || item.Command is not { Count: > 0 } command)
         {
@@ -66,7 +66,7 @@ public static class CommandProvider
             return new CommandResolution(cached?.Value, Unavailable: cached?.Value is null);
         }
 
-        var spawned = await RunAsync(item, expansion, rawStdinJson, cwd, timeout, previousPaneWidth).ConfigureAwait(false);
+        var spawned = await RunAsync(item, expansion, rawStdinJson, cwd, timeout, previousPaneWidth, notes).ConfigureAwait(false);
         if (spawned is not { } result)
         {
             return new CommandResolution(cached?.Value, Unavailable: cached?.Value is null);
@@ -79,7 +79,8 @@ public static class CommandProvider
     private readonly record struct SpawnResult(string? Value, int ExitCode);
 
     private static async Task<SpawnResult?> RunAsync(
-        PaneItem item, ArgvPlaceholders.Expansion expansion, string? rawStdinJson, string? cwd, TimeSpan timeout, int? previousPaneWidth)
+        PaneItem item, ArgvPlaceholders.Expansion expansion, string? rawStdinJson, string? cwd, TimeSpan timeout, int? previousPaneWidth,
+        RenderNoteCollector notes)
     {
         // §4.1: shell:true only ever forwards argv[0] to `sh -c` — an argv of more than one
         // element under shell:true would silently discard every element after the first and run
@@ -157,8 +158,20 @@ public static class CommandProvider
                 return null;
             }
 
-            var firstLine = stdout.Split('\n', 2)[0].TrimEnd('\r');
-            return new SpawnResult(firstLine.Length == 0 ? null : firstLine, process.ExitCode);
+            // §4.0.1: no default cap — a command item's output is unbounded unless the config
+            // opts into maxLines, at which point excess lines are dropped here, before §3.1's
+            // block-packing ever sees the value, and the drop is surfaced as a render note (§9.8.1)
+            // since this path has no other channel to report a silent truncation.
+            var lines = PaneAssembler.SplitBlockLines(stdout);
+            var kept = lines;
+            if (item.MaxLines is int cap && cap > 0 && lines.Count > cap)
+            {
+                kept = lines.Take(cap).ToList();
+                notes.Add($"item '{item.Id}' emitted {lines.Count} lines; {kept.Count} kept (maxLines)");
+            }
+
+            var value = string.Join("\n", kept);
+            return new SpawnResult(value.Length == 0 ? null : value, process.ExitCode);
         }
         catch
         {

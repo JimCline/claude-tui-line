@@ -249,6 +249,10 @@ public sealed class PaneItemJsonConfig
     [JsonPropertyName("case")]
     public string? Case { get; set; }
 
+    /// <summary>SPEC-V2-FRAMEWORK.md §4.0.1: caps how many lines this item's provider output produces, applied at the provider stage before §3.1's block-packing. Opt-in — no cap when unset.</summary>
+    [JsonPropertyName("maxLines")]
+    public int? MaxLines { get; set; }
+
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
     /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
@@ -809,7 +813,8 @@ public static class ConfigLoader
             i.Link,
             i.From,
             i.Extract,
-            i.Case)).ToList()
+            i.Case,
+            i.MaxLines)).ToList()
         ?? (IReadOnlyList<PaneItem>)Array.Empty<PaneItem>();
 
     /// <summary>

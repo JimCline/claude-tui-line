@@ -17,7 +17,7 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Null(value.Value);
     }
@@ -29,7 +29,7 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("hi", value.Value);
     }
@@ -41,7 +41,7 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("hi", value.Value);
     }
@@ -56,7 +56,7 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            values, unavailableIds: Array.Empty<string>());
+            values, unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("hello", value.Value);
     }
@@ -72,7 +72,7 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            values, unavailableIds: Array.Empty<string>());
+            values, unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("hello", value.Value);
     }
@@ -89,7 +89,7 @@ public class CommandProviderTests
         {
             var value = await CommandProvider.ResolveAsync(
                 item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-                values, unavailableIds: new[] { "other-id" });
+                values, unavailableIds: new[] { "other-id" }, notes: new RenderNoteCollector());
 
             Assert.True(value.Unavailable);
             Assert.Null(value.Value);
@@ -116,7 +116,7 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            values, unavailableIds: new[] { "other-id" });
+            values, unavailableIds: new[] { "other-id" }, notes: new RenderNoteCollector());
 
         Assert.Equal("stale-value", value.Value);
         Assert.False(value.Unavailable);
@@ -131,10 +131,10 @@ public class CommandProviderTests
 
         var first = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            new Dictionary<string, string?> { ["val"] = "one" }, unavailableIds: Array.Empty<string>());
+            new Dictionary<string, string?> { ["val"] = "one" }, unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
         var second = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
-            new Dictionary<string, string?> { ["val"] = "two" }, unavailableIds: Array.Empty<string>());
+            new Dictionary<string, string?> { ["val"] = "two" }, unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("one", first.Value);
         Assert.Equal("two", second.Value);
@@ -153,12 +153,12 @@ public class CommandProviderTests
         ItemCache.WriteWidth(widthsDir, widthKey, paneWidth: 42);
         var first = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: true,
-            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         ItemCache.WriteWidth(widthsDir, widthKey, paneWidth: 99);
         var second = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: true,
-            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("42", first.Value);
         Assert.Equal("99", second.Value);
@@ -180,10 +180,10 @@ public class CommandProviderTests
 
         var atPreviewWidth = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 60, paneWidthEligible: true,
-            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
         var atLiveWidth = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: true,
-            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Equal("55", atPreviewWidth.Value);
         Assert.Equal("115", atLiveWidth.Value);
@@ -209,8 +209,55 @@ public class CommandProviderTests
 
         var value = await CommandProvider.ResolveAsync(
             item, rawStdinJson: null, cwd: null, cacheDir, widthsDir, surfaceWidth: 120, paneWidthEligible: false,
-            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>());
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes: new RenderNoteCollector());
 
         Assert.Null(value.Value);
+    }
+
+    // ---- SPEC-V2-FRAMEWORK.md §4.0.1: maxLines is an opt-in, no-default per-item fairness cap ----
+
+    [Fact]
+    public async Task NoMaxLines_MultiLineOutput_KeepsEveryLineAndEmitsNoNote()
+    {
+        var item = new PaneItem(null, null, null, null, Id: "maxlines-unset",
+            Command: new[] { "printf 'a\\nb\\nc\\n'" }, Shell: true);
+        var notes = new RenderNoteCollector();
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes);
+
+        Assert.Equal("a\nb\nc", value.Value);
+        Assert.Empty(notes.Notes);
+    }
+
+    [Fact]
+    public async Task MaxLinesSet_OutputExceedsCap_TruncatesAndEmitsPinnedNote()
+    {
+        var item = new PaneItem(null, null, null, null, Id: "maxlines-exceeded",
+            Command: new[] { "printf 'a\\nb\\nc\\n'" }, Shell: true, MaxLines: 2);
+        var notes = new RenderNoteCollector();
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes);
+
+        Assert.Equal("a\nb", value.Value);
+        Assert.Contains(notes.Notes, n => n.Message == "item 'maxlines-exceeded' emitted 3 lines; 2 kept (maxLines)");
+    }
+
+    [Fact]
+    public async Task MaxLinesSet_OutputUnderCap_KeepsEverythingAndEmitsNoNote()
+    {
+        var item = new PaneItem(null, null, null, null, Id: "maxlines-under-cap",
+            Command: new[] { "printf 'a\\nb\\n'" }, Shell: true, MaxLines: 5);
+        var notes = new RenderNoteCollector();
+
+        var value = await CommandProvider.ResolveAsync(
+            item, rawStdinJson: null, cwd: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null, paneWidthEligible: false,
+            values: new Dictionary<string, string?>(), unavailableIds: Array.Empty<string>(), notes);
+
+        Assert.Equal("a\nb", value.Value);
+        Assert.Empty(notes.Notes);
     }
 }

@@ -68,7 +68,8 @@ public static class ItemValueResolver
         string? rawStdinJson,
         string cacheDir,
         string widthsDir,
-        int? surfaceWidth)
+        int? surfaceWidth,
+        RenderNoteCollector notes)
     {
         var items = new List<ScanEntry>();
         var colorExprs = new List<(ColorResolution.ColorExpr Expr, string Path)>();
@@ -99,7 +100,7 @@ public static class ItemValueResolver
         var placeholderValues = new Dictionary<string, string?>(values, StringComparer.Ordinal);
         var commandTasks = pendingCommands
             .Select(placed => (Id: placed.Item.Id!, Task: CommandProvider.ResolveAsync(
-                placed.Item, rawStdinJson, ctx.Input.Cwd, cacheDir, widthsDir, surfaceWidth, placed.Eligible, placeholderValues, Array.Empty<string>())))
+                placed.Item, rawStdinJson, ctx.Input.Cwd, cacheDir, widthsDir, surfaceWidth, placed.Eligible, placeholderValues, Array.Empty<string>(), notes)))
             .ToList();
 
         await Task.WhenAll(commandTasks.Select(t => t.Task)).ConfigureAwait(false);

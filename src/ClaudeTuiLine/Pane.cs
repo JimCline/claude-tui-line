@@ -240,7 +240,8 @@ public sealed record PaneItem(
     string? Link = null,
     string? From = null,
     string? Extract = null,
-    string? Case = null);
+    string? Case = null,
+    int? MaxLines = null);
 
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §2.2's pane tree node: a leaf (<see cref="Items"/>) or a split
