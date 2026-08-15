@@ -1180,9 +1180,9 @@ set that a new case has to be added to:
 - `items` on a pane that also declares a non-empty `children` — only a leaf pane's items are
   resolved, so the list is never read.
 - `children` present but empty — a pane is a split only when its children list has at least one
-  entry, so an empty list leaves a leaf behind and the key does nothing.
+  entry (§2.2), so an empty list leaves a leaf behind and the key does nothing.
 - `split` declared `vertical` or `horizontal` on a pane with no children — a childless pane
-  normalizes to a leaf whatever axis it names, so the declared axis is inert. This fires
+  normalizes to a leaf whatever axis it names (§2.2), so the declared axis is inert. This fires
   independently of the empty-`children` case above: a pane that declares both gets both warnings,
   because one condition is one diagnostic and neither repair implies the other.
 
