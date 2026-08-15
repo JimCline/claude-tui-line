@@ -4538,6 +4538,89 @@ Merged cleanly, independently verified via task-gopher both pre-merge on the wor
 and post-merge on `main` (1329/1329, build 0 warnings/0 errors, `check-all.sh` all five checks
 green, 20 doc tokens checked, 0 disagree). Landed as merge commit `0c51fce`, pushed.
 
+### #66: childless-split normalization was already normatively specified (§2.2)
+
+The gap flagged during #58 — no section citing `Config.cs:795`'s childless-split
+normalization (a pane with `split` set and no children drops the stray `split`
+and is treated as a leaf) — turned out not to be a gap. §2.2 ("The pane tree",
+`SPEC-V2-FRAMEWORK.md:778-781`) already states it normatively, word for word:
+"Conversely a pane with `split` set and no children is a leaf, and the stray
+`split` is dropped." §9.4.1's misspelled-split bullet already cited it
+correctly; the actual hole was in §2.3.2's five-case census (added in #58),
+whose two childless/empty-children bullets cited nothing. Added `(§2.2)` to
+both. Doc-only, no code changed.
+
+Merged cleanly as the first of three sequential merges onto `main` this round
+— see the #25 entry below for the combined merge commit and verification
+numbers (#66, #64, and #25 landed together as `Merge #66` → `Merge #64` →
+`Merge #25`).
+
+### #64: min-rows drop-retry now emits the `pane {n} dropped` note
+
+`ResolveVerticalMinRows`'s drop-retry loop silently truncated panes via
+`.Take(Count-1)` with no `RenderNoteCollector` at all — unlike greedy's
+`AllocateWithDrop`, which emits a `pane {n} dropped: no width remained at {w}
+columns` note per §9.8.2. §2.3.3:1220-1222 says the note should fire for
+min-rows too, so this was a real gap (flagged during #62), not just untested.
+Fixed: threaded `RenderNoteCollector notes` through `ResolveVerticalMinRows`
+and its call site, added the note-emission with the same message/position
+convention as `AllocateWithDrop`. New test `MinRowsDropNoteTests.cs` pins it,
+regression-proved (stashed the fix, confirmed the test fails without it).
+
+### #25: fixed `SolveMinRows`'s `maxT` bound; threaded both test seams; emitted the min-rows drop note
+
+Per the Architect's ruling (spec: `SPEC-2.3.1-min-rows-seam-and-bound.md`):
+
+- **Real spec-defect fixed**: `maxT` was `CandidateSegments(...).Count` (raw
+  segment count), which is wrong per §2.3.3:1209-1215 — an item wider than the
+  pane wraps, so 3 items can need 6 rows. Too-low `maxT` made the binary/linear
+  T-search exit early and fall to the `return lo` floor-fallback, silently
+  dropping every candidate to its floor on exactly the narrow terminals
+  min-rows exists for. Now `maxT = max over candidates of
+  RowCountAt(candidate, Floor(candidate))`. **User-visible**: this changes
+  rendered output for real min-rows configs on narrow terminals.
+- Binary-search optimization **not adopted** — N1 evidence (p90 latency 0.065ms
+  vs a 12.6ms budget across widths 100-240, ~190x margin) shows the corrected
+  linear scan already meets budget comfortably, so the added complexity/risk
+  wasn't justified.
+- Two seams threaded to their correct single sites: `measureOverride` reaches
+  only `WaterFillSurplus`'s content-candidate surplus cap (the `Resolve`
+  overload's doc comment, which falsely claimed broader reach, is now
+  accurate); a new `rowCountOverride` (`Func<Pane,int,int>?`) reaches
+  `RowCountAt` for min-rows's own monotonicity test.
+- Min-rows gets its own test set in `MinRowsDistributeTests.cs` (4 new tests:
+  maxT regression against brute force with wrapping content, silent-drop note
+  assertion, measureOverride seam-reach, rowCountOverride monotonicity) rather
+  than reusing the three greedy fixpoint tests, which §2.3.1:1135-1136 says
+  don't apply — min-rows deliberately has no fixpoint. Packer-invocation-count
+  bound re-derived from `1..300` to `1..100` (measured 16 post-fix).
+- SPEC-V2-FRAMEWORK.md spliced in two places: §2.3.1's T-bound paragraph
+  (correcting the §2.3.3 contradiction) and §10 req 6 (amending for min-rows's
+  own test set).
+- **New finding, flagged not fixed, filed as #67**: `SolveMinRows`'s
+  over-constrained fallback (`return lo`) doesn't check `Σlo <= r` before
+  accepting — 2+ fill/content candidates whose floors sum past
+  `splitOuterWidth` get over-allocated instead of triggering a drop. Reproduced
+  directly (two fill panes, gutter 1, r=46, both floor 24 → both granted 24,
+  sum 48 > 46). Whether greedy's `AllocateOnePass` has the same gap is
+  unconfirmed — routed to the Architect.
+
+**Merge**: #66, #64, and #25 landed as three sequential `--no-ff` merges onto
+`main` (`faec247`... `→` `Merge #64` `→` `Merge #25` at `0266d03`). #25 and #64
+both threaded a note-emission fix into the same function
+(`ResolveVerticalMinRows`) independently, producing a real merge conflict —
+resolved by hand in favor of #25's superset signature (which also carries the
+`measureOverride`/`rowCountOverride` params), keeping #25's more detailed
+§9.8.2/§2.3.3 comment. Post-merge full-suite run at `0266d03` hit one
+`PreviewJsonRowsTests` failure with the same signature as the #63-era flake
+(`JsonReaderException`, `'/' is an invalid start of a value`,
+`PreviewJsonRowsTests.cs:77`) — unrelated to #25's SizeResolver-only change
+surface. 3 immediate reruns all clean (1334/1334 each), confirming it's the
+known #65 flake recurring rather than a regression — logged as a data point
+for #65, not re-filed. `check-all.sh`: 115 citations resolve, all counts
+match, notes pinned, 20 doc tokens checked, 0 disagree. Pushed —
+`main` is now at `0266d03`.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
