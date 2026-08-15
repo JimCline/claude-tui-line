@@ -7,8 +7,10 @@ namespace ClaudeTuiLine.Tests;
 /// sites) — it would stay green even if <c>ItemValueResolver.cs</c>'s pane-border or item-color
 /// statements were deleted. This pins those site-visiting statements with one fixture exercising,
 /// in a single document, a top-level pane border colour, a nested child pane's border colour (as
-/// an <c>@name</c> token reference, exercising the <c>colors</c>-table link), and an item-level
-/// <c>color</c>.
+/// an <c>@name</c> token reference, exercising the <c>colors</c>-table link), an item-level
+/// <c>color</c>, and (SPEC-44-color-token-in-rule-branches.md §4.3) an inline rule's threshold
+/// branch naming an <c>@name</c> token — the new traversal-site class NE-1 found <c>Walk</c> did
+/// not previously visit at all.
 /// </summary>
 public class ColorExprWalkFixtureTests
 {
@@ -20,6 +22,7 @@ public class ColorExprWalkFixtureTests
             Colors = new Dictionary<string, ColorRuleJsonConfig>
             {
                 ["accent"] = new ColorRuleJsonConfig { Default = "green" },
+                ["danger"] = new ColorRuleJsonConfig { Default = "red" },
             },
             Surface = new SurfaceConfig
             {
@@ -34,6 +37,22 @@ public class ColorExprWalkFixtureTests
                             Items = new List<PaneItemJsonConfig>
                             {
                                 new PaneItemJsonConfig { Item = "directory", Color = new ColorExprJsonConfig { Literal = "red" } },
+                                new PaneItemJsonConfig
+                                {
+                                    Item = "directory",
+                                    Color = new ColorExprJsonConfig
+                                    {
+                                        Rule = new ColorRuleJsonConfig
+                                        {
+                                            From = "directory",
+                                            Thresholds = new List<ThresholdJsonConfig>
+                                            {
+                                                new ThresholdJsonConfig { Min = 50, Color = "@danger" },
+                                            },
+                                            Default = "grey",
+                                        },
+                                    },
+                                },
                             },
                         },
                     },
@@ -52,11 +71,16 @@ public class ColorExprWalkFixtureTests
             "/surface/pane/border/color",
             "/surface/pane/children/0/border/color",
             "/surface/pane/children/0/items/0/color",
+            "/surface/pane/children/0/items/1/color",
         };
 
         Assert.Equal(expected, paths);
 
         var childBorder = scan.ColorExprs.Single(c => c.Path == "/surface/pane/children/0/border/color");
         Assert.IsType<ColorResolution.ColorExpr.TokenRef>(childBorder.Expr);
+
+        var branchToken = scan.ColorTokenReferences.Single(t => t.Name == "danger");
+        Assert.Equal("/surface/pane/children/0/items/1/color/thresholds/0/color", branchToken.Path);
+        Assert.True(branchToken.InRuleBranch);
     }
 }

@@ -866,6 +866,13 @@ public static class ConfigLoader
         _ => null,
     };
 
+    // The leaf-position counterpart to ParseColorExpr's sigil test above. These two are the only
+    // @-inspecting sites in the codebase, per SPEC-44-color-token-in-rule-branches.md §4.1.
+    private static ColorResolution.ColorValue ParseColorValue(string raw) =>
+        raw[0] == '@'
+            ? new ColorResolution.ColorValue.TokenRef(raw[1..])
+            : new ColorResolution.ColorValue.Literal(raw);
+
     /// <summary>
     /// A threshold/match entry with no <c>color</c> of its own specifies nothing usable, so it is
     /// dropped rather than carried forward as an empty colour spec (§7's silent-degrade convention).
@@ -874,9 +881,9 @@ public static class ConfigLoader
     /// </summary>
     private static ColorResolution.ColorRule ParseColorRule(ColorRuleJsonConfig cfg, string? from) =>
         new(
-            cfg.Thresholds?.Where(t => !string.IsNullOrEmpty(t.Color)).Select(t => new ColorResolution.ThresholdRule(t.Min, t.Color!)).ToList(),
-            cfg.Match?.Where(m => !string.IsNullOrEmpty(m.Color)).Select(m => new ColorResolution.MatchRule(m.Contains, m.EqualsValue, m.Color!)).ToList(),
-            cfg.Default,
+            cfg.Thresholds?.Where(t => !string.IsNullOrEmpty(t.Color)).Select(t => new ColorResolution.ThresholdRule(t.Min, ParseColorValue(t.Color!))).ToList(),
+            cfg.Match?.Where(m => !string.IsNullOrEmpty(m.Color)).Select(m => new ColorResolution.MatchRule(m.Contains, m.EqualsValue, ParseColorValue(m.Color!))).ToList(),
+            string.IsNullOrEmpty(cfg.Default) ? null : ParseColorValue(cfg.Default),
             from);
 
     private static UserConfig? TryReadConfig(string path)

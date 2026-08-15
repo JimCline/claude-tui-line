@@ -13,9 +13,9 @@ namespace ClaudeTuiLine;
 /// </summary>
 public static class ColorResolution
 {
-    public readonly record struct ThresholdRule(double Min, string Color);
+    public readonly record struct ThresholdRule(double Min, ColorValue Color);
 
-    public readonly record struct MatchRule(string? Contains, string? EqualsValue, string Color);
+    public readonly record struct MatchRule(string? Contains, string? EqualsValue, ColorValue Color);
 
     /// <summary>
     /// A parsed "color" config value once it is a rule rather than a literal string: an unordered
@@ -29,7 +29,7 @@ public static class ColorResolution
     /// either case, so it is only ever null here for an inline rule with no owning item (a
     /// border's inline rule with no explicit <c>from</c>), which resolves to no colour.
     /// </summary>
-    public sealed record ColorRule(IReadOnlyList<ThresholdRule>? Thresholds, IReadOnlyList<MatchRule>? Match, string? Default, string? From = null);
+    public sealed record ColorRule(IReadOnlyList<ThresholdRule>? Thresholds, IReadOnlyList<MatchRule>? Match, ColorValue? Default, string? From = null);
 
     /// <summary>
     /// §6: a colour expression — the one grammar valid anywhere this spec accepts a colour. A
@@ -46,6 +46,21 @@ public static class ColorResolution
     }
 
     /// <summary>
+    /// SPEC-44-color-token-in-rule-branches.md §3.1: a colour-valued leaf — a rule branch's
+    /// <c>color</c>, or a rule's <c>default</c>. Deliberately has no <c>Inline</c> case, unlike
+    /// <see cref="ColorExpr"/>: a rule nested inside a rule branch must be unrepresentable, not
+    /// merely forbidden. <see cref="TokenRef"/> here is further restricted at reference-validation
+    /// time (§3.2) to naming only a constant rule — this type does not encode that restriction
+    /// itself, since encoding it in the type would require knowing the token table at parse time.
+    /// </summary>
+    public abstract record ColorValue
+    {
+        public sealed record Literal(string Spec) : ColorValue;
+
+        public sealed record TokenRef(string Name) : ColorValue;
+    }
+
+    /// <summary>
     /// §6.5: the single up-front colour resolution point — reads already-resolved item values
     /// (§5's fetch phase) and the parsed <c>colors</c> token table, never touches layout, and is
     /// safe to call once per render before sizing begins. Returns a literal colour spec (§6.1),
@@ -57,8 +72,8 @@ public static class ColorResolution
         {
             null => null,
             ColorExpr.Literal lit => lit.Spec,
-            ColorExpr.TokenRef tok => tokens.TryGetValue(tok.Name, out var rule) ? ResolveRuleColor(rule, values) : null,
-            ColorExpr.Inline inline => ResolveRuleColor(inline.Rule, values),
+            ColorExpr.TokenRef tok => tokens.TryGetValue(tok.Name, out var rule) ? ResolveRuleColor(rule, values, tokens) : null,
+            ColorExpr.Inline inline => ResolveRuleColor(inline.Rule, values, tokens),
             _ => null,
         };
 
@@ -82,18 +97,39 @@ public static class ColorResolution
     /// itself optional and, when absent, yields no colour rather than the previous rule's colour
     /// or a suppressed item.
     /// </summary>
-    private static string? ResolveRuleColor(ColorRule rule, IReadOnlyDictionary<string, string?> values)
+    private static string? ResolveRuleColor(ColorRule rule, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorRule> tokens)
     {
         var raw = rule.From is { Length: > 0 } from ? values.GetValueOrDefault(from) : null;
 
-        return string.IsNullOrEmpty(raw)
+        var value = string.IsNullOrEmpty(raw)
             ? rule.Default
             : rule.Thresholds is { Count: > 0 } && double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var numeric)
                 ? ResolveNumeric(numeric, rule)
                 : rule.Match is { Count: > 0 }
                     ? ResolveString(raw, rule)
                     : rule.Default;
+
+        return ResolveColorValue(value, tokens);
     }
+
+    /// <summary>
+    /// SPEC-44-color-token-in-rule-branches.md §4.2: maps a resolved <see cref="ColorValue"/> leaf
+    /// to a spec string. A <see cref="ColorValue.TokenRef"/> here is, by §3.2's reference-validation
+    /// restriction, always a constant rule — one hop to a <see cref="ColorValue.Literal"/> default,
+    /// no recursion. An unknown or non-constant token resolves to no colour, silently (§7's
+    /// established convention, extended unchanged to this leaf position).
+    /// </summary>
+    private static string? ResolveColorValue(ColorValue? value, IReadOnlyDictionary<string, ColorRule> tokens) =>
+        value switch
+        {
+            null => null,
+            ColorValue.Literal lit => lit.Spec,
+            ColorValue.TokenRef tok =>
+                tokens.TryGetValue(tok.Name, out var rule) && rule.Default is ColorValue.Literal lit2
+                    ? lit2.Spec
+                    : null,
+            _ => null,
+        };
 
     /// <summary>
     /// SPEC.md's captured 50/80 rule, expressed as data instead of code, so the legacy default
@@ -101,12 +137,20 @@ public static class ColorResolution
     /// one evaluator rather than two independent copies of the same ladder.
     /// </summary>
     public static readonly ColorRule StandardThreshold = new(
-        Thresholds: new[] { new ThresholdRule(80, "maroon"), new ThresholdRule(50, "olive") },
+        Thresholds: new[] { new ThresholdRule(80, new ColorValue.Literal("maroon")), new ThresholdRule(50, new ColorValue.Literal("olive")) },
         Match: null,
-        Default: "green");
+        Default: new ColorValue.Literal("green"));
 
-    /// <summary>Replaces the old SegmentBuilder.ThresholdTag — same ladder, now the shared evaluator.</summary>
-    public static string ResolveStandardThreshold(double value) => ResolveNumeric(value, StandardThreshold) ?? "green";
+    /// <summary>
+    /// Replaces the old SegmentBuilder.ThresholdTag — same ladder, now the shared evaluator.
+    /// <see cref="StandardThreshold"/> is constructed in source with only <see cref="ColorValue.Literal"/>
+    /// branches, so the <c>Literal</c> arm always hits when a threshold matched; the fallback below
+    /// covers "no threshold matched" (this evaluator's only reachable non-literal case today). If
+    /// <see cref="StandardThreshold"/> ever becomes configurable, a <see cref="ColorValue.TokenRef"/>
+    /// could reach here and would silently coerce to "green" — revisit this line first.
+    /// </summary>
+    public static string ResolveStandardThreshold(double value) =>
+        ResolveNumeric(value, StandardThreshold) is ColorValue.Literal lit ? lit.Spec : "green";
 
     /// <summary>
     /// §6: a value matches the highest threshold whose <c>min</c> it clears, regardless of the
@@ -114,7 +158,7 @@ public static class ColorResolution
     /// 80, not whichever of the two rules happens to be declared first). Falls to
     /// <see cref="ColorRule.Default"/>, then null (ambient/no color, silent per §7).
     /// </summary>
-    public static string? ResolveNumeric(double value, ColorRule rule)
+    public static ColorValue? ResolveNumeric(double value, ColorRule rule)
     {
         if (rule.Thresholds is { Count: > 0 } thresholds)
         {
@@ -137,7 +181,7 @@ public static class ColorResolution
     /// "Claude Opus 4.5", and exact matching would break on every version bump); <c>equals</c> is
     /// case-insensitive exact match for authors who want it.
     /// </summary>
-    public static string? ResolveString(string value, ColorRule rule)
+    public static ColorValue? ResolveString(string value, ColorRule rule)
     {
         if (rule.Match is { Count: > 0 } match)
         {

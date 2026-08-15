@@ -230,16 +230,21 @@ public class ItemFormatParityTests
         Assert.Equal(85, numeric); // fixture's SevenDay window (85%) exceeds FiveHour's (30%) — raw value is the max across windows
 
         var rule = new ColorResolution.ColorRule(
-            Thresholds: new[] { new ColorResolution.ThresholdRule(80, "red"), new ColorResolution.ThresholdRule(50, "yellow") },
+            Thresholds: new[]
+            {
+                new ColorResolution.ThresholdRule(80, new ColorResolution.ColorValue.Literal("red")),
+                new ColorResolution.ThresholdRule(50, new ColorResolution.ColorValue.Literal("yellow")),
+            },
             Match: null,
-            Default: "green",
+            Default: new ColorResolution.ColorValue.Literal("green"),
             From: "rate-limits");
+        var defaultSpec = ((ColorResolution.ColorValue.Literal)rule.Default!).Spec;
         var values = new Dictionary<string, string?> { ["rate-limits"] = rawValue };
 
         var resolvedColor = ColorResolution.Resolve(new ColorResolution.ColorExpr.Inline(rule), values, new Dictionary<string, ColorResolution.ColorRule>());
 
         Assert.Equal("red", resolvedColor);
-        Assert.NotEqual(rule.Default, resolvedColor);
+        Assert.NotEqual(defaultSpec, resolvedColor);
 
         string RenderSgr(string color)
         {
@@ -256,6 +261,6 @@ public class ItemFormatParityTests
             return match.Value;
         }
 
-        Assert.NotEqual(RenderSgr(rule.Default!), RenderSgr(resolvedColor!));
+        Assert.NotEqual(RenderSgr(defaultSpec), RenderSgr(resolvedColor!));
     }
 }
