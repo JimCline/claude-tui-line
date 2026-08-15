@@ -43,6 +43,8 @@ public class SplitAcceptanceTests
 
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
 
+    private static readonly ItemContext BlankCtx = BlankSurfaceControl.Blank(Ctx);
+
     private static (ResolvedConfig TopLevel, Pane RootPane) LoadAcceptanceConfig()
     {
         var path = Path.GetTempFileName();
@@ -64,6 +66,19 @@ public class SplitAcceptanceTests
         Assert.True(surfaceWidth is int, "the acceptance config must produce a real surface width");
         var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
         return SizeResolver.Resolve(pane, surfaceWidth!.Value, Ctx, values, new RenderNoteCollector());
+    }
+
+    private static string RenderMarkup(SizeResolver.ResolvedPane resolved, ResolvedConfig topLevel, ItemContext ctx, IReadOnlyDictionary<string, string?> values) =>
+        string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
+
+    /// <summary>SPEC §10.1: the blank-surface counterpart of <see cref="Resolve"/> — same tree, every item forced empty via <see cref="BlankCtx"/>.</summary>
+    private static SizeResolver.ResolvedPane ResolveBlank(string columns)
+    {
+        var (topLevel, pane) = LoadAcceptanceConfig();
+        var surfaceWidth = SurfaceLayout.ComputeWidth(columns, topLevel.ChromeReserve);
+        Assert.True(surfaceWidth is int, "the acceptance config must produce a real surface width");
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        return SizeResolver.Resolve(pane, surfaceWidth!.Value, BlankCtx, blankValues, new RenderNoteCollector());
     }
 
     [Fact]
@@ -89,6 +104,20 @@ public class SplitAcceptanceTests
             Assert.Equal(surfaceWidth, r.Width);
             Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
         });
+
+        // SPEC §10.1 blank-surface control: the invariant must still hold with every item empty,
+        // and the populated/blank renders must be content-distinguishable.
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankRendered = PaneTreeRenderer.Render(blankResolved, BlankCtx, blankValues, topLevel.Colors, new RenderNoteCollector());
+        Assert.All(blankRendered.Buffer.Rows, r =>
+        {
+            Assert.Equal(surfaceWidth, r.Width);
+            Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
+        });
+        BlankSurfaceControl.AssertContentDiffers(
+            string.Join('\n', rendered.Buffer.Rows.Select(r => r.Markup)),
+            string.Join('\n', blankRendered.Buffer.Rows.Select(r => r.Markup)));
     }
 
     [Fact]
@@ -106,6 +135,18 @@ public class SplitAcceptanceTests
             Assert.Equal(surfaceWidth, r.Width);
             Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
         });
+
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankRendered = PaneTreeRenderer.Render(blankResolved, BlankCtx, blankValues, topLevel.Colors, new RenderNoteCollector());
+        Assert.All(blankRendered.Buffer.Rows, r =>
+        {
+            Assert.Equal(surfaceWidth, r.Width);
+            Assert.Equal(r.Width, DisplayWidth.Measure(r.Markup));
+        });
+        BlankSurfaceControl.AssertContentDiffers(
+            string.Join('\n', rendered.Buffer.Rows.Select(r => r.Markup)),
+            string.Join('\n', blankRendered.Buffer.Rows.Select(r => r.Markup)));
     }
 
     [Fact]
@@ -126,6 +167,14 @@ public class SplitAcceptanceTests
 
         Assert.True(right.OuterWidth <= expectedCap,
             $"right pane ({right.OuterWidth}) must never exceed the step-4 cap ({expectedCap})");
+
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankRight = blankResolved.Children[1];
+        Assert.True(blankRight.OuterWidth <= expectedCap,
+            $"blank-surface right pane ({blankRight.OuterWidth}) must never exceed the step-4 cap ({expectedCap})");
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(resolved, topLevel, Ctx, values), RenderMarkup(blankResolved, topLevel, BlankCtx, blankValues));
     }
 
     [Fact]
@@ -146,6 +195,19 @@ public class SplitAcceptanceTests
 
         Assert.True(right.OuterWidth < passOneCap,
             $"right pane ({right.OuterWidth}) must be strictly below the pass-1 cap ({passOneCap}) to prove re-measurement occurred");
+
+        // Blank-surface control: with every item empty, the content pane never wraps in the first
+        // place, so a second pass is not expected to (and need not) drive it strictly below the
+        // pass-1 cap. We assert the weaker structural bound (still within the cap) plus
+        // distinguishability, rather than re-asserting the strict "<" that is specific to
+        // wrap-triggered re-measurement of non-empty content.
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankRight = blankResolved.Children[1];
+        Assert.True(blankRight.OuterWidth <= passOneCap,
+            $"blank-surface right pane ({blankRight.OuterWidth}) must never exceed the pass-1 cap ({passOneCap})");
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(resolved, topLevel, Ctx, values), RenderMarkup(blankResolved, topLevel, BlankCtx, blankValues));
     }
 
     [Fact]
@@ -166,6 +228,18 @@ public class SplitAcceptanceTests
 
         Assert.True(left.OuterWidth > fillFloor,
             $"left pane ({left.OuterWidth}) must exceed its pass-1 floor-driven grant ({fillFloor}) once the right pane's wrap-aware re-measure frees columns back to it");
+
+        // Blank-surface control: with the content pane's items empty, there is nothing to wrap,
+        // so no columns are freed back to the fill sibling — it stays at its floor. We assert that
+        // structural floor still holds (rather than re-asserting the strict ">" that only holds
+        // when real content wraps) plus distinguishability from the populated run.
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankLeft = blankResolved.Children[0];
+        Assert.True(blankLeft.OuterWidth >= fillFloor,
+            $"blank-surface left pane ({blankLeft.OuterWidth}) must never fall below its floor ({fillFloor})");
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(resolved, topLevel, Ctx, values), RenderMarkup(blankResolved, topLevel, BlankCtx, blankValues));
     }
 
     [Fact]
@@ -176,6 +250,13 @@ public class SplitAcceptanceTests
 
         Assert.True(right60.OuterWidth <= right112.OuterWidth,
             "a narrower surface must never grant the anchor pane more than a wider one did");
+
+        var blankRight112 = ResolveBlank("112").Children[1];
+        var blankRight60 = ResolveBlank("60").Children[1];
+        Assert.True(blankRight60.OuterWidth <= blankRight112.OuterWidth,
+            "blank-surface: a narrower surface must never grant the anchor pane more than a wider one did");
+        Assert.True(blankRight112.OuterWidth < right112.OuterWidth,
+            "blank-surface content pane must measure narrower than its populated counterpart");
     }
 
     [Fact]
@@ -201,5 +282,21 @@ public class SplitAcceptanceTests
         });
 
         Assert.Equal(surfaceRowCount, rowsWithRightPaneBorder);
+
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankRendered = PaneTreeRenderer.Render(blankResolved, BlankCtx, blankValues, topLevel.Colors, new RenderNoteCollector());
+        var blankRowCount = blankRendered.Buffer.Rows.Count;
+        var blankRightPane = blankResolved.Children[1];
+        var blankRightStartCol = blankResolved.Children[0].OuterWidth + pane.Gutter;
+        var blankRowsWithRightPaneBorder = blankRendered.Buffer.Rows.Count(r =>
+        {
+            var plain = DisplayWidth.Strip(r.Markup);
+            return plain[blankRightStartCol] != ' ' && plain[blankRightStartCol + blankRightPane.OuterWidth - 1] != ' ';
+        });
+        Assert.Equal(blankRowCount, blankRowsWithRightPaneBorder);
+        BlankSurfaceControl.AssertContentDiffers(
+            string.Join('\n', rendered.Buffer.Rows.Select(r => r.Markup)),
+            string.Join('\n', blankRendered.Buffer.Rows.Select(r => r.Markup)));
     }
 }

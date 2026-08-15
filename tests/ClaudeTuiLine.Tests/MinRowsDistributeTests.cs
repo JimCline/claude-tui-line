@@ -56,6 +56,8 @@ public class MinRowsDistributeTests
 
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
 
+    private static readonly ItemContext BlankCtx = BlankSurfaceControl.Blank(Ctx);
+
     private readonly ITestOutputHelper _output;
 
     public MinRowsDistributeTests(ITestOutputHelper output)
@@ -90,6 +92,9 @@ public class MinRowsDistributeTests
         var rendered = PaneTreeRenderer.Render(resolved, ctx, values, tokens, new RenderNoteCollector());
         return rendered.Buffer.Rows.Count;
     }
+
+    private static string RenderMarkup(SizeResolver.ResolvedPane resolved, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, ColorResolution.ColorRule> tokens) =>
+        string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, tokens, new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
 
     [Fact]
     public void Columns112_MinRows_MatchesBruteForceOptimalRowCount()
@@ -126,6 +131,27 @@ public class MinRowsDistributeTests
         var achievedScore = Math.Max(achievedRows1, achievedRows2);
 
         Assert.Equal(bestScore, achievedScore);
+
+        // SPEC §10.1 blank-surface control: the "achieved == brute-force optimum" invariant must
+        // still hold with every item blanked (the algorithm must still pick the optimal split even
+        // over trivial content), and the two runs' rendered content must differ.
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankBestScore = int.MaxValue;
+        for (var w1 = lo1; w1 <= hi1; w1++)
+        {
+            var w2 = r - w1;
+            var rows1 = RowsAt(left, w1, blankValues, topLevel.Colors, BlankCtx);
+            var rows2 = RowsAt(right, w2, blankValues, topLevel.Colors, BlankCtx);
+            blankBestScore = Math.Min(blankBestScore, Math.Max(rows1, rows2));
+        }
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankAchievedRows1 = RowsAt(left, blankResolved.Children[0].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
+        var blankAchievedRows2 = RowsAt(right, blankResolved.Children[1].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
+        var blankAchievedScore = Math.Max(blankAchievedRows1, blankAchievedRows2);
+        Assert.Equal(blankBestScore, blankAchievedScore);
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(resolved, Ctx, values, topLevel.Colors),
+            RenderMarkup(blankResolved, BlankCtx, blankValues, topLevel.Colors));
     }
 
     [Fact]
@@ -157,6 +183,26 @@ public class MinRowsDistributeTests
         var achievedScore = Math.Max(achievedRows1, achievedRows2);
 
         Assert.Equal(bestScore, achievedScore);
+
+        // SPEC §10.1 blank-surface control: see the identical block in
+        // Columns112_MinRows_MatchesBruteForceOptimalRowCount.
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankBestScore = int.MaxValue;
+        for (var w1 = lo1; w1 <= hi1; w1++)
+        {
+            var w2 = r - w1;
+            var rows1 = RowsAt(left, w1, blankValues, topLevel.Colors, BlankCtx);
+            var rows2 = RowsAt(right, w2, blankValues, topLevel.Colors, BlankCtx);
+            blankBestScore = Math.Min(blankBestScore, Math.Max(rows1, rows2));
+        }
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        var blankAchievedRows1 = RowsAt(left, blankResolved.Children[0].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
+        var blankAchievedRows2 = RowsAt(right, blankResolved.Children[1].OuterWidth, blankValues, topLevel.Colors, BlankCtx);
+        var blankAchievedScore = Math.Max(blankAchievedRows1, blankAchievedRows2);
+        Assert.Equal(blankBestScore, blankAchievedScore);
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(resolved, Ctx, values, topLevel.Colors),
+            RenderMarkup(blankResolved, BlankCtx, blankValues, topLevel.Colors));
     }
 
     [Fact]
@@ -552,6 +598,19 @@ public class MinRowsDistributeTests
         Assert.Equal(2, resolved.Children.Count);
         Assert.Equal(54, resolved.Children[0].OuterWidth);
         Assert.Equal(54, resolved.Children[1].OuterWidth);
+
+        // SPEC §10.1 blank-surface control: min-rows sizing is content-driven (rows_i(w) depends on
+        // item text), so unlike this test's own pinned 54/54, only re-run to confirm the feasible
+        // path is still reached (children count + the over-allocation guard's invariant, sum <=
+        // surfaceWidth) rather than re-pinning exact widths that this content's absence has no
+        // reason to reproduce.
+        var blankValues = ItemValueResolver.Resolve(pane, BlankCtx, topLevel.Colors);
+        var blankResolved = SizeResolver.Resolve(pane, surfaceWidth, BlankCtx, blankValues, new RenderNoteCollector());
+        Assert.Equal(2, blankResolved.Children.Count);
+        Assert.True(blankResolved.Children.Sum(c => c.OuterWidth) <= surfaceWidth);
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(resolved, Ctx, values, topLevel.Colors),
+            RenderMarkup(blankResolved, BlankCtx, blankValues, topLevel.Colors));
     }
 
     // §7 item 5: with the fix recomputing `avail` from `current.Count` on every iteration, dropping

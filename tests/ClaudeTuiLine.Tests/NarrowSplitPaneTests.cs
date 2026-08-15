@@ -33,6 +33,18 @@ public class NarrowSplitPaneTests
 
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.True(r.Width <= 10, $"row '{r.Markup}' exceeds the pane's own width"));
+
+        // SPEC §10.1 blank-surface control: same tree, item forced empty via a blank ItemContext
+        // (the "model-short" item's display, like "model"'s, is registry-default-driven from ctx —
+        // blanking the values dict alone does not empty it). The row-count "== 2" is a consequence
+        // of this specific content's length wrapping at width 10, not a content-independent
+        // structural invariant, so only the per-row width bound is re-asserted on blank.
+        var blankCtx = BlankSurfaceControl.Blank(ctx);
+        var blankValues = new Dictionary<string, string?> { ["model-short"] = ItemRegistry.Find("model-short")!.ResolveValue(blankCtx) };
+        var blankRows = PaneAssembler.RenderLeafRows(pane, 10, blankCtx, blankValues, new Dictionary<string, ColorResolution.ColorRule>(), new RenderNoteCollector());
+        Assert.All(blankRows, r => Assert.True(r.Width <= 10, $"blank-surface row '{r.Markup}' exceeds the pane's own width"));
+        BlankSurfaceControl.AssertContentDiffers(
+            string.Join('\n', rows.Select(r => r.Markup)), string.Join('\n', blankRows.Select(r => r.Markup)));
     }
 
     [Fact]

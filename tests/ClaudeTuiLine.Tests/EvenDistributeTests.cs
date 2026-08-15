@@ -19,6 +19,15 @@ public class EvenDistributeTests
 
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
 
+    private static readonly ItemContext BlankCtx = BlankSurfaceControl.Blank(Ctx);
+
+    private static string RenderMarkup(Pane pane, ResolvedConfig topLevel, ItemContext ctx, int outerWidth)
+    {
+        var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
+        var resolved = SizeResolver.Resolve(pane, outerWidth, ctx, values, new RenderNoteCollector());
+        return string.Join('\n', PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
+    }
+
     private static (ResolvedConfig TopLevel, Pane RootPane) LoadConfig(string json)
     {
         var path = Path.GetTempFileName();
@@ -33,10 +42,13 @@ public class EvenDistributeTests
         }
     }
 
-    private static SizeResolver.ResolvedPane Resolve(Pane pane, ResolvedConfig topLevel, int outerWidth)
+    private static SizeResolver.ResolvedPane Resolve(Pane pane, ResolvedConfig topLevel, int outerWidth) =>
+        Resolve(pane, topLevel, outerWidth, Ctx);
+
+    private static SizeResolver.ResolvedPane Resolve(Pane pane, ResolvedConfig topLevel, int outerWidth, ItemContext ctx)
     {
-        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
-        return SizeResolver.Resolve(pane, outerWidth, Ctx, values, new RenderNoteCollector());
+        var values = ItemValueResolver.Resolve(pane, ctx, topLevel.Colors);
+        return SizeResolver.Resolve(pane, outerWidth, ctx, values, new RenderNoteCollector());
     }
 
     [Fact]
@@ -159,6 +171,16 @@ public class EvenDistributeTests
 
         Assert.Equal(implicitResolved.Children[0].OuterWidth, explicitResolved.Children[0].OuterWidth);
         Assert.Equal(implicitResolved.Children[1].OuterWidth, explicitResolved.Children[1].OuterWidth);
+
+        // SPEC §10.1 blank-surface control: implicit/explicit greedy must still agree with each
+        // other when the content pane's items are blanked, and the content pane's own measured
+        // width must shrink relative to the populated run (greedy sizing is content-driven).
+        var blankImplicitResolved = Resolve(implicitPane, implicitTop, 80, BlankCtx);
+        var blankExplicitResolved = Resolve(explicitPane, explicitTop, 80, BlankCtx);
+        Assert.Equal(blankImplicitResolved.Children[0].OuterWidth, blankExplicitResolved.Children[0].OuterWidth);
+        Assert.Equal(blankImplicitResolved.Children[1].OuterWidth, blankExplicitResolved.Children[1].OuterWidth);
+        Assert.True(blankImplicitResolved.Children[1].OuterWidth < implicitResolved.Children[1].OuterWidth,
+            "blank-surface content pane must measure narrower than its populated counterpart");
     }
 
     [Fact]
@@ -219,5 +241,18 @@ public class EvenDistributeTests
         Assert.Equal(30, fourItemResolved.Children[0].OuterWidth);
         Assert.Equal(30, fourItemResolved.Children[1].OuterWidth);
         Assert.Equal(oneItemResolved.Children[0].OuterWidth, fourItemResolved.Children[0].OuterWidth);
+
+        // SPEC §10.1 blank-surface control: "even" distribution ignores intrinsic measurement by
+        // design, so the width invariant (30/30) must hold identically even with items blanked —
+        // unlike greedy sizing, OuterWidth itself carries no distinguishing signal here, so
+        // distinguishability is checked via rendered content instead.
+        var blankOneItemResolved = Resolve(oneItemPane, oneItemTop, 61, BlankCtx);
+        var blankFourItemResolved = Resolve(fourItemPane, fourItemTop, 61, BlankCtx);
+        Assert.Equal(30, blankOneItemResolved.Children[0].OuterWidth);
+        Assert.Equal(30, blankOneItemResolved.Children[1].OuterWidth);
+        Assert.Equal(30, blankFourItemResolved.Children[0].OuterWidth);
+        Assert.Equal(30, blankFourItemResolved.Children[1].OuterWidth);
+        BlankSurfaceControl.AssertContentDiffers(
+            RenderMarkup(fourItemPane, fourItemTop, Ctx, 61), RenderMarkup(fourItemPane, fourItemTop, BlankCtx, 61));
     }
 }
