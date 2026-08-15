@@ -5959,7 +5959,7 @@ than through an arrangement of its own.
 { "columns": 112, "usableColumns": 109,
   "rows": [ { "text": "…", "width": 109 } ],
   "notes": [
-    { "message": "pane 2 dropped: no width remained at 109 columns" },
+    { "message": "pane 2 dropped: 23 columns is under its 24-column floor at 109 columns" },
     { "message": "item 'diffstat' emitted 7 lines; 3 kept (maxLines)", "item": "diffstat" }
   ] }
 ```
@@ -5988,7 +5988,8 @@ site:
 
 <!-- pinned-notes: checked against the collector's call sites by tools/check-notes.sh -->
 ```
-pane {n} dropped: no width remained at {columns} columns
+pane {n} dropped: {grant} columns is under its {floor}-column floor at {columns} columns
+pane {n} dropped: children need {sum} columns at {columns} columns
 segment truncated to fit {columns} columns
 item '{id}' emitted {n} lines; {kept} kept (maxLines)
 ```
@@ -5999,15 +6000,23 @@ already decayed once. `tools/check-notes.sh` reads every `RenderNoteCollector.Ad
 `src/` and fails if its text is not in the list, and `check-docs.sh` runs it — a check whose only
 runner is an unproven runner is not in service, which §9.6.2.2 learned the expensive way.
 
-The first two are the live producers §9.8.2 adds; the third is §4.0.1's and does not fire until
-`maxLines` exists. Adding a producer means adding a line here in the same change — this list is
-the definition, and the call site is a use of it.
+The first two are the live producers §9.8.2 adds — two messages, not one, because §2.3's drop-retry
+loops fire for two different reasons (SPEC-2.3-drop-predicate.md #67b): a pane granted less than its
+own drop floor, and a split whose children together claim more than it has. The two repairs differ
+(lower `minSize` or widen the terminal, versus shrink the declared fixed/percent sizes), so naming
+the wrong one sends the reader to the wrong knob — see that spec's §4 for the ruling and the
+precedence rule when both conditions hold on the same drop. The third line is §4.0.1's and does not
+fire until `maxLines` exists. Adding a producer means adding a line here in the same change — this
+list is the definition, and the call site is a use of it.
 
-Two things about the wording are deliberate rather than incidental. The pane note says *no width
-remained* because for that pane none did; the segment note must **not** borrow the phrase, because
-width plainly remained — there were `{columns}` of it — and it was merely insufficient. And each
-text names the width it happened at, since a note that cannot be tied to a width is unusable in a
-tool whose entire subject is what changes with width.
+Two things about the wording are deliberate rather than incidental. Neither pane-drop message says
+*no width remained* — that phrasing was ruled inaccurate for both cases it used to cover: a pane
+under its floor was not granted zero, and an over-allocated split's children claimed too much, not
+too little. The segment-truncation note keeps its own, different wording for the same reason: width
+plainly remained there too — there were `{columns}` of it — and it was merely insufficient, which is
+a third distinct cause from either pane-drop reason. And every text names the width it happened at,
+since a note that cannot be tied to a width is unusable in a tool whose entire subject is what
+changes with width.
 
 #### 9.8.2 A note channel with no producer, and the collector that fixes it
 

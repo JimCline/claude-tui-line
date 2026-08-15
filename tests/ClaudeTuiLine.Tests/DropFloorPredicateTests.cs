@@ -86,6 +86,56 @@ public class DropFloorPredicateTests
         Assert.Equal("pane 2 dropped: 23 columns is under its 24-column floor at 46 columns", notes.Notes[0].Message);
     }
 
+    // Item 2 (§6, min-rows path): SolveMinRows's infeasible fallback ("no T fits") grants each
+    // surviving candidate exactly its own floor, never less — grant < Floor is structurally
+    // unreachable there, so a below-floor negative test (item 1's shape) cannot exist for min-rows.
+    // Architect ruling: assert the positive invariant instead. Three "fill" panes, gutter 1,
+    // distribute: min-rows, at surface width 52: floor-sum (3 x 24 = 72) exceeds the 51-column
+    // avail (52 - 1 gutter x 2 boundaries), so the drop-retry loop fires once; releasing one
+    // boundary column on drop leaves avail 48, which the remaining two candidates' floors (24 + 24)
+    // consume exactly, with no surplus to distribute. Both survivors are granted precisely their
+    // floor — the tightest case the invariant can be checked against, since one column less on
+    // either would fail it. Floor is computed via SizeResolver.OwnBorderReserve (a pure formula
+    // function, not the fallback path under test) rather than pinned to an observed grant value.
+    [Fact]
+    public void Item2_MinRowsInfeasibleFallback_SurvivingCandidatesAllMeetOwnFloor()
+    {
+        const string configJson = """
+        {
+          "surface": {
+            "maxRows": 20,
+            "pane": {
+              "split": "vertical",
+              "gutter": 1,
+              "distribute": "min-rows",
+              "children": [
+                { "size": "fill" },
+                { "size": "fill" },
+                { "size": "fill" }
+              ]
+            }
+          }
+        }
+        """;
+
+        var (topLevel, pane) = LoadConfig(configJson);
+        var surfaceWidth = SurfaceLayout.ComputeWidth("52", topLevel.ChromeReserve)!.Value;
+        var values = ItemValueResolver.Resolve(pane, Ctx, topLevel.Colors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values, notes);
+
+        _output.WriteLine(string.Join(Environment.NewLine, notes.Notes.Select(n => n.Message)));
+
+        Assert.Equal(2, resolved.Children.Count);
+
+        var floor = RowLayout.MinUsableWidth + SizeResolver.OwnBorderReserve(pane.Children[0]);
+        Assert.All(resolved.Children, c => Assert.True(c.OuterWidth >= floor,
+            $"grant {c.OuterWidth} is below floor {floor}"));
+        Assert.Equal(floor, resolved.Children[0].OuterWidth);
+        Assert.Equal(floor, resolved.Children[1].OuterWidth);
+    }
+
     // Item 3 (§6): a content pane granted 0 still drops. Fails if the predicate is
     // `grants[i] < Floor(...)` without `Math.Max(1, ...)` — Floor is 0 for SizeKind.Content
     // (SizeResolver.cs:354), so a bare comparison is `0 < 0`, never true, and this pane would
