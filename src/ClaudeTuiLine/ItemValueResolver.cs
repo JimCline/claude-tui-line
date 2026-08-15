@@ -138,6 +138,11 @@ public static class ItemValueResolver
     {
         colorExprs.Add((pane.Border.Color, path + "/border/color"));
 
+        // §2.5.1 rule 2: a content-sized pane's width is derived from measuring its own content, so
+        // its command items must be resolved with CLAUDE_TUI_LINE_PANE_WIDTH unset rather than
+        // exporting a value that depends on what the export itself would return. Every other pane
+        // kind is eligible and gets its prior render's stamped width (rule 1: spawned once per
+        // render, reusing the first-pass grant rather than re-fetching across sizing passes).
         var eligible = !SizeResolver.IsContentSized(pane);
         for (var i = 0; i < pane.Items.Count; i++)
         {
