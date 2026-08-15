@@ -5463,7 +5463,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `key-not-applicable` | a known key with a legal value on a node that never reads it — `distribute` or `gutter` on a horizontal split, `items` alongside a non-empty `children`, an empty `children` list, or an explicit `split` on a childless pane; message says where the key *does* apply. A predicate, not a closed list (§2.3.2) | warning | 2.3.2 |
 | `part-source-count` | a compound part with zero, or more than one, source | error | 3.3 |
 | `part-forbidden-key` | a compound part carrying `parts` or `link` | error | 3.3 |
-| `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
+| `fixed-sizes-exceed-parent` | declared fixed sizes or floors cannot fit the parent at any width | error | 9.8 |
 | `min-exceeds-max` | `minSize` greater than `maxSize` on one pane — unachievable everywhere | error | 9.8 |
 | `collapsed-edge-conflict` | adjacent panes disagree about a shared edge under `border.collapse` | warning | 2.10 |
 | `collapse-not-surface-level` | `border.collapse` declared on a pane — the compositor resolves one grid for the whole surface, so a per-pane value has no defined meaning | error | 2.10.1 |
@@ -6059,6 +6059,16 @@ terminal width can resolve.
   Same code as the first: it is the same contradiction with the floor rather than the exact size —
   and therefore the same arithmetic, taken from §2.10. Two bullets computing one boundary two ways
   is how the double-count gets back in through the door the bullet above just closed.
+
+**The arithmetic form follows the axis, not the size key.** Where a split's children *share* the
+constrained axis they contend, and the check is a **sum** plus the boundary cost — the three
+bullets above. Where each child receives the parent's **full** extent — a declared-horizontal
+split, for as long as §2.8 is unimplemented — there is no contention and therefore no sum, and the
+check is **per child**: any single child whose own declared fixed size, **or whose own declared
+`minSize`**, exceeds the parent's bound is impossible on its own. Both per-child cases are the same
+contradiction as the first bullet and carry the same code, `fixed-sizes-exceed-parent`. There is no
+boundary cost in the per-child form: each child receives the full extent, so no divider is
+reserved, and adding one would reintroduce exactly the double-count the first bullet's rule closes.
 
 Where the parent is `fill` or `content`, there is no bound to contradict and `--check` says
 nothing. That is not a gap — there is genuinely no width-independent claim to make, and inventing

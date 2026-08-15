@@ -515,9 +515,15 @@ public class SplitFlexTests
         };
 
         // §7/V13(c): CheckSplitBounds and CheckHorizontalSplitChildren are called unchanged for
-        // declared vertical/horizontal — this pins their exact pre-#88 output, including
-        // CheckHorizontalSplitChildren's documented minSize gap (it only checks FixedSize), which
-        // must NOT be "helpfully" fixed as part of this change.
+        // declared vertical/horizontal — this pins their output at 8437c37, so the flex branch
+        // cannot perturb the declared directions.
+        //
+        // The fixture is deliberately FixedSize-only. SPEC-91 added a per-child minSize check to
+        // CheckHorizontalSplitChildren, and this test stays green precisely because no child here
+        // declares one — that is correct scoping, not an oversight. Do not add a minSize-bearing
+        // case: it would test SPEC-91's check rather than this test's subject, which is #88's
+        // non-interference. SPEC-91's own coverage is V1/V2/V3/V5/V7 in ConfigCheckTests.cs and
+        // V6/V6b below.
         var verticalDiagnostics = ConfigChecker.Check(Config("vertical"));
         Assert.Single(verticalDiagnostics);
         Assert.Equal("fixed-sizes-exceed-parent", verticalDiagnostics[0].Code);
@@ -528,5 +534,85 @@ public class SplitFlexTests
         Assert.All(horizontalDiagnostics, d => Assert.Equal("fixed-sizes-exceed-parent", d.Code));
         Assert.Equal("/surface/pane/children/0", horizontalDiagnostics[0].Path);
         Assert.Equal("/surface/pane/children/1", horizontalDiagnostics[1].Path);
+    }
+
+    // ---- SPEC-91: horizontal/flex per-child minSize check (§9.3, §13 V6/V6b) ----
+
+    [Fact]
+    public void V6_FlexChildrenMinSizeOverBound_TheAndNowReports()
+    {
+        // §9.3: #91 closes CheckHorizontalSplitChildren's minSize gap, so `stacked` is no longer
+        // empty for this config and the AND in CheckFlexSplitBounds now fires — a behaviour change
+        // in code #91 does not touch. Must not regress V13(a) in the same run (checked below).
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "flex",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50 },
+                        new() { MinSize = 50 },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal("/surface/pane", diagnostic.Path);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal("fixed-sizes-exceed-parent", diagnostic.Code);
+
+        // V13(a) must still pass in the same run.
+        var v13a = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "flex",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 30 },
+                        new() { MinSize = 30 },
+                    },
+                },
+            },
+        };
+        Assert.Empty(ConfigChecker.Check(v13a));
+    }
+
+    [Fact]
+    public void V6b_FlexCompositeMessage_QuotesMinSizeWording()
+    {
+        var config = new UserConfig
+        {
+            Surface = new SurfaceConfig
+            {
+                Pane = new PaneConfig
+                {
+                    Split = "flex",
+                    MaxSize = 40,
+                    Children = new List<PaneConfig>
+                    {
+                        new() { MinSize = 50 },
+                        new() { MinSize = 50 },
+                    },
+                },
+            },
+        };
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Contains("side by side", diagnostic.Message);
+        Assert.Contains("stacked", diagnostic.Message);
+        Assert.Contains("minSize", diagnostic.Message);
     }
 }
