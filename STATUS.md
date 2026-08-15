@@ -4715,6 +4715,18 @@ Verified via `cdtui-worker`: pre-merge full suites clean for both (1340/1340
 and 1336/1336), post-merge full suite clean (1341/1341), `check-all.sh` clean.
 Landed as `Merge #67: 8c55dee` → `Merge #70/#67a: 473b01b` (pushed).
 
+### #68: ConfigTests.cs env var leak risk — investigated, not real today
+
+Checked whether `ConfigTests.cs`'s process-wide `HOME`/`CLAUDE_TUI_LINE_CONFIG`
+mutation (one test method, `ConfigPathOverride_Unset_FallsBackToHomePath`) could
+race with another concurrently-running xUnit test class, the same shape as #65's
+flake. Confirmed no code change was needed: the mutating method restores both
+vars in a `finally` and is the only ambient-env-reading call site in the entire
+suite — every other test across 10+ files that touches config/cache/telemetry
+resolution passes an explicit path/override instead of relying on ambient
+`HOME`. `ConfigTests.cs` also carries no `[Collection]` attribute, so its own
+methods already run sequentially. No merge — working tree left clean, no diff.
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
