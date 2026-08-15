@@ -214,8 +214,9 @@ By default, adjacent panes draw as two separate boxes with the gutter between th
 
 to make shared edges resolve to a single line both panes touch instead — this is legal **only** at
 `surface.border.collapse`; the same key anywhere else (the top-level `border`, or any pane's own
-`border`) is rejected with `collapse-not-surface-level`. Under `collapse: true`, the divider
-occupies the gutter, so `gutter` must be `>= 1` and defaults to `1` on that split.
+`border`) is rejected with `collapse-not-surface-level`. Under `collapse: true`, the divider always
+occupies exactly one column, regardless of what `gutter` is set to — `gutter`'s value is ignored in
+that mode, not enforced to be `>= 1`.
 
 ### Items
 
