@@ -44,7 +44,7 @@ public sealed class BackupLedger
     /// SPEC-12.6-mcp-tools.md §9.2: the 7-step full entry, ordered so every abortable step comes
     /// before every write step (docs/backup-ledger.md: "a permanent record of a change that never
     /// happened cannot be cleaned up"). <paramref name="configPath"/> must be the same path
-    /// resolved via <c>ConfigLoader.ResolveConfigPath()</c> that the caller is about to write
+    /// resolved via <c>ConfigPath.ResolveConfigPath()</c> that the caller is about to write
     /// (§7.1/§9.2 step 6) — a diverging path here would checkpoint the wrong file.
     /// </summary>
     public CheckpointOutcome WriteCheckpoint(string configPath)

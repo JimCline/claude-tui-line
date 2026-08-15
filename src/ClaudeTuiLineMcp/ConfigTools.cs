@@ -150,7 +150,7 @@ public sealed class ConfigTools
     }
 
     // SPEC-V2-FRAMEWORK.md §12.6.2: an explicit configPath argument overrides resolution outright.
-    // Otherwise mirrors ConfigLoader.ResolveConfigPath()'s search order ($CLAUDE_TUI_LINE_CONFIG,
+    // Otherwise mirrors ConfigPath.ResolveConfigPath()'s search order ($CLAUDE_TUI_LINE_CONFIG,
     // then $HOME/.claude/claude-tui-line.json) so source can report which branch fired — "env",
     // "default", or "none" per §12.6.2; "explicit" is this implementation's extension for the
     // caller-supplied-path case, which §12.6.2's enumeration does not itself cover.
@@ -163,7 +163,7 @@ public sealed class ConfigTools
 
         var envOverride = Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_CONFIG");
         var home = Environment.GetEnvironmentVariable("HOME");
-        var resolved = ClaudeTuiLine.ConfigLoader.ResolveConfigPath(envOverride, home);
+        var resolved = ClaudeTuiLineShared.ConfigPath.ResolveConfigPath(envOverride, home);
 
         if (resolved is null)
         {

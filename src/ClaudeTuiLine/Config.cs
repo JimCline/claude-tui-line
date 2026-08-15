@@ -506,26 +506,6 @@ public static class ConfigLoader
     // SPEC-V2-FRAMEWORK.md §2.8.1: the whole surface's default row budget.
     public const int DefaultSurfaceMaxRows = 8;
 
-    /// <summary>
-    /// SPEC.md §6b "Config path resolution": <paramref name="configPathOverride"/>, when set and
-    /// non-empty, is the config file path. Otherwise <c>$HOME/.claude/claude-tui-line.json</c>
-    /// (or null if <paramref name="home"/> is itself unset/empty).
-    /// </summary>
-    public static string? ResolveConfigPath(string? configPathOverride, string? home)
-    {
-        if (!string.IsNullOrEmpty(configPathOverride))
-        {
-            return configPathOverride;
-        }
-
-        return string.IsNullOrEmpty(home) ? null : Path.Combine(home, ".claude", "claude-tui-line.json");
-    }
-
-    public static string? ResolveConfigPath() =>
-        ResolveConfigPath(
-            Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_CONFIG"),
-            Environment.GetEnvironmentVariable("HOME"));
-
     public const string DefaultEllipsis = "…";
 
     /// <summary>
