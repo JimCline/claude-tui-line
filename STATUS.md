@@ -4898,6 +4898,21 @@ said "a flag") — noted for review, not blocking. Verified via `cdtui-worker`:
 build+full suite (1350/1350, then 1357/1357 combined with #46)+`check-all.sh`
 clean pre- and post-merge. Landed as merge commit (pushed alongside #46).
 
+### #77: clean up 3 stale "no width remained" note-text occurrences
+
+Three note-text references outside §9.8.1's pinned set were stale from #71's
+drop-predicate change: §9.3.4's `migrate.md` quote example (now shows both
+current drop-note forms), §9.6's JSON example (`notes[].message` updated to
+current wording), and §9.8.2's self-referential claim, which needed a rewording
+(not a pure substitution) since the sentence asserted no code could emit
+§9.6's own JSON-example message — a claim that would go live-false once §9.6's
+example was corrected. Reworded to explicitly past tense ("at the time this
+section was written..."). Worktree was rebased onto post-#71/#76 main before
+editing so the branch read current wording, not stale history. Verified via
+`cdtui-worker`: build+full suite (1356/1356, then 1357/1357 post-merge)
++`check-notes.sh`+`check-doc-tokens.sh`+`check-all.sh` clean pre- and
+post-merge. Landed as merge commit `8f4f14e` (pushed).
+
 ## Standing constraints
 
 - Back up anything of the user's before replacing it. The live
