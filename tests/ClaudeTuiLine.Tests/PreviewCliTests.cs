@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace ClaudeTuiLine.Tests;
@@ -10,6 +9,7 @@ namespace ClaudeTuiLine.Tests;
 // RunPreview paths that had no test entry point at all: the config-unreadable exit-3 gate (both
 // --json and bare, both parse-error and missing-file), the bare (non-JSON) render+diagnostics
 // output, and the --columns/COLUMNS/default-100 fallback chain.
+[Collection("PreviewCli")]
 public class PreviewCliTests
 {
     [Fact]
@@ -18,10 +18,10 @@ public class PreviewCliTests
         var configPath = WriteTempConfig("{ this is not valid json");
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--json", "--config", configPath);
 
             Assert.True(exitCode == 3, $"expected exit 3, got {exitCode}. stderr: {stderr}");
-            using var doc = JsonDocument.Parse(stdout);
+            using var doc = PreviewCliRunner.ParseJsonOrFail((exitCode, stdout, stderr));
             var root = doc.RootElement;
 
             Assert.False(root.GetProperty("ok").GetBoolean());
@@ -41,7 +41,7 @@ public class PreviewCliTests
         var configPath = WriteTempConfig("{ this is not valid json");
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--config", configPath);
 
             Assert.True(exitCode == 3, $"expected exit 3, got {exitCode}. stdout: {stdout}");
             Assert.Empty(stdout);
@@ -59,10 +59,10 @@ public class PreviewCliTests
     {
         var configPath = Path.Combine(Path.GetTempPath(), $"preview-cli-missing-{Guid.NewGuid():N}.json");
 
-        var (exitCode, stdout, stderr) = RunCli("--preview", "--json", "--config", configPath);
+        var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--json", "--config", configPath);
 
         Assert.True(exitCode == 3, $"expected exit 3, got {exitCode}. stderr: {stderr}");
-        using var doc = JsonDocument.Parse(stdout);
+        using var doc = PreviewCliRunner.ParseJsonOrFail((exitCode, stdout, stderr));
         var root = doc.RootElement;
 
         Assert.False(root.GetProperty("ok").GetBoolean());
@@ -76,7 +76,7 @@ public class PreviewCliTests
     {
         var configPath = Path.Combine(Path.GetTempPath(), $"preview-cli-missing-{Guid.NewGuid():N}.json");
 
-        var (exitCode, stdout, stderr) = RunCli("--preview", "--config", configPath);
+        var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--config", configPath);
 
         Assert.True(exitCode == 3, $"expected exit 3, got {exitCode}. stdout: {stdout}");
         Assert.Empty(stdout);
@@ -90,7 +90,7 @@ public class PreviewCliTests
         var configPath = WriteTempConfig("{}");
         try
         {
-            var (exitCode, stdout, stderr) = RunCli("--preview", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.Run("--preview", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
             Assert.False(string.IsNullOrWhiteSpace(stdout));
@@ -109,7 +109,7 @@ public class PreviewCliTests
         var configPath = WriteTempConfig("{}");
         try
         {
-            var (exitCode, _, stderr) = RunCli(new Dictionary<string, string?> { ["COLUMNS"] = "45" }, "--preview", "--config", configPath);
+            var (exitCode, _, stderr) = PreviewCliRunner.Run(new Dictionary<string, string?> { ["COLUMNS"] = "45" }, "--preview", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
             Assert.Contains("preview at 45 columns (from COLUMNS)", stderr);
@@ -126,7 +126,7 @@ public class PreviewCliTests
         var configPath = WriteTempConfig("{}");
         try
         {
-            var (exitCode, _, stderr) = RunCli(new Dictionary<string, string?> { ["COLUMNS"] = null }, "--preview", "--config", configPath);
+            var (exitCode, _, stderr) = PreviewCliRunner.Run(new Dictionary<string, string?> { ["COLUMNS"] = null }, "--preview", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
             Assert.Contains("preview at 100 columns (from the default of 100)", stderr);
@@ -137,8 +137,8 @@ public class PreviewCliTests
         }
     }
 
-    // §9.3: real stdin, not the synthetic fixture — RunCli above always closes stdin immediately,
-    // so it can only ever exercise the usedSynthetic branch. ParseInput/StatusInput (Program.cs)
+    // §9.3: real stdin, not the synthetic fixture — PreviewCliRunner.Run above always closes stdin
+    // immediately, so it can only ever exercise the usedSynthetic branch. ParseInput/StatusInput (Program.cs)
     // had no test entry point at all before this.
     [Fact]
     public void Preview_RealStdinJson_IsParsedAndDrivesRendering()
@@ -151,7 +151,7 @@ public class PreviewCliTests
         try
         {
             var stdin = """{ "model": { "display_name": "Test-Model-XYZ" } }""";
-            var (exitCode, stdout, stderr) = RunCliWithStdin(stdin, "--preview", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.RunWithStdin(stdin, "--preview", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
             Assert.Contains("Test-Model-XYZ", stdout);
@@ -176,7 +176,7 @@ public class PreviewCliTests
         """);
         try
         {
-            var (exitCode, stdout, stderr) = RunCliWithStdin("{ this is not valid json", "--preview", "--columns", "60", "--config", configPath);
+            var (exitCode, stdout, stderr) = PreviewCliRunner.RunWithStdin("{ this is not valid json", "--preview", "--columns", "60", "--config", configPath);
 
             Assert.True(exitCode == 0, $"expected exit 0, got {exitCode}. stderr: {stderr}");
             Assert.DoesNotContain("no stdin given", stderr);
@@ -195,136 +195,4 @@ public class PreviewCliTests
         return path;
     }
 
-    static (int ExitCode, string StdOut, string StdErr) RunCli(params string[] cliArgs) => RunCli(null, cliArgs);
-
-    static (int ExitCode, string StdOut, string StdErr) RunCli(IReadOnlyDictionary<string, string?>? envOverrides, params string[] cliArgs)
-    {
-        var bin = Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_BIN");
-        ProcessStartInfo psi;
-        if (!string.IsNullOrWhiteSpace(bin) && File.Exists(bin))
-        {
-            psi = new ProcessStartInfo(bin)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-            };
-        }
-        else
-        {
-            var repoRoot = FindRepoRoot();
-            var csproj = Path.Combine(repoRoot, "src", "ClaudeTuiLine", "ClaudeTuiLine.csproj");
-            psi = new ProcessStartInfo("dotnet")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-            };
-            psi.ArgumentList.Add("run");
-            psi.ArgumentList.Add("--project");
-            psi.ArgumentList.Add(csproj);
-            psi.ArgumentList.Add("-c");
-            psi.ArgumentList.Add("Release");
-            psi.ArgumentList.Add("-v");
-            psi.ArgumentList.Add("quiet");
-            psi.ArgumentList.Add("--");
-        }
-
-        foreach (var arg in cliArgs)
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        // Tests must not inherit whatever COLUMNS happens to be set in the host shell — the
-        // fallback-chain tests below need deterministic control over whether it's present at all.
-        psi.Environment.Remove("COLUMNS");
-        if (envOverrides is not null)
-        {
-            foreach (var (key, value) in envOverrides)
-            {
-                if (value is null)
-                {
-                    psi.Environment.Remove(key);
-                }
-                else
-                {
-                    psi.Environment[key] = value;
-                }
-            }
-        }
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException("failed to start claude-tui-line process");
-        process.StandardInput.Close();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, stdout, stderr);
-    }
-
-    // Same process-launch structure as RunCli above, but writes real JSON to the child's stdin
-    // instead of closing it immediately — RunCli can only ever exercise RunPreview's usedSynthetic
-    // branch, since a closed/empty stdin is indistinguishable from "no stdin given".
-    static (int ExitCode, string StdOut, string StdErr) RunCliWithStdin(string stdin, params string[] cliArgs)
-    {
-        var bin = Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_BIN");
-        ProcessStartInfo psi;
-        if (!string.IsNullOrWhiteSpace(bin) && File.Exists(bin))
-        {
-            psi = new ProcessStartInfo(bin)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-            };
-        }
-        else
-        {
-            var repoRoot = FindRepoRoot();
-            var csproj = Path.Combine(repoRoot, "src", "ClaudeTuiLine", "ClaudeTuiLine.csproj");
-            psi = new ProcessStartInfo("dotnet")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                UseShellExecute = false,
-            };
-            psi.ArgumentList.Add("run");
-            psi.ArgumentList.Add("--project");
-            psi.ArgumentList.Add(csproj);
-            psi.ArgumentList.Add("-c");
-            psi.ArgumentList.Add("Release");
-            psi.ArgumentList.Add("-v");
-            psi.ArgumentList.Add("quiet");
-            psi.ArgumentList.Add("--");
-        }
-
-        foreach (var arg in cliArgs)
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        psi.Environment.Remove("COLUMNS");
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException("failed to start claude-tui-line process");
-        process.StandardInput.Write(stdin);
-        process.StandardInput.Close();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, stdout, stderr);
-    }
-
-    static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "SPEC-V2-FRAMEWORK.md")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException($"could not locate repo root (SPEC-V2-FRAMEWORK.md not found above {AppContext.BaseDirectory})");
-    }
 }
