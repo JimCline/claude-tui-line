@@ -1,7 +1,10 @@
 # #87 §12 report — compound map threading + verification tests
 
-Worktree: `claude-tui-line-task-87-compound`, branch `task-87-compound`.
-Commit: `a7eb859` (§12 work; parent `56c23f7` = holes #1b/#4, already committed).
+Worktree: `claude-tui-line-task-87-compound`, branch `task-87-compound`, rebased
+onto main (`6b67c1a`).
+Commits: `8211d54` (§12 threading), `0d04f55` (SPEC-V2-FRAMEWORK.md /
+SPEC-85-ADDENDUM doc edits, §8's files-to-touch table), `f5159a2` (fix
+SplitFlexTests.cs stale call sites surfaced by the rebase).
 
 ## §12.7.1 code-review confirmation (explicit ask)
 
@@ -68,14 +71,46 @@ spec) rather than a structural-impossibility note. This is an observation,
 not a defect against #87's scope — flagging in case the Architect wants a
 future diagnostic for author-facing id collisions.
 
+## §8 doc edits (SPEC-V2-FRAMEWORK.md, SPEC-85-ADDENDUM-spans-threading.md)
+
+- SPEC-V2-FRAMEWORK.md §9.6.1: registry rows added for `part-compound-source`
+  (error) and `color-from-compound-source` (warning) — both were introduced
+  in code at `56c23f7` but never registered.
+- SPEC-V2-FRAMEWORK.md §3.3:~2680: note that a part's `item` may not name a
+  compound (`part-compound-source`).
+- SPEC-V2-FRAMEWORK.md §3.3:~2732-2733: note extending part-colour authority
+  over a selecting item's `color`, per SPEC-87's colour-floor ruling.
+- SPEC-85-ADDENDUM-spans-threading.md §12.8.5: marked resolved for holes #1
+  (`ItemSelector`) and #3 (`LinkPlaceholder`); hole #4 (`ColorFrom`) resolves
+  to warning-and-fallback, not real resolution; hole #2 (`ArgvPlaceholder`,
+  `placeholder-compound-source`) remains explicitly open/unimplemented.
+- SPEC-85-ADDENDUM `:556` amendment per SPEC-87's incidental finding (§11):
+  `ColorFrom`'s severity was not actually open-ended — the
+  severity-follows-the-form precedent already existed.
+- Ran `tools/check-citations.sh` before and after: pre-existing failures
+  unchanged in kind/count (only line-number shifts from the insertions); my
+  new cross-document references avoid bare `§N.N` citations that could
+  collide with local headings (fixed one such collision — `§12.9` inside
+  SPEC-V2-FRAMEWORK.md — before committing).
+
+## Rebase
+
+Rebased onto main (`6b67c1a`, includes #91 and #47 since this branch's
+`56c23f7` parent). Rebase itself was conflict-free. The rebase pulled in
+`tests/ClaudeTuiLine.Tests/SplitFlexTests.cs` (new since #88/#91), whose
+`SizeResolver.Resolve`/`PaneTreeRenderer.Render` call sites predated #87 and
+needed the same mechanical `compounds` threading as the original 21-file
+fixup — 15 sites, fixed in `f5159a2`.
+
 ## Verification (smoke-test scope + full suite, both clean)
 
 - `dotnet build src/ClaudeTuiLine/ClaudeTuiLine.csproj`: exit 0.
-- New-tests-only filtered run (subagent): 14/14 passed.
-- Full suite (`dotnet test tests/ClaudeTuiLine.Tests/...`): exit 0,
-  **1462/1462 passed**, 0 failed, 0 skipped. (Ran the full suite myself as a
-  final check even though full-suite verification is cdtui-worker's job, not
-  mine — reporting it here since it's already clean and free.)
+- New-tests-only filtered run (subagent, pre-rebase): 14/14 passed.
+- Full suite, post-rebase (`dotnet test tests/ClaudeTuiLine.Tests/...`):
+  exit 0, **1498/1498 passed**, 0 failed, 0 skipped. (Ran the full suite
+  myself as a final check even though full-suite verification is
+  cdtui-worker's job, not mine — reporting it here since it's already clean
+  and free.)
 
 ## §12.9 colour precedence — final, not provisional
 
