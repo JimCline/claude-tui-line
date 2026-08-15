@@ -1168,9 +1168,37 @@ the whole value of the diagnostic, because an author who wrote `distribute` on a
 has the axis convention backwards, and telling them only that the key is ignored leaves them to
 re-derive which way round it goes.
 
-The same code covers `items` on a pane that also declares `children`, `children` on a leaf,
-`gutter` on a horizontal split, and whatever the next one is. It is a predicate — *is this key read
-on this node?* — not a list, per §9.4.1's argument about enumerations.
+The same code covers every key that meets that predicate — *is this key read on this node, given
+the shape the node actually has once it is normalized?* It is a predicate, not a list, per §9.4.1's
+argument about enumerations, so what follows is a census of what satisfies it today, not a closed
+set that a new case has to be added to:
+
+- `distribute` on a horizontal split — the policy divides extent among side-by-side children, and a
+  horizontal split has no such extent to divide.
+- `gutter` on a horizontal split — blank cells between siblings in a vertical split, so there is
+  nothing between horizontally-stacked children for it to insert.
+- `items` on a pane that also declares a non-empty `children` — only a leaf pane's items are
+  resolved, so the list is never read.
+- `children` present but empty — a pane is a split only when its children list has at least one
+  entry, so an empty list leaves a leaf behind and the key does nothing.
+- `split` declared `vertical` or `horizontal` on a pane with no children — a childless pane
+  normalizes to a leaf whatever axis it names, so the declared axis is inert. This fires
+  independently of the empty-`children` case above: a pane that declares both gets both warnings,
+  because one condition is one diagnostic and neither repair implies the other.
+
+That census grows without a spec amendment. What is fixed is the predicate and the message
+convention stated above.
+
+**This predicate does not swallow `leaf-only-key-on-split` (§2.6) or `border-inside-on-leaf`
+(§2.10.1), and they are not folded into it.** All three share a frame — a key that does not suit the
+shape the pane actually has — but §9.6.1's codes are what a consumer of `--check --json` branches
+on, and the frame is not the unit it branches on. `border-inside-on-leaf` is not an inert key at
+all: `"inside"` on a leaf *is* read, and it resolves that leaf's border to none, so the repair is
+choosing a different value rather than deleting the key. `leaf-only-key-on-split` is genuinely inert
+the way this section's cases are, but it ships as its own code with its own message naming
+`overflow` and `ellipsis` and the fact that they do not inherit; §9.6 fixes a shipped code's meaning
+permanently, so folding it in here would change the code an existing config already emits. One class
+of mistake, three shapes, three codes — deliberately.
 
 **`gutter` is not extended to mean blank rows on a horizontal split**, which is the symmetric
 reading and the tempting fix. A gutter row is a permanent terminal row spent on nothing, at
@@ -5337,7 +5365,7 @@ condition would otherwise carry two severities in two constructs, it is two code
 | `placeholder-env-collision` | two ids mangling to one `CLAUDE_TUI_LINE_VAL_<ID>` under `shell: true` | error | 4.2 |
 | `placeholder-self-reference` | bare `{}` in a `command` item's argv — an item asking for its own not-yet-produced output | error | 4.2.1 |
 | `unknown-key` | a key no config object defines, silently dropped by the deserializer; message names the nearest known key | warning | 9.4.2 |
-| `key-not-applicable` | a known key with a legal value on a node that never reads it — `distribute` or `gutter` on a horizontal split, `items` alongside `children`; message says where the key *does* apply | warning | 2.3.2 |
+| `key-not-applicable` | a known key with a legal value on a node that never reads it — `distribute` or `gutter` on a horizontal split, `items` alongside a non-empty `children`, an empty `children` list, or an explicit `split` on a childless pane; message says where the key *does* apply. A predicate, not a closed list (§2.3.2) | warning | 2.3.2 |
 | `part-source-count` | a compound part with zero, or more than one, source | error | 3.3 |
 | `part-forbidden-key` | a compound part carrying `parts` or `link` | error | 3.3 |
 | `fixed-sizes-exceed-parent` | declared fixed sizes cannot fit the parent at any width | error | 9.8 |
