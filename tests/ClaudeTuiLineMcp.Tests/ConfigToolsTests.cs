@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ClaudeTuiLineMcp;
@@ -119,5 +121,57 @@ public sealed class ConfigToolsTests : IDisposable
 
         Assert.False(result.GetProperty("ok").GetBoolean());
         Assert.Equal(originalBytes, File.ReadAllBytes(_configPath));
+    }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §12.6.12 rule 2: nothing loads commands/edit.md when a model calls
+    /// set_config directly, so the tool description is the only place the compare-and-branch
+    /// rule can live for this layer.
+    /// </summary>
+    [Fact]
+    public void SetConfig_ToolDescriptionStatesTheCompareAndBranchRule()
+    {
+        var method = typeof(ConfigTools).GetMethod(nameof(ConfigTools.SetConfig))!;
+        var description = method.GetCustomAttribute<DescriptionAttribute>()!.Description;
+
+        Assert.Contains("stale", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("re-derive", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("do not", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("resend the original config", description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// SPEC-V2-FRAMEWORK.md §12.6.12 rule 1 + §12.6.11 rule 3: the stale-revision payload is
+    /// what makes the retry correct rather than merely repeatable. This proves the round trip
+    /// the payload is supposed to enable — take the current config it hands back, re-derive a
+    /// new candidate against it (not against the caller's original stale intent), and resubmit
+    /// with the fresh revision — succeeds cleanly and preserves the intervening write's content.
+    /// </summary>
+    [Fact]
+    public async Task SetConfig_FollowingTheStaleRevisionPayloadToReDeriveSucceedsAndPreservesTheInterveningWrite()
+    {
+        File.WriteAllText(_configPath, """{"border":{"style":"rounded"}}""");
+        var staleRevision = ConfigFile.ComputeRevision(File.ReadAllBytes(_configPath));
+
+        // Someone else changes the file after the caller's stale read.
+        File.WriteAllText(_configPath, """{"border":{"style":"double"},"padding":{"top":1}}""");
+
+        var staleCandidate = JsonNode.Parse("""{"border":{"style":"heavy"}}""")!;
+        var refusal = AsJson(await ConfigTools.SetConfig(_ledger, staleCandidate, _configPath, staleRevision));
+        Assert.Equal("stale-revision", refusal.GetProperty("code").GetString());
+
+        // Re-derive against the payload's current config rather than resubmitting the caller's
+        // original stale intent: keep the intervening write's padding, apply the caller's border
+        // change on top of it.
+        var currentConfig = JsonNode.Parse(refusal.GetProperty("config").GetRawText())!.AsObject();
+        currentConfig["border"] = JsonNode.Parse("""{"style":"heavy"}""");
+        var freshRevision = refusal.GetProperty("revision").GetString();
+
+        var retry = AsJson(await ConfigTools.SetConfig(_ledger, currentConfig, _configPath, freshRevision));
+
+        Assert.True(retry.GetProperty("ok").GetBoolean());
+        var written = JsonNode.Parse(File.ReadAllBytes(_configPath))!.AsObject();
+        Assert.Equal("heavy", written["border"]!["style"]!.GetValue<string>());
+        Assert.Equal(1, written["padding"]!["top"]!.GetValue<int>());
     }
 }
