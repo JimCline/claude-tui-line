@@ -10,6 +10,12 @@ namespace ClaudeTuiLine;
 /// </summary>
 public static class PaneAssembler
 {
+    // SPEC-2.6-vertical-marker-splice.md §9.2.1: one PaneRenderer.RenderLeaf invocation's
+    // contribution to the pane's row list. Segments is the exact list handed to RenderLeaf,
+    // retained so ApplyRowBudget can re-invoke it with a row budget without re-deriving its
+    // input — the provenance SPEC-3.1 §6 requires.
+    private readonly record struct RenderUnit(IReadOnlyList<Segment> Segments, IReadOnlyList<PaneRow> Rows);
+
     public static IReadOnlyList<PaneRow> RenderLeafRows(
         Pane pane,
         int innerWidth,
@@ -23,60 +29,82 @@ public static class PaneAssembler
         // §2.8.1/§2.8.2 addendum: a pane the ladder emptied (rung 3 took its last item) renders
         // zero content rows, not the "author declared nothing" default-segments fallback — the two
         // look identical on Items.Count alone, so the caller passes itemsEmptied to tell them apart.
-        var rawRows = pane.Items.Count == 0
-            ? (itemsEmptied ? Array.Empty<PaneRow>() : RenderDefaultRows(pane, innerWidth, ctx, notes))
+        var units = pane.Items.Count == 0
+            ? (itemsEmptied ? Array.Empty<RenderUnit>() : RenderDefaultRows(pane, innerWidth, ctx, notes))
             : RenderItemRows(pane, innerWidth, ctx, values, tokens, notes);
 
-        if (maxContentRows is int cap && rawRows.Count > cap)
-        {
-            rawRows = ClipRows(rawRows, cap, pane.Ellipsis, innerWidth);
-        }
+        var rawRows = ApplyRowBudget(units, maxContentRows, pane, innerWidth, notes);
 
         return rawRows.Select(row => AlignRow(row, innerWidth, pane.Align)).ToList();
     }
 
-    // §2.8.1 rung 4 / §2.8.2 / §2.6: drops rows past cap, replacing the last survivor with a plain
-    // ellipsis marker row. A full-row replacement rather than a partial trailing-cell splice like
-    // PaneRenderer's width-axis TruncateSegment, because row-axis clipping runs after rows are
-    // already composed into opaque PaneRow markup, with no markup-safe splice point at this layer.
-    //
-    // §2.6: the marker is budgeted against innerWidth exactly as it is on the horizontal axis —
-    // an empty ellipsis, or one that does not fit within innerWidth, is a hard clip spending no
-    // cell/row on the marker, so all cap rows are kept as real content instead of cap-1 plus a
-    // marker-only row.
-    private static IReadOnlyList<PaneRow> ClipRows(IReadOnlyList<PaneRow> rows, int cap, string ellipsis, int innerWidth)
+    // SPEC-2.6-vertical-marker-splice.md §9.2.2: the single place `units` is flattened. With no
+    // budget, or with content that already fits, this is a plain concatenation — the
+    // overwhelmingly common path, byte-identical to before. Only when `units`' rows exceed `cap`
+    // does the owning unit (the one whose rows straddle the boundary) get re-invoked with a row
+    // budget so the marker splices while its content is still Segments inside RowLayout.Wrap.
+    private static IReadOnlyList<PaneRow> ApplyRowBudget(
+        IReadOnlyList<RenderUnit> units, int? maxContentRows, Pane pane, int innerWidth, RenderNoteCollector notes)
     {
+        if (maxContentRows is not int cap)
+        {
+            return units.SelectMany(u => u.Rows).ToList();
+        }
+
         if (cap <= 0)
         {
             return Array.Empty<PaneRow>();
         }
 
-        if (ellipsis.Length == 0 || ellipsis.Length >= innerWidth)
+        var total = units.Sum(u => u.Rows.Count);
+        if (total <= cap)
         {
-            return rows.Take(cap).ToList();
+            return units.SelectMany(u => u.Rows).ToList();
         }
 
-        var kept = rows.Take(cap - 1).ToList();
-        var escaped = Spectre.Console.Markup.Escape(ellipsis);
-        kept.Add(new PaneRow(escaped, ellipsis.Length));
+        var kept = new List<PaneRow>();
+        var seen = 0;
+        var k = -1;
+        for (var idx = 0; idx < units.Count; idx++)
+        {
+            var nextSeen = seen + units[idx].Rows.Count;
+            if (nextSeen >= cap && units[idx].Rows.Count >= 1)
+            {
+                k = idx;
+                break;
+            }
+
+            kept.AddRange(units[idx].Rows);
+            seen = nextSeen;
+        }
+
+        // total > cap and cap >= 1 guarantee a straddling unit is always found.
+        var budget = cap - seen;
+        var reNoted = new RenderNoteCollector();
+        var overflow = ResolveOverflow(pane);
+        var owner = PaneRenderer.RenderLeaf(
+            units[k].Segments, innerWidth, overflow, pane.Ellipsis, reNoted,
+            allowFallback: false, rowBudget: budget, markerRequired: true);
+        kept.AddRange(owner.Rows);
         return kept;
     }
 
-    private static IReadOnlyList<PaneRow> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx, RenderNoteCollector notes)
+    private static IReadOnlyList<RenderUnit> RenderDefaultRows(Pane pane, int innerWidth, ItemContext ctx, RenderNoteCollector notes)
     {
         var segments = SegmentBuilder.Build(ctx);
         var overflow = ResolveOverflow(pane);
         var buffer = PaneRenderer.RenderLeaf(segments, innerWidth, overflow, pane.Ellipsis, notes, allowFallback: false);
-        return buffer.Rows;
+        return new[] { new RenderUnit(segments, buffer.Rows) };
     }
 
     // SPEC-3.1-block-model.md §3: a block is an item whose resolved display text splits (per
     // SplitBlockLines) into more than one line. A block interrupts the current packed group and
     // renders its own lines as their own rows instead of joining the group — D4/D6 rule out any
-    // separator or blank row on either side of it, so this is a straight append into `rows` (the
-    // single concatenation site both packed-group flushes and block lines feed) rather than a
-    // FlushGroup call, which would risk emitting an empty-group row for an empty group.
-    private static IReadOnlyList<PaneRow> RenderItemRows(
+    // separator or blank row on either side of it, so this is a straight append into `units` (the
+    // single concatenation site both packed-group flushes and block lines feed, per SPEC-3.1 §6)
+    // rather than a FlushGroup call, which would risk emitting an empty-group unit for an empty
+    // group.
+    private static IReadOnlyList<RenderUnit> RenderItemRows(
         Pane pane,
         int innerWidth,
         ItemContext ctx,
@@ -85,7 +113,7 @@ public static class PaneAssembler
         RenderNoteCollector notes)
     {
         var overflow = ResolveOverflow(pane);
-        var rows = new List<PaneRow>();
+        var units = new List<RenderUnit>();
         var packedGroup = new List<Segment>();
 
         void FlushGroup()
@@ -96,7 +124,7 @@ public static class PaneAssembler
             }
 
             var buffer = PaneRenderer.RenderLeaf(packedGroup, innerWidth, overflow, pane.Ellipsis, notes, allowFallback: false);
-            rows.AddRange(buffer.Rows);
+            units.Add(new RenderUnit(packedGroup.ToArray(), buffer.Rows));
             packedGroup.Clear();
         }
 
@@ -118,7 +146,7 @@ public static class PaneAssembler
                 {
                     var lineSegment = SegmentBuilder.BuildItemSegment(line, color);
                     var lineBuffer = PaneRenderer.RenderLeaf(new[] { lineSegment }, innerWidth, overflow, pane.Ellipsis, notes, allowFallback: false);
-                    rows.AddRange(lineBuffer.Rows);
+                    units.Add(new RenderUnit(new[] { lineSegment }, lineBuffer.Rows));
                 }
 
                 continue;
@@ -135,7 +163,7 @@ public static class PaneAssembler
         }
 
         FlushGroup();
-        return rows;
+        return units;
     }
 
     // SPEC-3.1-block-model.md §3 rule D2: strip exactly one trailing newline (and a \r

@@ -19,6 +19,12 @@ public class HeightLadderTests
 
     private static string Filler(int length) => new('X', length);
 
+    // Block-line segments (SegmentBuilder.BuildItemSegment's 2-arg overload) always carry a
+    // trailing raw SGR-reset marker regardless of color — see SegmentBuilder.cs's own doc
+    // comment — so any test comparing a block row's Markup verbatim must strip tags/ANSI first,
+    // same as PaneAssemblerBlockTests.cs's convention.
+    private static string Stripped(string markup) => AnsiStrip.Strip(Spectre.Console.Markup.Remove(markup));
+
     private static PaneItem Item(string id) => new(null, null, null, null, Id: id);
 
     private static Pane Leaf(PaneBorder border, OverflowMode? overflow, IReadOnlyList<PaneItem> items, int? maxRows = null) =>
@@ -50,8 +56,11 @@ public class HeightLadderTests
 
     // ---- PaneAssembler.RenderLeafRows: maxContentRows clip + ellipsis marker (§2.8.1 rung 4 / §2.8.2) ----
 
+    // SPEC-2.6-vertical-marker-splice.md §1/§9.3: the marker is a trailing cell-splice onto the
+    // last surviving row's own content, never a full-row replacement — so the capped row keeps
+    // whatever of its content still fits ahead of the marker rather than being blanked to just "…".
     [Fact]
-    public void RenderLeafRows_MaxContentRowsClips_ReplacesLastRowWithEllipsis()
+    public void RenderLeafRows_MaxContentRowsClips_SplicesEllipsisOntoLastRowsContent()
     {
         var items = Enumerable.Range(0, 5).Select(i => Item($"i{i}")).ToList();
         var values = items.ToDictionary(i => i.Id!, i => (string?)Filler(20));
@@ -60,7 +69,103 @@ public class HeightLadderTests
         var rows = PaneAssembler.RenderLeafRows(pane, 10, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 3);
 
         Assert.Equal(3, rows.Count);
-        Assert.Equal("…", rows[2].Markup.TrimEnd());
+        Assert.NotEqual("…", rows[2].Markup.TrimEnd());
+        Assert.EndsWith("…", rows[2].Markup.TrimEnd());
+        Assert.Equal(10, rows[2].Width);
+    }
+
+    // SPEC-2.6-vertical-marker-splice.md §7 test 1: cap:1 with overflowing content and a
+    // comfortable innerWidth renders ONE row of real content ending in the marker — not the
+    // marker alone. This is the headline behaviour change from the full-row-replacement approach.
+    [Fact]
+    public void RenderLeafRows_CapOne_RendersRealContentEndingInMarker()
+    {
+        var items = Enumerable.Range(0, 5).Select(i => Item($"i{i}")).ToList();
+        var values = items.ToDictionary(i => i.Id!, i => (string?)Filler(20));
+        var pane = Leaf(NoBorder, OverflowMode.Truncate, items);
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 1);
+
+        Assert.Single(rows);
+        Assert.Contains('X', rows[0].Markup);
+        Assert.EndsWith("…", rows[0].Markup.TrimEnd());
+    }
+
+    // SPEC-2.6-vertical-marker-splice.md §7 test 7 / §2.4 shearing invariant: no produced row may
+    // exceed innerWidth, including the spliced row.
+    [Fact]
+    public void RenderLeafRows_SplicedRow_NeverExceedsInnerWidth()
+    {
+        var items = Enumerable.Range(0, 5).Select(i => Item($"i{i}")).ToList();
+        var values = items.ToDictionary(i => i.Id!, i => (string?)Filler(20));
+        var pane = Leaf(NoBorder, OverflowMode.Truncate, items);
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 3);
+
+        Assert.All(rows, r => Assert.True(r.Width <= 10));
+    }
+
+    // SPEC-2.6-vertical-marker-splice.md §9.7 test 9: the markerRequired boundary case. Two units
+    // whose row counts sum to exactly cap, followed by a third unit with at least one row — the
+    // owning (second) unit must still carry the marker even though nothing of its own overflowed.
+    // Two single-line items (each their own RenderItemRows unit, since blocks are their own
+    // units) plus a third packed item drive this without depending on block-model wiring.
+    [Fact]
+    public void RenderLeafRows_MarkerRequiredBoundary_LastKeptUnitCarriesMarkerEvenThoughItFit()
+    {
+        var items = new[] { Item("a"), Item("b"), Item("c") };
+        var values = new Dictionary<string, string?>
+        {
+            ["a"] = "line-a\n\nrest-a",
+            ["b"] = "line-b\n\nrest-b",
+            ["c"] = Filler(20),
+        };
+        var pane = Leaf(NoBorder, OverflowMode.Truncate, items);
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 6);
+
+        Assert.Equal(6, rows.Count);
+        Assert.EndsWith("…", rows[5].Markup.TrimEnd());
+        Assert.DoesNotContain(rows, r => r.Markup.Contains('X'));
+
+        // Negative control: drop the third unit so total == cap exactly — no marker anywhere.
+        var itemsNoThird = new[] { Item("a"), Item("b") };
+        var valuesNoThird = new Dictionary<string, string?>
+        {
+            ["a"] = "line-a\n\nrest-a",
+            ["b"] = "line-b\n\nrest-b",
+        };
+        var paneNoThird = Leaf(NoBorder, OverflowMode.Truncate, itemsNoThird);
+        var rowsNoThird = PaneAssembler.RenderLeafRows(paneNoThird, 10, Ctx, valuesNoThird, Tokens, new RenderNoteCollector(), maxContentRows: 6);
+
+        Assert.Equal(6, rowsNoThird.Count);
+        Assert.All(rowsNoThird, r => Assert.NotEqual("…", r.Markup.TrimEnd()));
+        Assert.All(rowsNoThird, r => Assert.False(r.Markup.TrimEnd().EndsWith('…')));
+    }
+
+    // SPEC-2.6-vertical-marker-splice.md §7 test 6: alignment interaction. The spliced row's own
+    // Width can be narrower than innerWidth (the marker doesn't necessarily fill the row) —
+    // AlignRow's padding must still apply to that shorter width, on the correct side for the
+    // pane's declared Align, not just to the (unreachable) full-width case.
+    [Fact]
+    public void RenderLeafRows_SplicedRow_StillHonorsRightAlign_PaddingOnTheCorrectSide()
+    {
+        var items = new[] { Item("a"), Item("b") };
+        var values = new Dictionary<string, string?>
+        {
+            ["a"] = "line-a\n\nrest-a", // block: "line-a", "" (blank), "rest-a" — one unit per line
+            ["b"] = Filler(20), // forces a 4th unit that must be dropped entirely by the cap
+        };
+        var pane = Leaf(NoBorder, OverflowMode.Truncate, items) with { Align = PaneAlign.Right };
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 10, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 3);
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal("    line-a", Stripped(rows[0].Markup)); // 4-space left pad, Right align
+        Assert.Equal(new string(' ', 10), Stripped(rows[1].Markup)); // blank interior row, fully padded
+        Assert.Equal("   rest-a…", Stripped(rows[2].Markup)); // spliced row (width 7) left-padded to 10
+        Assert.Equal(10, rows[2].Width);
+        Assert.DoesNotContain('X', rows[2].Markup);
     }
 
     [Fact]

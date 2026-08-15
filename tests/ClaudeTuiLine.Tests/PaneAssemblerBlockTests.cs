@@ -176,15 +176,32 @@ public class PaneAssemblerBlockTests
     }
 
     // --- 10: structural note for #27 — the single concatenation site. ---
-    // PaneAssembler.cs's RenderItemRows populates its `rows` list at exactly two call sites:
-    // FlushGroup's `rows.AddRange(buffer.Rows)` and the block-line loop's
-    // `rows.AddRange(lineBuffer.Rows)`. Both feed the same ordered List<PaneRow>, so #27's marker
-    // splice has exactly one list to attach to, not several scattered accumulators. No runtime
-    // assertion is possible for a structural fact about call sites; this test exists as the
-    // recorded pointer alongside the other nine.
+    // PaneAssembler.cs's RenderItemRows populates its `units` list at exactly two call sites:
+    // FlushGroup's `units.Add(new RenderUnit(...))` and the block-line loop's
+    // `units.Add(new RenderUnit(...))`. Both feed the same ordered List<RenderUnit>, which
+    // ApplyRowBudget (SPEC-2.6-vertical-marker-splice.md §9.2) flattens at the single site the
+    // marker splice attaches to. No runtime assertion is possible for a structural fact about
+    // call sites; this test exists as the recorded pointer alongside the other nine.
     [Fact]
     public void SingleConcatenationSite_IsDocumentedForFutureMarkerSplice()
     {
-        Assert.True(true, "PaneAssembler.RenderItemRows's `rows` list is the single concatenation site (see FlushGroup and the block-line loop).");
+        Assert.True(true, "PaneAssembler.RenderItemRows's `units` list is the single concatenation site (see FlushGroup and the block-line loop), flattened by ApplyRowBudget.");
+    }
+
+    // --- 11: SPEC-2.6-vertical-marker-splice.md §7 test 8 — a multi-row block's last surviving
+    // row still carries the marker when the cap lands inside the block, and content past the cap
+    // (including the rest of the block) is dropped entirely rather than emitting a bare "…" row. ---
+    [Fact]
+    public void MultiLineBlock_ClippedMidBlock_LastSurvivingLineCarriesMarker()
+    {
+        var pane = Leaf(OverflowMode.Truncate, new[] { Item("block") });
+        var values = new Dictionary<string, string?> { ["block"] = "line1\nline2\nline3" };
+
+        var rows = PaneAssembler.RenderLeafRows(pane, 80, Ctx, values, Tokens, new RenderNoteCollector(), maxContentRows: 2);
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("line1", Stripped(rows[0].Markup).TrimEnd());
+        Assert.Equal("line2…", Stripped(rows[1].Markup).TrimEnd());
+        Assert.DoesNotContain(rows, r => Stripped(r.Markup).Contains("line3"));
     }
 }
