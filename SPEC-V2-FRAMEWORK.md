@@ -4502,12 +4502,13 @@ and the boolean goes away instead of becoming permanent. Until then, `stampWidth
 synthetic-input admission and the columns-resolution line — are content-pinned only, and their
 wording stays the implementation's, because they are addressed to a person reading a terminal.
 Render notes are different: `migrate.md` teaches an LLM to tell a width drop from a `maxLines` cap
-by quoting `pane N dropped: no width remained at C columns` and `item 'X' emitted N lines; M kept
-(maxLines)` verbatim. A quoted string in a prompt is an interface, whether or not anyone declared
-it one.
+by quoting `pane N dropped: children need S columns at C columns` (or, when the drop is a floor
+violation instead of an over-allocation, `pane N dropped: G columns is under its F-column floor at
+C columns`) and `item 'X' emitted N lines; M kept (maxLines)` verbatim. A quoted string in a prompt
+is an interface, whether or not anyone declared it one.
 
 So **every note the collector can emit has its text pinned in §9.8.1's list**, including the ones
-nothing quotes yet — `segment truncated: no width remained at N columns` among them. The rule is not
+nothing quotes yet — `segment truncated to fit N columns` among them. The rule is not
 that quoted notes are pinned; it is that an unpinned note *will* be quoted, by whoever writes the
 next prompt, and will then drift with nothing failing. This is §1's one-implementation rule applied
 to a string: the note text has one home, and prompts cite it rather than each carrying a copy.
@@ -5289,7 +5290,7 @@ fraction of the cost. Recorded so the choice is a decision rather than a drift.
 ```json
 { "columns": 112, "usableColumns": 109,
   "rows": [ { "text": "…", "width": 109 } ],
-  "notes": [ { "message": "pane 2 dropped: no width remained at 109 columns" } ] }
+  "notes": [ { "message": "pane 2 dropped: children need 120 columns at 109 columns" } ] }
 ```
 
 `--preview --json` returns each row's text **and** its measured width — a model parsing rows should
@@ -6028,9 +6029,9 @@ then illustrated the channel with two cases, and **neither of them can produce a
   to be capped and nothing to say about it. §4.0.1 settles what it will be when built, and rules
   that it never fires unasked — which is what keeps this note rare rather than routine.
 - Pane-dropping and segment truncation *do* happen — `SizeResolver.AllocateWithDrop` drops panes
-  that no width remained for, `PaneRenderer` truncates segments — and both are **silent**. No
-  signal reaches any caller. The `"pane 2 dropped: no width remained at 109 columns"` in §9.6's own
-  JSON example has no code that could emit it.
+  below their floor or over budget, `PaneRenderer` truncates segments — and at the time this section
+  was written, both were **silent**: no signal reached any caller, and no code could emit the
+  pane-drop message §9.6's own JSON example showed.
 
 **So `--preview` must not ship with `notes[]` stubbed to empty.** An always-empty array is not a
 partial implementation of this channel, it is the channel's failure mode with a success message on
