@@ -712,10 +712,18 @@ public class SplitFlexTests
 
     // §8.1: Jim's shape — two content-sized bordered leaves whose combined natural width (120)
     // exceeds W (97). Must stack; both panes present, nothing dropped.
+    //
+    // SPEC-95-flex-side-by-side-wrapped.md §10 test 6: re-examined, not assumed, per that spec.
+    // This config was already implicitly Greedy (FlexSplit's own default), so under SPEC-95 §5.2
+    // — which adds a new min-rows-only branch and leaves greedy/even untouched — this test's
+    // assertion (stacks) is unaffected. Pinned to `distribute: Greedy` explicitly so it keeps
+    // testing what it was written to test even if FlexSplit's default ever changes, and so it does
+    // not read as coverage of Jim's actual (min-rows) shape, which SPEC-95's own new tests below
+    // now cover and which goes side by side at this width instead.
     [Fact]
     public void V7_ContentLeaves_StackWhenCombinedNaturalWidthExceedsW_JimsShape()
     {
-        var root = FlexSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0);
+        var root = FlexSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0, distribute: PaneDistribute.Greedy);
         var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
         var notes = new RenderNoteCollector();
 
@@ -805,5 +813,181 @@ public class SplitFlexTests
 
         Assert.Equal(PaneSplit.Vertical, resolved.EffectiveSplit);
         Assert.Empty(notes.Notes);
+    }
+
+    // ---- SPEC-95-flex-side-by-side-wrapped.md §10: distribute:"min-rows" can shrink content-sized
+    // leaves to fit, so a flex pane on min-rows should go side by side at widths where its children's
+    // NATURAL width does not fit but their WRAPPED width does — Jim's actual live shape. Every test
+    // here uses rowCountOverride to give each content leaf a deterministic, monotone rows(w) ~=
+    // ceil(200/w) (natural width 200, matching the measureOverride below) rather than depending on
+    // real segment/wrap measurement, matching MinRowsDistributeTests' own convention. ----
+
+    private static int Spec95NaturalWidth(Pane p, int? w) => 200;
+
+    private static int Spec95RowsAtWidth(Pane p, int w) => w <= 0 ? 0 : (int)Math.Ceiling(200.0 / w);
+
+    private static Pane Spec95JimsShape(int gutter = 0) => FlexSplit(
+        new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) },
+        gutter: gutter, distribute: PaneDistribute.MinRows);
+
+    // Test 1: Jim's shape at 80 columns. Side by side, both panes present, nothing dropped, each
+    // pane at least MinUsableWidth.
+    [Fact]
+    public void Spec95_V1_JimsShape_MinRows_SideBySideAt80Columns()
+    {
+        var root = Spec95JimsShape();
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, notes);
+
+        Assert.Equal(PaneSplit.Vertical, resolved.EffectiveSplit); // Vertical == side by side (SPEC-88 §1.3).
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.DoesNotContain(notes.Notes, n => n.Message.Contains("dropped"));
+        Assert.All(resolved.Children, c => Assert.True(c.OuterWidth >= RowLayout.MinUsableWidth, $"pane granted {c.OuterWidth} columns, must be at least MinUsableWidth"));
+    }
+
+    // Test 2: the #94 crash (a pane silently dropped) does not return now that side by side is
+    // reachable again on the min-rows path — §3.3's routing concern.
+    [Fact]
+    public void Spec95_V2_JimsShape_MinRows_NoDropAt80_97_100Columns()
+    {
+        foreach (var width in new[] { 80, 97, 100 })
+        {
+            var root = Spec95JimsShape();
+            var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+            var notes = new RenderNoteCollector();
+
+            var resolved = SizeResolver.Resolve(root, width, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, notes);
+
+            Assert.Equal(2, resolved.Children.Count);
+            Assert.DoesNotContain(notes.Notes, n => n.Message.Contains("dropped"));
+        }
+    }
+
+    // Test 3 (§5.1 unit test): min-rows sizes content leaves at all, rather than falling back to
+    // SolveMinRows' :847 `lo` fallback. RowCountOverride mimics SPEC-95 §9 E1's own finding — the
+    // real packer returns 0 rows at outer width 0 — so with the pre-fix `Floor()`-based lo (0 for a
+    // content leaf), maxT bottoms out at 0, the T-search never runs, and both candidates fall back
+    // to width 0. Confirmed to fail against the pre-fix code (see verification notes); passes once
+    // SearchFloor replaces Floor as SolveMinRows' lo.
+    [Fact]
+    public void Spec95_V3_MinRows_SizesContentLeavesAtAll_NotTheLoFallback()
+    {
+        var root = new Pane(PaneSplit.Vertical, new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, "fill", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0, Distribute: PaneDistribute.MinRows);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, notes);
+
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.All(resolved.Children, c => Assert.True(c.OuterWidth > 0, "SolveMinRows must not fall back to the degenerate lo=0 allocation"));
+        Assert.DoesNotContain(notes.Notes, n => n.Message.Contains("dropped"));
+    }
+
+    // Test 4: narrow widths still stack. Below 2 * (MinUsableWidth + border reserve) = 48, even at
+    // each candidate's own SearchFloor (24) the pair cannot both fit — minRowsFeasible is false and
+    // the (unchanged, Floor()-based) stacked branch wins, exactly as before #95.
+    [Fact]
+    public void Spec95_V4_NarrowWidth_StillStacks()
+    {
+        var root = Spec95JimsShape();
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, notes);
+
+        Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
+        Assert.Equal(2, resolved.Children.Count);
+    }
+
+    // Test 5: greedy and even are unchanged — the guard on §5.2 leaking into modes it must not
+    // touch. Neither can shrink a child, so the orientation decision matches SPEC-88-AMENDMENT §2
+    // exactly: side by side only once outerWidth reaches sideBySideNeed (400 here); stacked below
+    // that, since stackedFloor for a content leaf (Floor()'s unchanged SizeKind.Content => 0) is
+    // satisfiable at every non-negative width.
+    [Fact]
+    public void Spec95_V5_GreedyAndEven_OrientationUnchanged_AtSeveralWidths()
+    {
+        foreach (var distribute in new[] { PaneDistribute.Greedy, PaneDistribute.Even })
+        {
+            foreach (var width in new[] { 40, 80, 100, 400, 500 })
+            {
+                var root = FlexSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0, distribute: distribute);
+                var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+                var notes = new RenderNoteCollector();
+
+                var resolved = SizeResolver.Resolve(root, width, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, notes);
+
+                var expected = width >= 400 ? PaneSplit.Vertical : PaneSplit.Horizontal;
+                Assert.Equal(expected, resolved.EffectiveSplit);
+            }
+        }
+    }
+
+    // Test 7 (§5.4): packer cost. Under §5.4(a), a flex min-rows resolve that goes side by side via
+    // minRowsFeasible must not double MinRowsPackerInvocationCount relative to a declared-vertical
+    // min-rows resolve of the same tree at the same width — the cached first pass from the
+    // orientation decision is reused rather than recomputed.
+    [Fact]
+    public void Spec95_V7_PackerCost_FlexMinRows_DoesNotDoubleVsDeclaredVertical()
+    {
+        Pane BuildFlex() => new(PaneSplit.Flex, new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, "fill", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0, Distribute: PaneDistribute.MinRows);
+        Pane BuildVertical() => new(PaneSplit.Vertical, new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, "fill", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0, Distribute: PaneDistribute.MinRows);
+
+        var flexRoot = BuildFlex();
+        var flexValues = ItemValueResolver.Resolve(flexRoot, Ctx, EmptyColors);
+        SizeResolver.MinRowsPackerInvocationCount = 0;
+        var flexResolved = SizeResolver.Resolve(flexRoot, 80, Ctx, flexValues, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, new RenderNoteCollector());
+        var flexCount = SizeResolver.MinRowsPackerInvocationCount;
+
+        // Sanity: the flex pane actually went side by side via the new minRowsFeasible branch —
+        // the scenario §5.4(a) is caching for. If this stacks instead, the comparison below is moot.
+        Assert.Equal(PaneSplit.Vertical, flexResolved.EffectiveSplit);
+
+        var verticalRoot = BuildVertical();
+        var verticalValues = ItemValueResolver.Resolve(verticalRoot, Ctx, EmptyColors);
+        SizeResolver.MinRowsPackerInvocationCount = 0;
+        SizeResolver.Resolve(verticalRoot, 80, Ctx, verticalValues, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, new RenderNoteCollector());
+        var verticalCount = SizeResolver.MinRowsPackerInvocationCount;
+
+        Assert.Equal(verticalCount, flexCount);
+    }
+
+    // Test 8 (§5.1.1): a content leaf whose declared maxSize sits below the broadened SearchFloor
+    // (RowLayout.MinUsableWidth + OwnBorderReserve = 24 for a bordered leaf) must never be
+    // searched or granted above that maxSize — the maxSize clause is tested first and wins.
+    // Asserts directly on the granted width: MinRowsDropNoteTests passing unchanged is necessary
+    // but not sufficient for this guarantee, since that test only observes drop notes.
+    [Fact]
+    public void Spec95_V8_MaxSize_SurvivesTheBroadenedSearchFloor()
+    {
+        var cappedLeaf = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", Bordered, null, "…", null, Array.Empty<PaneItem>(), MaxSize: 5);
+        var root = new Pane(PaneSplit.Vertical, new[] { cappedLeaf }, "fill", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0, Distribute: PaneDistribute.MinRows);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, notes);
+
+        Assert.Single(resolved.Children);
+        Assert.True(resolved.Children[0].OuterWidth <= 5, $"granted {resolved.Children[0].OuterWidth} columns, must never exceed declared maxSize 5");
+    }
+
+    // Test 9 (§5.1.3): positive coverage that SearchFloor's broadened floor reaches every
+    // declared-vertical min-rows resolve, not only ones a flex pane decided to become vertical.
+    // Three content leaves (no maxSize) at a width wide enough to admit a feasible T: every leaf
+    // must get a non-zero grant and none may be dropped.
+    [Fact]
+    public void Spec95_V9_DeclaredVertical_MinRows_SizesContentLeavesOutsideFlex()
+    {
+        var root = new Pane(PaneSplit.Vertical, new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, "fill", NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: 0, Distribute: PaneDistribute.MinRows);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(root, 200, Ctx, values, new Dictionary<string, Segment>(), Spec95NaturalWidth, Spec95RowsAtWidth, notes);
+
+        Assert.Equal(3, resolved.Children.Count);
+        Assert.All(resolved.Children, c => Assert.True(c.OuterWidth > 0, "declared-vertical min-rows must not fall back to the degenerate lo=0 allocation for content leaves"));
+        Assert.DoesNotContain(notes.Notes, n => n.Message.Contains("dropped"));
     }
 }
