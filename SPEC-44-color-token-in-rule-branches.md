@@ -1,6 +1,6 @@
 # SPEC-44 — Colour tokens (`@name`) inside `MatchRule` / `ThresholdRule` branches
 
-Status: **ruling, ready to implement.** Ultra-Advisor confirmed §3 (see §9). Amended after that review
+Status: **implemented and merged** (8044f82). Ultra-Advisor confirmed §3 (see §9). Amended after that review
 to close two findings: the sigil-site citation (§4.1, §7) and error severity (§5.1).
 Amends: `SPEC-V2-FRAMEWORK.md` §9.5.1 — specifically the "Aside, not a ruling" at
 `SPEC-V2-FRAMEWORK.md:5173–5175`, which left this open. This file supersedes that aside.
