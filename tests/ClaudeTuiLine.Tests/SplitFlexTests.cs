@@ -704,4 +704,106 @@ public class SplitFlexTests
         Assert.True(minCostMatch.Success);
         Assert.Equal(fixedCostMatch.Groups[1].Value, minCostMatch.Groups[1].Value);
     }
+
+    // ---- SPEC-88-AMENDMENT-flex-content-orientation.md §8: content-sized-leaf regression tests ----
+    // Each uses a measureOverride (honoured by the orientation predicate per §6) to give a leaf's
+    // natural width a known, controlled value rather than depending on the default builtin segment
+    // list's actual rendered width.
+
+    // §8.1: Jim's shape — two content-sized bordered leaves whose combined natural width (120)
+    // exceeds W (97). Must stack; both panes present, nothing dropped.
+    [Fact]
+    public void V7_ContentLeaves_StackWhenCombinedNaturalWidthExceedsW_JimsShape()
+    {
+        var root = FlexSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        int MeasureOverride(Pane p, int? w) => 60;
+
+        var resolved = SizeResolver.Resolve(root, 97, Ctx, values, new Dictionary<string, Segment>(), MeasureOverride, notes);
+
+        Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
+        Assert.Equal(2, resolved.Children.Count);
+        Assert.All(resolved.Children, c => Assert.Equal(97, c.OuterWidth));
+    }
+
+    // §8.2: the stack note interpolates the real side-by-side need (120), not the stale
+    // sideBySideFloor (0 for a content leaf) — a regression here would read "need 0 columns".
+    [Fact]
+    public void V8_StackNote_ReportsSideBySideNeed_NotStaleZeroFloor()
+    {
+        var root = FlexSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        int MeasureOverride(Pane p, int? w) => 60;
+
+        SizeResolver.Resolve(root, 97, Ctx, values, new Dictionary<string, Segment>(), MeasureOverride, notes);
+
+        Assert.Single(notes.Notes);
+        Assert.Equal("pane 2: flex split stacked; children need 120 columns at 97 columns", notes.Notes[0].Message);
+    }
+
+    // §8.3: still side by side when the natural width genuinely fits (40 <= 97) — byte-identical to
+    // declaring "vertical" outright, same as V2 but for content-sized leaves.
+    [Fact]
+    public void V9_ContentLeaves_SideBySide_WhenNaturalWidthFits_ByteIdenticalToDeclaredVertical()
+    {
+        var flexRoot = FlexSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0);
+        var verticalRoot = VerticalSplit(new[] { Leaf(size: "content", border: Bordered), Leaf(size: "content", border: Bordered) }, gutter: 0);
+
+        int MeasureOverride(Pane p, int? w) => 20;
+
+        var flexValues = ItemValueResolver.Resolve(flexRoot, Ctx, EmptyColors);
+        var flexNotes = new RenderNoteCollector();
+        var flexResolved = SizeResolver.Resolve(flexRoot, 97, Ctx, flexValues, new Dictionary<string, Segment>(), MeasureOverride, flexNotes);
+
+        var verticalValues = ItemValueResolver.Resolve(verticalRoot, Ctx, EmptyColors);
+        var verticalNotes = new RenderNoteCollector();
+        var verticalResolved = SizeResolver.Resolve(verticalRoot, 97, Ctx, verticalValues, new Dictionary<string, Segment>(), MeasureOverride, verticalNotes);
+
+        Assert.Equal(PaneSplit.Vertical, flexResolved.EffectiveSplit);
+        Assert.Empty(flexNotes.Notes);
+        Assert.Equal(verticalResolved.Children.Select(c => c.OuterWidth), flexResolved.Children.Select(c => c.OuterWidth));
+        Assert.Equal(RenderMarkup(verticalResolved, verticalValues), RenderMarkup(flexResolved, flexValues));
+    }
+
+    // §8.4: fill (non-content) children at a width strictly between StackedFloor (25) and
+    // SideBySideFloor (52) — 40 sits strictly inside, unlike SPEC-94 §5 E3's equal-floors width.
+    // sideBySideNeed must reduce to the unchanged sideBySideFloor value for non-content children.
+    [Fact]
+    public void V10_FillChildren_StrictlyBetweenFloors_StacksUnaffectedByAmendment()
+    {
+        var root = FlexSplit(new[] { Leaf(minSize: 25), Leaf(minSize: 25) }, gutter: 2);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        var resolved = SizeResolver.Resolve(root, 40, Ctx, values, new Dictionary<string, Segment>(), notes);
+
+        Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
+        Assert.Single(notes.Notes);
+        Assert.Equal("pane 2: flex split stacked; children need 52 columns at 40 columns", notes.Notes[0].Message);
+    }
+
+    // §8.5 / §3.3: a content-sized child that has its own split (children) is not a content-sized
+    // LEAF, so the predicate must use its Floor (20, from its one leaf child's minSize), never
+    // natural measurement. If the predicate wrongly natural-measured it, this override would blow
+    // the side-by-side need past outerWidth and force a stack instead of the floor-correct fit.
+    [Fact]
+    public void V11_ContentSizedSplitChild_OrientationUsesItsFloor_NotNaturalMeasurement()
+    {
+        var splitChild = VerticalSplit(new[] { Leaf(minSize: 20) }, gutter: 0, size: "content");
+        var otherChild = Leaf(minSize: 20);
+        var root = FlexSplit(new[] { splitChild, otherChild }, gutter: 0);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+
+        int MeasureOverride(Pane p, int? w) => ReferenceEquals(p, splitChild) ? 999_999 : 20;
+
+        var resolved = SizeResolver.Resolve(root, 45, Ctx, values, new Dictionary<string, Segment>(), MeasureOverride, notes);
+
+        Assert.Equal(PaneSplit.Vertical, resolved.EffectiveSplit);
+        Assert.Empty(notes.Notes);
+    }
 }

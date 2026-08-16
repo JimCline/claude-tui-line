@@ -187,7 +187,7 @@ public static class SizeResolver
         // ResolveFlexOrientation never returns Flex, so effectiveSplit — and every EffectiveSplit
         // this method returns below — can never carry it either.
         var effectiveSplit = pane.Split == PaneSplit.Flex
-            ? ResolveFlexOrientation(pane, outerWidth, collapse, notes)
+            ? ResolveFlexOrientation(pane, outerWidth, ctx, values, compounds, measureOverride, collapse, notes)
             : pane.Split;
 
         if (effectiveSplit == PaneSplit.Horizontal)
@@ -213,16 +213,17 @@ public static class SizeResolver
         return new ResolvedPane(pane, outerWidth, resolvedChildren, EffectiveSplit: PaneSplit.Vertical);
     }
 
-    // SPEC-88 §3.1: side by side when it fits, stacked when it does not and stacking would help,
-    // side by side (the drop ladder's better-understood over-constrained answer) when neither does.
-    // Uses SideBySideFloor/StackedFloor directly rather than Floor(pane, ...) itself, because §3.1's
-    // predicate is defined over the branch VALUES, not Floor()'s minSize short-circuit (:331-334) —
-    // that short-circuit is §3.4's contract for Floor(flexPane) as seen by an ANCESTOR, a different
-    // question from what orientation this pane itself should adopt.
-    private static PaneSplit ResolveFlexOrientation(Pane pane, int outerWidth, bool collapse, RenderNoteCollector notes)
+    // SPEC-88 §3.1 / SPEC-88-AMENDMENT-flex-content-orientation.md: side by side when it fits,
+    // stacked when it does not and stacking would help, side by side (the drop ladder's
+    // better-understood over-constrained answer) when neither does. Uses SideBySideNeed/StackedFloor
+    // directly rather than Floor(pane, ...) itself, because §3.1's predicate is defined over the
+    // branch VALUES, not Floor()'s minSize short-circuit (:331-334) — that short-circuit is §3.4's
+    // contract for Floor(flexPane) as seen by an ANCESTOR, a different question from what orientation
+    // this pane itself should adopt.
+    private static PaneSplit ResolveFlexOrientation(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, bool collapse, RenderNoteCollector notes)
     {
-        var sideBySideFloor = SideBySideFloor(pane, collapse);
-        if (sideBySideFloor <= outerWidth)
+        var sideBySideNeed = SideBySideNeed(pane, ctx, values, compounds, measureOverride, collapse);
+        if (sideBySideNeed <= outerWidth)
         {
             return PaneSplit.Vertical;
         }
@@ -230,11 +231,37 @@ public static class SizeResolver
         var stackedFloor = StackedFloor(pane, collapse);
         if (stackedFloor <= outerWidth)
         {
-            notes.Add($"pane {pane.Children.Count}: flex split stacked; children need {sideBySideFloor} columns at {outerWidth} columns");
+            notes.Add($"pane {pane.Children.Count}: flex split stacked; children need {sideBySideNeed} columns at {outerWidth} columns");
             return PaneSplit.Horizontal;
         }
 
         return PaneSplit.Vertical;
+    }
+
+    // SPEC-88-AMENDMENT-flex-content-orientation.md §2/§3.3: the side-by-side quantity the flex
+    // orientation predicate itself compares against W — natural (unwrapped) width for a
+    // content-sized LEAF child (no split of its own), Floor() for every other child, including a
+    // content-sized child that has its own split (§3.2: CandidateSegments would return the default
+    // builtin segment list for a childless-items container, which has no relationship to what that
+    // pane actually renders). SideBySideFloor's own contract and callers (§3.4's Floor(flexPane))
+    // are unchanged; this is an additional quantity, not a replacement.
+    private static int SideBySideNeed(Pane p, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, bool collapse)
+    {
+        var n = p.Children.Count;
+        var boundary = collapse ? Math.Max(0, n - 1) : p.Gutter * Math.Max(0, n - 1);
+        var sum = 0;
+        for (var i = 0; i < n; i++)
+        {
+            var child = p.Children[i];
+            var excludeLeft = collapse && i > 0;
+            var excludeRight = collapse && i < n - 1;
+            var isContentLeaf = IsContentSized(child) && (child.Split == PaneSplit.None || child.Children.Count == 0);
+            sum += isContentLeaf
+                ? (measureOverride is not null ? measureOverride(child, null) : MeasureRequest(child, null, ctx, values, compounds, excludeLeft, excludeRight))
+                : Floor(child, collapse, excludeLeft, excludeRight);
+        }
+
+        return sum + boundary;
     }
 
     // ---- vertical axis: the graded fixpoint ----
