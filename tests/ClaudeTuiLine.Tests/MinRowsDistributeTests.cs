@@ -318,16 +318,20 @@ public class MinRowsDistributeTests
     // §2.3.3:1220-1222: the dropped-pane note is the *stated observable consequence* of min-rows'
     // own over-constrained fallback — greedy already emits it (§9.8.2); min-rows silently dropped
     // panes with no note at all until this fix threaded a RenderNoteCollector into
-    // ResolveVerticalMinRows. Two oversized fixed panes consume the whole surface, leaving the
-    // trailing content candidate a grant of 0 either way (the T-search's own "feasible" path and
-    // its "over-constrained" fallback path both bottom out at width 0 here), so it is dropped
-    // first. SPEC-2.3.1-min-rows-floor-sum.md §2/§4: the two surviving fixed panes are themselves
-    // unclamped (AllocateMinRowsOnePass:555-562 mirrors AllocateOnePass's own unclamped fixed
-    // loop) and together exceed the surface, so #67's Σgrants ≤ avail guard — which exists for the
-    // fill/content floor-sum case — catches this fixed-pane overrun too and drops a second pane,
-    // exactly as SPEC-2.3.1-min-rows-floor-sum.md §4 predicts ("catches §2's fixed-pane overrun on
-    // the min-rows side for free"). Pre-#67 this test asserted 2 survivors at a silently
-    // over-allocated width; that was the bug, not the contract.
+    // ResolveVerticalMinRows. SPEC-95-flex-side-by-side-wrapped.md §5.1/§5.1.1: the trailing
+    // content candidate no longer bottoms out at width 0 — it declares no maxSize, so it gets the
+    // broadened SearchFloor (RowLayout.MinUsableWidth + OwnBorderReserve = 20 + 4 = 24 here) and
+    // is sized via SolveMinRows's feasible path at that floor, not the old degenerate `lo=0`
+    // fallback. That changes pane 3's own drop-note total (500+500+24=1024, not 1000) but nothing
+    // about which panes drop or survive: the two fixed panes are themselves unclamped
+    // (AllocateMinRowsOnePass:555-562 mirrors AllocateOnePass's own unclamped fixed loop) and
+    // together exceed the surface on their own (1000 > avail), so #67's Σgrants ≤ avail guard —
+    // SPEC-2.3.1-min-rows-floor-sum.md §2/§4, "catches §2's fixed-pane overrun on the min-rows
+    // side for free" — drops pane 3 first (its own pass is over-allocated at 1024), then pane 2
+    // (the remaining two fixed panes alone still sum to 1000 > avail), leaving pane 1 alone, over
+    // budget at 500 against an avail of 57, clamped rather than dropped (§4's residual
+    // `current.Count <= 1` case). One survivor, exactly as before SPEC-95 — SPEC-95 changes the
+    // reported total on the first drop, not the cascade's shape or its outcome.
     [Fact]
     public void OverConstrained_MinRows_EmitsDroppedPaneNote()
     {
@@ -369,7 +373,7 @@ public class MinRowsDistributeTests
         var resolved = SizeResolver.Resolve(pane, surfaceWidth, Ctx, values,new Dictionary<string, Segment>(),  notes);
 
         Assert.Equal(1, resolved.Children.Count);
-        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 1000 columns at {surfaceWidth} columns");
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 3 dropped: children need 1024 columns at {surfaceWidth} columns");
         Assert.Contains(notes.Notes, n => n.Message == $"pane 2 dropped: children need 1000 columns at {surfaceWidth} columns");
     }
 

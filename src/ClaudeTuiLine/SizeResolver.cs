@@ -186,9 +186,10 @@ public static class SizeResolver
         // dispatches inside the vertical branch) sees the same decision a greedy split would.
         // ResolveFlexOrientation never returns Flex, so effectiveSplit — and every EffectiveSplit
         // this method returns below — can never carry it either.
-        var effectiveSplit = pane.Split == PaneSplit.Flex
-            ? ResolveFlexOrientation(pane, outerWidth, ctx, values, compounds, measureOverride, collapse, notes)
-            : pane.Split;
+        var orientation = pane.Split == PaneSplit.Flex
+            ? ResolveFlexOrientation(pane, outerWidth, ctx, values, compounds, measureOverride, rowCountOverride, collapse, notes)
+            : new FlexOrientationResult(pane.Split, CachedMinRowsFirstPass: null);
+        var effectiveSplit = orientation.Split;
 
         if (effectiveSplit == PaneSplit.Horizontal)
         {
@@ -200,7 +201,7 @@ public static class SizeResolver
 
         var alloc = pane.Distribute switch
         {
-            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, compounds, measureOverride, rowCountOverride, notes, collapse),
+            PaneDistribute.MinRows => ResolveVerticalMinRows(pane, outerWidth, ctx, values, compounds, measureOverride, rowCountOverride, notes, collapse, orientation.CachedMinRowsFirstPass),
             PaneDistribute.Even => ResolveVerticalEven(pane, outerWidth, notes, collapse),
             _ => ResolveVertical(pane, outerWidth, ctx, values, compounds, measureOverride, notes, collapse),
         };
@@ -213,29 +214,48 @@ public static class SizeResolver
         return new ResolvedPane(pane, outerWidth, resolvedChildren, EffectiveSplit: PaneSplit.Vertical);
     }
 
-    // SPEC-88 §3.1 / SPEC-88-AMENDMENT-flex-content-orientation.md: side by side when it fits,
-    // stacked when it does not and stacking would help, side by side (the drop ladder's
-    // better-understood over-constrained answer) when neither does. Uses SideBySideNeed/StackedFloor
-    // directly rather than Floor(pane, ...) itself, because §3.1's predicate is defined over the
-    // branch VALUES, not Floor()'s minSize short-circuit (:331-334) — that short-circuit is §3.4's
-    // contract for Floor(flexPane) as seen by an ANCESTOR, a different question from what orientation
-    // this pane itself should adopt.
-    private static PaneSplit ResolveFlexOrientation(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, bool collapse, RenderNoteCollector notes)
+    // SPEC-95-flex-side-by-side-wrapped.md §5.4: the orientation decision, plus — only on the
+    // minRowsFeasible branch below — the AllocateMinRowsOnePass result that decision computed,
+    // handed to ResolveVerticalMinRows so it is not recomputed (§5.4(a)).
+    private readonly record struct FlexOrientationResult(PaneSplit Split, AllocResult? CachedMinRowsFirstPass);
+
+    // SPEC-88 §3.1 / SPEC-88-AMENDMENT-flex-content-orientation.md / SPEC-95-flex-side-by-side-wrapped.md
+    // §5.2: side by side when it fits, stacked when it does not and stacking would help, side by
+    // side (the drop ladder's better-understood over-constrained answer) when neither does. Uses
+    // SideBySideNeed/StackedFloor directly rather than Floor(pane, ...) itself, because §3.1's
+    // predicate is defined over the branch VALUES, not Floor()'s minSize short-circuit (:331-334) —
+    // that short-circuit is §3.4's contract for Floor(flexPane) as seen by an ANCESTOR, a different
+    // question from what orientation this pane itself should adopt.
+    //
+    // SPEC-95 §5.2: under distribute:"min-rows" only, a second side-by-side test is inserted between
+    // the fast (natural-width) path and the stacked branch — minRowsFeasible(p, W), i.e. whether the
+    // SAME AllocateMinRowsOnePass call ResolveVerticalMinRows is about to run actually fits W. Greedy
+    // and even cannot shrink a child (§5.2), so they keep exactly the #94 predicate, unchanged.
+    private static FlexOrientationResult ResolveFlexOrientation(Pane pane, int outerWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, bool collapse, RenderNoteCollector notes)
     {
         var sideBySideNeed = SideBySideNeed(pane, ctx, values, compounds, measureOverride, collapse);
         if (sideBySideNeed <= outerWidth)
         {
-            return PaneSplit.Vertical;
+            return new FlexOrientationResult(PaneSplit.Vertical, CachedMinRowsFirstPass: null);
+        }
+
+        if (pane.Distribute == PaneDistribute.MinRows)
+        {
+            var firstPass = AllocateMinRowsOnePass(pane, pane.Children, outerWidth, ctx, values, compounds, measureOverride, rowCountOverride, collapse);
+            if (firstPass.Feasible)
+            {
+                return new FlexOrientationResult(PaneSplit.Vertical, firstPass.Alloc);
+            }
         }
 
         var stackedFloor = StackedFloor(pane, collapse);
         if (stackedFloor <= outerWidth)
         {
             notes.Add($"pane {pane.Children.Count}: flex split stacked; children need {sideBySideNeed} columns at {outerWidth} columns");
-            return PaneSplit.Horizontal;
+            return new FlexOrientationResult(PaneSplit.Horizontal, CachedMinRowsFirstPass: null);
         }
 
-        return PaneSplit.Vertical;
+        return new FlexOrientationResult(PaneSplit.Vertical, CachedMinRowsFirstPass: null);
     }
 
     // SPEC-88-AMENDMENT-flex-content-orientation.md §2/§3.3: the side-by-side quantity the flex
@@ -678,13 +698,20 @@ public static class SizeResolver
     // allocate differently enough (AllocateWithDrop threads a per-child request array that
     // min-rows has no equivalent of) that forcing a shared implementation would risk the
     // unchanged greedy path for a small amount of duplication.
-    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, RenderNoteCollector notes, bool collapse)
+    private static AllocResult ResolveVerticalMinRows(Pane split, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, RenderNoteCollector notes, bool collapse, AllocResult? cachedFirstPass = null)
     {
         var current = split.Children;
+        // SPEC-95-flex-side-by-side-wrapped.md §5.4(a): ResolveFlexOrientation, on the path that
+        // decides side-by-side via minRowsFeasible, already ran this exact first pass (same split,
+        // same width, same collapse) to answer the predicate — reusing it here rather than
+        // recomputing avoids doubling MinRowsPackerInvocationCount. Consumed once: any subsequent
+        // drop-retry iteration recomputes normally, unchanged from before.
+        var pendingFirstPass = cachedFirstPass;
 
         while (true)
         {
-            var result = AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values, compounds, measureOverride, rowCountOverride, collapse);
+            var result = pendingFirstPass ?? AllocateMinRowsOnePass(split, current, splitOuterWidth, ctx, values, compounds, measureOverride, rowCountOverride, collapse).Alloc;
+            pendingFirstPass = null;
 
             var tooSmall = false;
             for (var i = 0; i < result.Grants.Count; i++)
@@ -739,11 +766,18 @@ public static class SizeResolver
         }
     }
 
+    // SPEC-95-flex-side-by-side-wrapped.md §5.4: Feasible mirrors MinRowsSolveResult.Feasible for
+    // the whole pass — true when there were no content/fill candidates to search at all (nothing to
+    // fail), so a caller with zero candidates never misreads "vacuously fine" as "over-constrained".
+    // ResolveFlexOrientation's minRowsFeasible(p, W) reads exactly this from the SAME pass it hands
+    // to ResolveVerticalMinRows (§5.4(a)), rather than recomputing it.
+    private readonly record struct MinRowsPassResult(AllocResult Alloc, bool Feasible);
+
     // One run of the min-rows allocation (§2.3.1): fixed and percent panes take their width
     // first, mirroring AllocateOnePass's own step order and matching R's own prose definition —
     // "the extent remaining after fixed and percent panes and gutters have taken theirs" — then
     // every content/fill pane is a candidate for the row-count search.
-    private static AllocResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, bool collapse)
+    private static MinRowsPassResult AllocateMinRowsOnePass(Pane split, IReadOnlyList<Pane> children, int splitOuterWidth, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride, bool collapse)
     {
         var avail = Math.Max(0, splitOuterWidth - BoundaryCost(split, children.Count, collapse));
 
@@ -780,18 +814,54 @@ public static class SizeResolver
             }
         }
 
+        var feasible = true;
         if (candidateIndices.Count > 0)
         {
             var r = Math.Max(0, rem);
             var solved = SolveMinRows(children, candidateIndices, r, ctx, values, compounds, measureOverride, rowCountOverride);
+            feasible = solved.Feasible;
             for (var ci = 0; ci < candidateIndices.Count; ci++)
             {
-                grants[candidateIndices[ci]] = solved[ci];
+                grants[candidateIndices[ci]] = solved.Widths[ci];
             }
         }
 
-        return new AllocResult(children, grants);
+        return new MinRowsPassResult(new AllocResult(children, grants), feasible);
     }
+
+    // SPEC-95-flex-side-by-side-wrapped.md §5.1: SolveMinRows' own search floor. Floor() itself
+    // returns 0 for a content-sized leaf (SizeKind.Content => 0, unchanged per
+    // SPEC-88-AMENDMENT-flex-content-orientation.md §5) — using it as SolveMinRows' lower bound
+    // sends RowCountAt(candidate, 0) into the search (§3.1), which degenerates maxT the same way
+    // the flex orientation predicate degenerated before #94. This is a solver-local floor with its
+    // own name, not a redefinition of Floor(): RowLayout.MinUsableWidth + OwnBorderReserve(c) is
+    // already what Floor() gives fill/percent panes at its `_` branch (:427), so a content leaf
+    // gets the same treatment inside this solver only. Uses the same content-sized-leaf test
+    // SPEC-88-AMENDMENT §3.3 fixes, so the two cannot drift.
+    //
+    // §5.1.1: the maxSize clause is tested FIRST and wins. :870 derives hi from
+    // Math.Max(Math.Min(MaxSize ?? r, r), lo) — raising lo above a declared MaxSize would raise hi
+    // to match, silently discarding the author's explicit ceiling in favour of a default they never
+    // wrote. Where MaxSize is set and sits below the broadened floor, this returns the unmodified
+    // Floor() (pre-#95 behaviour) so :870's hi stays capped at MaxSize.
+    private static int SearchFloor(Pane c)
+    {
+        var floor = Floor(c, collapse: false, excludeLeft: false, excludeRight: false);
+        var broadenedFloor = RowLayout.MinUsableWidth + OwnBorderReserve(c);
+        if (c.MaxSize is int maxSize && maxSize < broadenedFloor)
+        {
+            return floor;
+        }
+
+        var isContentLeaf = IsContentSized(c) && (c.Split == PaneSplit.None || c.Children.Count == 0);
+        return isContentLeaf ? Math.Max(floor, broadenedFloor) : floor;
+    }
+
+    // SPEC-95-flex-side-by-side-wrapped.md §5.2: whether SolveMinRows reached its feasible (:840)
+    // branch, as opposed to falling through to the over-constrained `lo` fallback — the orientation
+    // predicate's minRowsFeasible(p, W) reads exactly this, from the same computation the allocator
+    // is about to run (§5.3), rather than a second model of it.
+    private readonly record struct MinRowsSolveResult(int[] Widths, bool Feasible);
 
     // SPEC-V2-FRAMEWORK.md §2.3.1: T is the achievable row count, searched from 1 upward — the
     // first T for which every candidate's minWidth(i, T) fits within r wins, since feasible(T) is
@@ -801,11 +871,11 @@ public static class SizeResolver
     // floor when no T up to that bound is feasible (the split as a whole is over-constrained), the
     // same outcome AllocateOnePass's own step 4 falls back to; the outer drop-retry loop in
     // ResolveVerticalMinRows exists for exactly this case.
-    private static int[] SolveMinRows(IReadOnlyList<Pane> children, IReadOnlyList<int> candidateIndices, int r, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride)
+    private static MinRowsSolveResult SolveMinRows(IReadOnlyList<Pane> children, IReadOnlyList<int> candidateIndices, int r, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, Func<Pane, int, int>? rowCountOverride)
     {
         var n = candidateIndices.Count;
         var candidates = candidateIndices.Select(i => children[i]).ToList();
-        var lo = candidates.Select(Floor).ToArray();
+        var lo = candidates.Select(SearchFloor).ToArray();
         var hi = new int[n];
         for (var ci = 0; ci < n; ci++)
         {
@@ -840,11 +910,11 @@ public static class SizeResolver
             if (feasible && sum <= r)
             {
                 var surplus = r - sum;
-                return WaterFillSurplus(candidates, minWidths, hi, surplus, ctx, values, compounds, measureOverride);
+                return new MinRowsSolveResult(WaterFillSurplus(candidates, minWidths, hi, surplus, ctx, values, compounds, measureOverride), Feasible: true);
             }
         }
 
-        return lo;
+        return new MinRowsSolveResult(lo, Feasible: false);
     }
 
     // minWidth(i, T): the narrowest outer width at which candidate i's real rendering — the same
