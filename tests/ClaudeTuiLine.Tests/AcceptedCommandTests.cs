@@ -3,12 +3,12 @@ namespace ClaudeTuiLine.Tests;
 public class AcceptedCommandTests
 {
     [Fact]
-    public void Build_ReturnsExactlyTenKeysForTheNineEnumerableKindsPlusSize()
+    public void Build_ReturnsExactlyTwelveKeysForTheElevenEnumerableKindsPlusSize()
     {
         var result = AcceptedCommand.Build();
 
         Assert.Equal(
-            new[] { "border.style", "colorSystem", "split", "valign", "align", "distribute", "overflow", "case", "height", "size" },
+            new[] { "border.style", "colorSystem", "split", "valign", "align", "selfAlign", "titleAlign", "distribute", "overflow", "case", "height", "size" },
             result.Keys.Select(k => k.Key));
     }
 

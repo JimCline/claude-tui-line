@@ -1146,7 +1146,19 @@ public static class SizeResolver
     {
         var borderReserve = OwnBorderReserve(pane, excludeLeft, excludeRight);
         var innerCap = grantedOuterWidth is int g ? Math.Max(0, g - borderReserve) : (int?)null;
-        return MeasureInnerContentWidth(pane, innerCap, ctx, values, compounds) + borderReserve;
+        var contentWidth = MeasureInnerContentWidth(pane, innerCap, ctx, values, compounds);
+
+        // SPEC pane-id-title-align §3.7: a content-sized leaf pane's intrinsic (uncapped) request
+        // never falls under T+2, so its caption always has room to draw without narrowing the pane
+        // further at render time. Only the uncapped request — a narrower re-measurement under an
+        // already-granted width reports what fits there, per the comment on
+        // MeasureInnerContentWidth/LongestWrappedRowWidth below, and the caption itself just
+        // truncates under that grant instead of forcing more width.
+        var titleFloor = innerCap is null && pane.Children.Count == 0 && pane.Title is { } title
+            ? (TitleCaptionResolver.ResolveWidth(title, ctx, values, compounds) is int t ? t + 2 : 0)
+            : 0;
+
+        return Math.Max(contentWidth, titleFloor) + borderReserve;
     }
 
     private static int MeasureInnerContentWidth(Pane pane, int? innerCap, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds)

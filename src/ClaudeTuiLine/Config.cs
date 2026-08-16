@@ -145,6 +145,11 @@ public sealed class SurfaceConfig
 
 public sealed class PaneConfig
 {
+    /// <summary>SPEC pane-id-title-align §2: an optional identifier for this pane, for diagnostics
+    /// and for addressing a specific pane. Separate namespace from an item's <c>id</c>.</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
     [JsonPropertyName("split")]
     public string? Split { get; set; }
 
@@ -188,6 +193,20 @@ public sealed class PaneConfig
 
     [JsonPropertyName("height")]
     public string? Height { get; set; }
+
+    [JsonPropertyName("selfAlign")]
+    public string? SelfAlign { get; set; }
+
+    /// <summary>SPEC pane-id-title-align §3: this pane's title, authored with the ordinary item
+    /// shape and drawn as a caption spliced into the pane's top border line. Requires a border
+    /// with a top edge.</summary>
+    [JsonPropertyName("title")]
+    public PaneItemJsonConfig? Title { get; set; }
+
+    /// <summary>SPEC pane-id-title-align §3.4: where the caption sits along the top border run.
+    /// Defaults to <c>left</c>, which is a one-glyph inset from the top-left corner.</summary>
+    [JsonPropertyName("titleAlign")]
+    public string? TitleAlign { get; set; }
 
     [JsonPropertyName("items")]
     public List<PaneItemJsonConfig>? Items { get; set; }
@@ -651,7 +670,11 @@ public static class ConfigLoader
                 null,
                 DefaultEllipsis,
                 null,
-                ToPaneItems(config?.Items));
+                ToPaneItems(config?.Items),
+                Id: null,
+                Title: null,
+                SelfAlign: PaneSelfAlign.Left,
+                TitleAlign: PaneTitleAlign.Left);
         }
 
         return ResolvePane(surfacePane, inherited: null);
@@ -695,8 +718,15 @@ public static class ConfigLoader
             PaneValignParsing.Parse(cfg.Valign),
             PaneAlignParsing.Parse(cfg.Align),
             PaneDistributeParsing.Parse(cfg.Distribute),
-            PaneHeightParsing.Parse(cfg.Height));
+            PaneHeightParsing.Parse(cfg.Height),
+            cfg.Id,
+            ToTitleItem(cfg.Title),
+            PaneSelfAlignParsing.Parse(cfg.SelfAlign),
+            PaneTitleAlignParsing.Parse(cfg.TitleAlign));
     }
+
+    private static PaneItem? ToTitleItem(PaneItemJsonConfig? title) =>
+        title is null ? null : ToPaneItems(new List<PaneItemJsonConfig> { title })[0] with { IsTitle = true };
 
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §2.10.1 rule 1: resolves one pane's own edges plus, when that pane is a

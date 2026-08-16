@@ -39,6 +39,7 @@ public class ReferenceExtractorCoverageTests
             [Member<ColorResolution.ColorValue.Literal>(nameof(ColorResolution.ColorValue.Literal.Spec))] = (ExemptionKind.NeverAReference, "a literal colour spec; anything @-prefixed became a ColorValue.TokenRef at parse time (§4.1) and is therefore covered"),
             [Member<ColorResolution.MatchRule>(nameof(ColorResolution.MatchRule.Contains))] = (ExemptionKind.NeverAReference, "a predicate over the item's own value, not an id"),
             [Member<ColorResolution.MatchRule>(nameof(ColorResolution.MatchRule.EqualsValue))] = (ExemptionKind.NeverAReference, "a predicate over the item's own value, not an id"),
+            [Member<Pane>(nameof(Pane.Id))] = (ExemptionKind.NeverAReference, "pane-id-title-align §2.3: an addressing/diagnostics handle in a separate namespace from item ids, never itself a reference"),
             [Member<Pane>(nameof(Pane.Size))] = (ExemptionKind.NeverAReference, "a size form per §4.1 (integer/percentage/content/fill/auto), never an id"),
             [Member<Pane>(nameof(Pane.Ellipsis))] = (ExemptionKind.NeverAReference, "literal display text"),
             [Member<PaneBorder>(nameof(PaneBorder.Style))] = (ExemptionKind.NeverAReference, "Spectre.Console's BoxBorder — a foreign type, not recursed into"),
@@ -75,8 +76,8 @@ public class ReferenceExtractorCoverageTests
         var candidates = CollectCandidates();
 
         Assert.True(
-            candidates.Count == 24,
-            $"Expected 24 candidates from the 8 reflection roots, found {candidates.Count}: "
+            candidates.Count == 25,
+            $"Expected 25 candidates from the 8 reflection roots, found {candidates.Count}: "
                 + string.Join(", ", candidates.Select(Describe).OrderBy(s => s, StringComparer.Ordinal)));
     }
 

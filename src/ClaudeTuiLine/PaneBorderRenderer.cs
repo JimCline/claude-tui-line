@@ -29,7 +29,15 @@ public static class PaneBorderRenderer
     /// that the box cannot be drawn regardless) before passing true — reclaiming edge rows with no
     /// content to reclaim them for erases the pane instead of shrinking it.
     /// </param>
-    public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<PaneRow> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false, bool omitEdges = false)
+    /// <param name="caption">
+    /// SPEC pane-id-title-align §3.4: a resolved title, spliced into the top border run instead of
+    /// a content row. Drawn only when the run has at least 2 free cells beyond the caption's own
+    /// flanking spaces (<c>free = horizontalSpan - (caption.Width + 2) &gt;= 2</c>) — otherwise the
+    /// row falls back to a plain, caption-less run. Never touches a corner glyph or the run's first
+    /// or last cell, and never changes <c>outerWidth</c>: the caption's block plus whatever glyph
+    /// run flanks it always sums to exactly <paramref name="innerWidth"/>'s horizontal span.
+    /// </param>
+    public static IReadOnlyList<PaneRow> Wrap(IReadOnlyList<PaneRow> contentRows, int innerWidth, PaneBorder border, string colorMarkup, bool suppressed = false, bool omitEdges = false, PaneCaption? caption = null)
     {
         if (border.Style is null)
         {
@@ -67,7 +75,28 @@ public static class PaneBorderRenderer
         {
             var topLeft = edges.Left && !suppressed ? Part(BoxBorderPart.TopLeft) : "";
             var topRight = edges.Right && !suppressed ? Part(BoxBorderPart.TopRight) : "";
-            rows.Add(new PaneRow(Colored(topLeft + Repeat(Part(BoxBorderPart.Top), horizontalSpan) + topRight), outerWidth));
+            var topGlyph = Part(BoxBorderPart.Top);
+            var free = caption is { } c ? horizontalSpan - (c.Width + 2) : -1;
+
+            string topRow;
+            if (caption is { } cap && !suppressed && free >= 2)
+            {
+                var (p, q) = cap.Align switch
+                {
+                    PaneTitleAlign.Right => (free - 1, 1),
+                    PaneTitleAlign.Center => (free / 2, free - free / 2),
+                    _ => (1, free - 1),
+                };
+                var leading = Colored(topLeft + Repeat(topGlyph, p));
+                var trailing = Colored(Repeat(topGlyph, q) + topRight);
+                topRow = $"{leading} {cap.Markup} {trailing}";
+            }
+            else
+            {
+                topRow = Colored(topLeft + Repeat(topGlyph, horizontalSpan) + topRight);
+            }
+
+            rows.Add(new PaneRow(topRow, outerWidth));
         }
 
         rows.AddRange(contentRows.Select(row => suppressed

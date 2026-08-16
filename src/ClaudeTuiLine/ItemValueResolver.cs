@@ -173,6 +173,21 @@ public static class ItemValueResolver
             }
         }
 
+        if (pane.Title is { } title)
+        {
+            var titlePath = path + "/title";
+            items.Add(new ScanEntry(title, eligible, titlePath));
+            if (title.Color is { } titleColor)
+            {
+                var titleColorPath = titlePath + "/color";
+                colorExprs.Add((titleColor, titleColorPath));
+                if (titleColor is ColorResolution.ColorExpr.Inline titleInline)
+                {
+                    CollectRuleBranches(titleInline.Rule, titleColorPath, colorValues);
+                }
+            }
+        }
+
         for (var i = 0; i < pane.Children.Count; i++)
         {
             Walk(pane.Children[i], $"{path}/children/{i}", items, colorExprs, colorValues);

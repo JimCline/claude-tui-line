@@ -82,6 +82,9 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckUnknownKeys(config));
         diagnostics.AddRange(CheckMaxLines(root, rootPath));
         diagnostics.AddRange(CheckCompoundParts(config));
+        diagnostics.AddRange(CheckPaneIds(root, rootPath, scan.SelfDeclaredIds));
+        diagnostics.AddRange(CheckTitleWithoutBorder(root, rootPath));
+        diagnostics.AddRange(CheckSelfAlign(root, rootPath, topLevel.Collapse));
         return diagnostics;
     }
 
@@ -510,6 +513,42 @@ public static class ConfigChecker
                 }
             }
         }
+
+        if (PaneSelfAlignParsing.IsUnrecognized(pane.SelfAlign))
+        {
+            yield return UnknownEnumValue(path + "/selfAlign", pane.SelfAlign, "selfAlign", PaneSelfAlignParsing.AcceptedTokens);
+        }
+
+        if (PaneTitleAlignParsing.IsUnrecognized(pane.TitleAlign))
+        {
+            yield return UnknownEnumValue(path + "/titleAlign", pane.TitleAlign, "titleAlign", PaneTitleAlignParsing.AcceptedTokens);
+        }
+
+        if (!string.IsNullOrWhiteSpace(pane.TitleAlign) && pane.Title is null)
+        {
+            yield return new Diagnostic(path + "/titleAlign", DiagnosticSeverity.Warning, "title-align-without-title",
+                "'titleAlign' has no effect without a 'title' on this pane");
+        }
+
+        if (pane.Title is { } title)
+        {
+            foreach (var d in CheckItemEnums(title, path + "/title"))
+            {
+                yield return d;
+            }
+
+            if (!string.IsNullOrWhiteSpace(title.Overflow))
+            {
+                yield return new Diagnostic(path + "/title/overflow", DiagnosticSeverity.Warning, "title-overflow-ignored",
+                    "a title is a single border line and always truncates; 'overflow' is ignored here");
+            }
+
+            if (title.MaxLines is int maxLines && maxLines != 1)
+            {
+                yield return new Diagnostic(path + "/title/maxLines", DiagnosticSeverity.Warning, "title-max-lines-ignored",
+                    "a title is a single line; only the first line is drawn");
+            }
+        }
     }
 
     private static IEnumerable<Diagnostic> CheckItemEnums(PaneItemJsonConfig item, string path)
@@ -770,14 +809,17 @@ public static class ConfigChecker
         {
             foreach (var (pane, path) in WalkRawPanes(surfacePane, "/surface/pane"))
             {
-                if (pane.Items is not { } items)
+                if (pane.Items is { } items)
                 {
-                    continue;
+                    for (var i = 0; i < items.Count; i++)
+                    {
+                        yield return (items[i], $"{path}/items/{i}");
+                    }
                 }
 
-                for (var i = 0; i < items.Count; i++)
+                if (pane.Title is { } title)
                 {
-                    yield return (items[i], $"{path}/items/{i}");
+                    yield return (title, $"{path}/title");
                 }
             }
         }
@@ -1007,6 +1049,114 @@ public static class ConfigChecker
             {
                 yield return new Diagnostic(path, DiagnosticSeverity.Warning, "pane-no-items",
                     "this pane declares no items and its size collapses to zero, so the declaration does nothing");
+            }
+        }
+    }
+
+    // ---- SPEC pane-id-title-align §2.4: pane id — a tree-wide walk, since CheckPaneEnums is
+    // per-pane and cannot see siblings ----
+
+    private static IEnumerable<Diagnostic> CheckPaneIds(Pane root, string rootPath, IReadOnlyCollection<string> selfDeclaredItemIds)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (pane, path) in WalkPanes(root, rootPath))
+        {
+            if (pane.Id is not { } id)
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                yield return new Diagnostic(path + "/id", DiagnosticSeverity.Warning, "empty-pane-id",
+                    "'id' is present but empty; omit it instead");
+                continue;
+            }
+
+            if (!seen.Add(id))
+            {
+                yield return new Diagnostic(path + "/id", DiagnosticSeverity.Error, "duplicate-pane-id",
+                    $"another pane already declares id '{id}'");
+            }
+
+            if (selfDeclaredItemIds.Contains(id))
+            {
+                yield return new Diagnostic(path + "/id", DiagnosticSeverity.Warning, "pane-id-shadows-item-id",
+                    $"'{id}' is also an item id; a pane id is a separate namespace and is not referencable by 'from', '{{{id}}}', or 'color.from'");
+            }
+        }
+    }
+
+    // ---- SPEC pane-id-title-align §3.9: title-without-border needs the resolved border (style +
+    // top edge), which only exists on the resolved Pane tree, not the raw PaneConfig ----
+
+    private static IEnumerable<Diagnostic> CheckTitleWithoutBorder(Pane root, string rootPath)
+    {
+        foreach (var (pane, path) in WalkPanes(root, rootPath))
+        {
+            if (pane.Title is null)
+            {
+                continue;
+            }
+
+            if (pane.Border.Style is null || !pane.Border.Edges.Top)
+            {
+                yield return new Diagnostic(path + "/title", DiagnosticSeverity.Error, "title-without-border",
+                    "'title' draws into the pane's top border line, but this pane has no border (or its top edge is off)");
+            }
+        }
+    }
+
+    // ---- SPEC pane-id-title-align §4.5/§4.7: selfAlign's two "declared but inert" warnings ----
+
+    private static IEnumerable<Diagnostic> CheckSelfAlign(Pane root, string rootPath, bool collapse)
+    {
+        foreach (var (pane, path) in WalkPanes(root, rootPath))
+        {
+            if (pane.SelfAlign != PaneSelfAlign.Left && collapse)
+            {
+                yield return new Diagnostic(path + "/selfAlign", DiagnosticSeverity.Warning, "self-align-with-collapse",
+                    "'selfAlign' is ignored while surface.border.collapse is true");
+            }
+
+            if (pane.Title is not null && collapse)
+            {
+                yield return new Diagnostic(path + "/title", DiagnosticSeverity.Warning, "title-with-collapse",
+                    "'title' is ignored while surface.border.collapse is true");
+            }
+
+            if (pane.Children.Count == 0)
+            {
+                continue;
+            }
+
+            // Finding B (review round 1): the fill-sibling/distribute:even "no leftover space"
+            // condition is only true for §4.2's mechanism (Vertical/side-by-side leftover-width
+            // redistribution). §4.4's stacked mechanism (Horizontal split) aligns each child
+            // independently within innerWidth regardless of siblings/distribute, so applying this
+            // check there is a false positive. Flex/None splits have no statically-known orientation
+            // at config-check time, so skip them too rather than guess.
+            if (pane.Split != PaneSplit.Vertical)
+            {
+                continue;
+            }
+
+            var anyFillSibling = pane.Children.Any(SizeResolver.IsFillSized);
+            var distributeEven = pane.Distribute == PaneDistribute.Even;
+            if (!anyFillSibling && !distributeEven)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < pane.Children.Count; i++)
+            {
+                if (pane.Children[i].SelfAlign == PaneSelfAlign.Left)
+                {
+                    continue;
+                }
+
+                yield return new Diagnostic($"{path}/children/{i}/selfAlign", DiagnosticSeverity.Warning, "self-align-no-effect",
+                    "'selfAlign' has no effect here: a sibling is fill-sized (or distribute is \"even\"), so the row has no leftover space to position this pane in");
             }
         }
     }

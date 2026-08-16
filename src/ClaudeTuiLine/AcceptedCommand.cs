@@ -39,6 +39,8 @@ public static class AcceptedCommand
             new("split", ConfigLoader.SplitAcceptedTokens, null),
             new("valign", PaneValignParsing.AcceptedTokens, null),
             new("align", PaneAlignParsing.AcceptedTokens, null),
+            new("selfAlign", PaneSelfAlignParsing.AcceptedTokens, null),
+            new("titleAlign", PaneTitleAlignParsing.AcceptedTokens, null),
             new("distribute", PaneDistributeParsing.AcceptedTokens, null),
             new("overflow", OverflowModeParsing.AcceptedTokens, null),
             new("case", ItemValueResolver.CaseAcceptedTokens, null),

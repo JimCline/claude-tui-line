@@ -248,7 +248,8 @@ public sealed record PaneItem(
     string? Extract = null,
     string? Case = null,
     int? MaxLines = null,
-    IReadOnlyList<PaneItemPart>? Parts = null);
+    IReadOnlyList<PaneItemPart>? Parts = null,
+    bool IsTitle = false);
 
 /// <summary>
 /// SPEC-V2-FRAMEWORK.md §3.3: one fragment of a compound item (<see cref="PaneItem.Parts"/>).
@@ -286,4 +287,115 @@ public sealed record Pane(
     PaneValign Valign = PaneValign.Top,
     PaneAlign Align = PaneAlign.Left,
     PaneDistribute Distribute = PaneDistribute.Greedy,
-    PaneHeight Height = PaneHeight.Fill);
+    PaneHeight Height = PaneHeight.Fill,
+    /// <summary>SPEC pane-id-title-align §2: an optional identifier for this pane, for diagnostics
+    /// and for addressing a specific pane. Separate namespace from an item's <c>id</c>. Has no
+    /// render effect.</summary>
+    string? Id = null,
+    /// <summary>SPEC pane-id-title-align §3: this pane's title, resolved through the identical
+    /// item conversion path as any ordinary item, flagged via <see cref="PaneItem.IsTitle"/>.
+    /// Drawn as a caption spliced into the pane's top border line, not as a content row.</summary>
+    PaneItem? Title = null,
+    /// <summary>SPEC pane-id-title-align §4: where this pane's own box sits within the leftover
+    /// space of the row its parent laid it out in. Distinct from <see cref="PaneAlign"/>, which
+    /// aligns content inside this pane's own width.</summary>
+    PaneSelfAlign SelfAlign = PaneSelfAlign.Left,
+    /// <summary>SPEC pane-id-title-align §3.4: where a pane's caption sits along its top border
+    /// run. Distinct from <see cref="PaneAlign"/> (content inside the box) and
+    /// <see cref="PaneSelfAlign"/> (the box inside its parent's row).</summary>
+    PaneTitleAlign TitleAlign = PaneTitleAlign.Left);
+
+/// <summary>SPEC pane-id-title-align §4: where this pane's own box sits within the leftover
+/// space of the row its parent laid it out in. Distinct from <see cref="PaneAlign"/>, which
+/// aligns content inside this pane's own width.</summary>
+public enum PaneSelfAlign
+{
+    Left,
+    Center,
+    Right,
+}
+
+public static class PaneSelfAlignParsing
+{
+    private static readonly (string Token, PaneSelfAlign Value)[] Accepted =
+    {
+        ("left", PaneSelfAlign.Left),
+        ("center", PaneSelfAlign.Center),
+        ("right", PaneSelfAlign.Right),
+    };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
+    private static PaneSelfAlign? ParseCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
+
+    public static PaneSelfAlign Parse(string? value) => ParseCore(value) ?? PaneSelfAlign.Left;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, which also defaults to <see cref="PaneSelfAlign.Left"/>.
+    /// §9.4's config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && ParseCore(value) is null;
+}
+
+/// <summary>SPEC pane-id-title-align §3.4: where a pane's caption sits along its top border
+/// run. Distinct from <see cref="PaneAlign"/> (content inside the box) and
+/// <see cref="PaneSelfAlign"/> (the box inside its parent's row).</summary>
+public enum PaneTitleAlign
+{
+    Left,
+    Center,
+    Right,
+}
+
+public static class PaneTitleAlignParsing
+{
+    private static readonly (string Token, PaneTitleAlign Value)[] Accepted =
+    {
+        ("left", PaneTitleAlign.Left),
+        ("center", PaneTitleAlign.Center),
+        ("right", PaneTitleAlign.Right),
+    };
+
+    public static IReadOnlyList<string> AcceptedTokens { get; } = Accepted.Select(a => a.Token).ToArray();
+
+    private static PaneTitleAlign? ParseCore(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        foreach (var (token, val) in Accepted)
+        {
+            if (token == normalized)
+            {
+                return val;
+            }
+        }
+
+        return null;
+    }
+
+    public static PaneTitleAlign Parse(string? value) => ParseCore(value) ?? PaneTitleAlign.Left;
+
+    /// <summary>
+    /// True when <paramref name="value"/> was present but matched none of the recognized tokens —
+    /// distinct from an absent field, which also defaults to <see cref="PaneTitleAlign.Left"/>.
+    /// §9.4's config diagnostics need this distinction; the renderer's fallback does not.
+    /// </summary>
+    public static bool IsUnrecognized(string? value) => !string.IsNullOrWhiteSpace(value) && ParseCore(value) is null;
+}
+
+/// <summary>SPEC pane-id-title-align §3: a pane's title, resolved to final markup plus its
+/// ANSI-stripped display width, ready to splice into the top border run. Width is the
+/// caption TEXT's width — the flanking spaces of §3.4 are added by the renderer.</summary>
+public sealed record PaneCaption(string Markup, int Width, PaneTitleAlign Align = PaneTitleAlign.Left);

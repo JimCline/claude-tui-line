@@ -193,7 +193,7 @@ public static class SchemaCommand
             "PaneConfig",
             "A rectangular region of the statusline. A branch pane carries split+children; a leaf pane carries items.",
             Array.Empty<string>(),
-            new[] { "split", "children", "size", "minSize", "maxSize", "border", "overflow", "ellipsis", "maxRows", "gutter", "valign", "align", "distribute", "height", "items" },
+            new[] { "split", "children", "size", "minSize", "maxSize", "border", "overflow", "ellipsis", "maxRows", "gutter", "valign", "align", "distribute", "height", "id", "title", "titleAlign", "selfAlign", "items" },
             new[]
             {
                 Field("split", "string", "none/horizontal/vertical/flex — set together with children for a branch pane.", "split"),
@@ -206,16 +206,23 @@ public static class SchemaCommand
                 Field("ellipsis", "string", "Truncation marker used when content overflows."),
                 Field("maxRows", "integer", "This pane's own row budget, applied on top of the surface's."),
                 Field("gutter", "integer", "Cell gap inserted between this pane's children."),
-                Field("valign", "string", "Vertical alignment of this pane's content within its box.", "valign"),
-                Field("align", "string", "Horizontal alignment of this pane's content within its box.", "align"),
+                Field("valign", "string", "Vertical alignment of this pane's content within its own box; also places this pane's box within its sibling band when it is shorter than its siblings."),
+                Field("align", "string", "Horizontal alignment of this pane's content within its own box (see selfAlign for positioning the box itself, and titleAlign for the caption)."),
                 Field("distribute", "string", "How this pane distributes leftover space among its children.", "distribute"),
                 Field("height", "string", "This pane's height policy.", "height"),
+                Field("id", "string", "An optional identifier for this pane. Separate namespace from an item's id; not referencable by 'from', link substitution, or 'color.from'."),
+                Field("title", "item", "This pane's title, authored with the ordinary item shape and drawn as a caption in the pane's top border line. Requires a border with a top edge; always single-line and truncating."),
+                Field("titleAlign", "string", "Where the title caption sits along the top border run. Only has a visible effect when the caption is short enough to leave slack.", "titleAlign"),
+                Field("selfAlign", "string", "Where this pane's own box sits in the leftover space of its parent's row — as opposed to align, which positions content inside this pane's box. No effect when a sibling is fill-sized.", "selfAlign"),
                 Field("items", "array<item>", "This pane's items, present on a leaf pane."),
             },
             new[]
             {
                 "A branch pane sets split and children; a leaf pane sets items. Setting both is a config error.",
                 "PaneConfig serves both roles — there is no separate split/branch record.",
+                "selfAlign positions this pane within its parent's row and only has an effect when the row has leftover width; align positions content inside this pane.",
+                "title is drawn into the top border line, not as a content row: it consumes no rows and no row budget, and it is dropped when the pane has no top border edge or is too narrow to hold it.",
+                "titleAlign moves the caption along the border run; it never changes whether the caption fits, and a caption truncated to the full available width renders identically under all three values.",
             },
             Parse("""{"items":[]}""")),
 
