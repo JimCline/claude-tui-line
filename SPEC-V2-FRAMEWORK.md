@@ -5794,9 +5794,25 @@ it, and refuse or silently substitute. The output therefore carries the distinct
   "alsoAccepted": "Any Spectre.Console color name (256-palette, e.g. deepskyblue1) or #rrggbb hex.
                    These parse everywhere a name is accepted; how faithfully they render depends on
                    `colorSystem` (§6.2), which defaults to `standard` and approximates them to the
-                   nearest of the sixteen."
+                   nearest of the sixteen. config-check flags this against your actual colorSystem
+                   with its color-down-converted diagnostic.",
+  "palette": [ { "number": 0, "name": "black", "themeMapped": true } ]
 }
 ```
+
+**`palette` (task #93) carries the full 256-colour table, `recommended` unchanged.** `recommended`
+stays curated and frozen at its current nineteen — it means "reach for these", and 240 colours
+approximated under the default `colorSystem` are not that. `palette` is a new sibling array: every
+entry Spectre's 256-colour table has, in palette-index order (`number` 0–255), each carrying its
+`name` and whether it is one of the sixteen ANSI standard colours (`themeMapped`, computed by set
+membership against the same constant `recommended` uses, never by `number <= 15`). Because the
+sixteen standard names *are* indices 0–15, index order alone puts them first — no separate ordering
+rule is needed. `palette` is enumerated from `Spectre.Console.Color.FromInt32(i).ToString()`, never
+hardcoded and never built by reflecting over `Color`'s static properties — reflection returns 291
+aliased entries (`fuchsia`/`magenta` and similar), not 256 canonical ones. `--colors`' bare form
+lists all 256, index and name per line, the same way it already lists the sixteen: a bare numeric
+index is itself a usable colour spec, so showing it is a second spelling, not decoration. Full
+design in SPEC-93-colors-256-palette.md.
 
 This `alsoAccepted` text describes how a *configured* `colorSystem` renders a value in the
 statusline itself — it says nothing about how `--colors`' own swatches render, and deliberately:
