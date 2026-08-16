@@ -268,6 +268,10 @@ explicitly out of scope (§7).
 
 ### 3.1 The predicate
 
+> **Amended by `SPEC-88-AMENDMENT-flex-content-orientation.md`:** the side-by-side quantity below
+> is `sideBySideFloor` only for children that are not content-sized leaves; see the amendment for
+> the replacement predicate and why §3.2's original reasoning does not hold.
+
 For a pane `p` with declared `Split == Flex` and available outer width `W`, let:
 
 - **`sideBySideFloor(p)`** = the value `Floor()`'s **vertical** branch computes for `p`
@@ -296,9 +300,15 @@ answer to a genuinely over-constrained split. This preserves the first draft's r
 
 ### 3.2 Interaction with `size: "content" | "fill"`
 
-None at the decision point — the predicate is computed over **floors**, and a child's floor is
+> **First paragraph below WITHDRAWN by `SPEC-88-AMENDMENT-flex-content-orientation.md` §1.** It is
+> false: `Floor()` is defined to be `0` for a content-sized leaf, which makes the predicate
+> degenerate for that shape rather than uniform. Kept here, not deleted, because the amendment's
+> §1 explains why the reasoning that produced it is worth understanding. See the amendment for the
+> replacement predicate (§2) and its scope (content-sized **leaves** only, §3).
+
+~~None at the decision point — the predicate is computed over **floors**, and a child's floor is
 defined by §2.3 regardless of its `size` mode. Once the effective orientation is chosen, allocation
-proceeds by the existing rules for that orientation.
+proceeds by the existing rules for that orientation.~~
 
 The consequence is intended: `size` names *"share of the PARENT's split axis"* (framework `:756`),
 so the effective orientation determines which axis a child's `size` governs — identical to what the
