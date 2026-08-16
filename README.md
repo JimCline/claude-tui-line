@@ -256,6 +256,23 @@ A pane's own explicit `border` declaration — shorthand, `edges` object, or a p
 `enabled`/`color`/`style` object — always wins over whatever an ancestor's `"outline"` or `"inside"`
 is propagating.
 
+`border` is either one of the shorthand strings above, or an object — never both on the same pane.
+The object form's `edges` key turns individual sides on or off directly:
+
+```json
+{ "border": { "edges": { "left": false, "right": false } } }
+```
+
+This pane keeps its top and bottom edges and drops left/right — handy for two side-by-side panes
+that shouldn't each draw their own copy of the edge between them. Any edge you omit from `edges`
+defaults to `true`, the same as omitting `edges` entirely defaults all four to `true` — `edges` is
+for overriding specific sides, not for restating the ones you're keeping. `border.enabled` is
+independent of `edges`: `enabled: false` (or `style: "none"`) suppresses the border outright,
+regardless of what `edges` says; `edges` only has anything to draw once the border is enabled. And
+if every edge ends up `false` — by explicit `edges`, or because an ancestor's `"outline"` forced
+this pane's edges off — `style` is dropped too, rather than leaving a styled-but-invisible border on
+record.
+
 By default, adjacent panes draw as two separate boxes with the gutter between them. Set
 
 ```json
