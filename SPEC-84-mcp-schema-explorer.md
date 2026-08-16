@@ -158,6 +158,12 @@ Rationale:
 `sections` exists for the case where an agent genuinely wants one slice (e.g. re-checking accepted
 tokens mid-edit) without re-paying for the rest.
 
+**Amendment (task #93):** the one-tool decision itself is re-affirmed, but the size premise above
+it — "~19 colour entries... low thousands of tokens, once" — was superseded. That count named the
+`recommended` list but missed the 256-entry `palette` array, which the Architect's own closing note
+on task #93's verdict flagged as roughly 44% of the raw payload. `schema-mcp-query.md` fixes the
+size problem the count missed, without reopening D1's one-tool-vs-several question.
+
 ### D2 — Data source: one new CLI subcommand, spawned. NOT moved into `ClaudeTuiLineShared`.
 
 **Decided: `claude-tui-line --schema --json`, spawned by MCP via the existing `CliRunner`/`CliLocator`
@@ -537,6 +543,10 @@ in `ConfigTools.cs`.
 
 No `configPath` parameter. The schema is a property of the binary, not of any config file.
 
+**Amendment (task #93, `.claude/hierarchy/specs/schema-mcp-query.md`):** this signature is
+superseded. The no-args response is no longer the full envelope — see that spec's §3.1/§3.2 for
+the queryable/enumerable `select` parameter and the projected default index.
+
 ### 6.2 Behaviour
 
 1. `CliRunner.RunSchemaAsync()` — spawn `<cli> --schema --json`, mirroring `RunCheckAsync`'s
@@ -555,6 +565,12 @@ No `configPath` parameter. The schema is a property of the binary, not of any co
    caller as "this schema has no colours". (Same fail-closed shape as §1.1.3's invariant and
    §9.5.1's `PendingForm` ruling: a gap must be stated, because silence cannot be distinguished
    from an omission.)
+
+   **Amendment (task #93, `.claude/hierarchy/specs/schema-mcp-query.md`):** "return the whole
+   envelope" no longer describes the no-args default. `sections` gained a sibling, `select`, and the
+   no-args response is now a projected default index (prose elided, the 256-entry colour palette
+   replaced with a derived omission marker) rather than the raw envelope. Read that spec before
+   implementing this step.
 5. No separate presence probe. Unlike `get_config` (which probes because it is otherwise
    read-only and would happily serve a config on a machine with no CLI), this tool's *own* spawn is
    the presence check — a successful `--schema --json` is the evidence.

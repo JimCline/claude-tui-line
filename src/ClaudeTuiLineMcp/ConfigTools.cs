@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Server;
@@ -152,15 +153,31 @@ public sealed class ConfigTools
     /// <summary>SPEC-84-mcp-schema-explorer.md §5.1: the section names an agent may request via <see cref="GetConfigSchema"/>'s <c>sections</c> filter.</summary>
     private static readonly string[] ValidSchemaSections = { "items", "colors", "accepted", "structures", "kindSupport" };
 
+    private static readonly string[] ProseKeys = { "description", "notes", "example" };
+
+    private const string DefaultIndexHint =
+        "Descriptions, notes, examples and the 256-entry colour palette are omitted here. Fetch "
+        + "them with get_config_schema(select: [\"structures.pane\", \"colors.palette\"]) using the "
+        + "ids below, or whole sections with get_config_schema(sections: [\"items\"]).";
+
+    private const string PaletteOmittedNote =
+        "The extended 256-colour xterm palette. Fetch with select:[\"colors.palette\"], or a single "
+        + "entry with select:[\"colors.palette.196\"].";
+
     [McpServerTool(Name = "get_config_schema")]
     [Description(
-        "The claude-tui-line config schema, read live from the installed binary: every item kind and "
-        + "its required/optional keys, every config key's accepted values, the recommended colour "
-        + "names, and the structural shape of a config document (root, pane, split, item, colour "
-        + "rule). Use this before writing or editing a config instead of consulting documentation — "
-        + "documentation can be stale, this is what the binary actually accepts.")]
+        "The claude-tui-line config schema, read live from the installed binary. Called with no "
+        + "arguments it returns a compact default: every item kind, named colour, accepted-value key "
+        + "and config structure, with each one's field names and types — omitting descriptions, notes, "
+        + "examples, and the 256-entry extended colour palette. That is usually enough to write a "
+        + "config. For prose, examples, or the extended palette, pass select with ids from the "
+        + "response (e.g. select: [\"structures.pane\"], select: [\"colors.palette\"]). To get whole "
+        + "sections in full, pass sections. Use this instead of documentation — documentation can be "
+        + "stale, this is what the binary actually accepts.")]
     public static async Task<object> GetConfigSchema(
-        [Description("Limit the response to these sections: items, colors, accepted, structures, kindSupport. Omit for all.")]
+        [Description("Entry ids to return in full, as listed in the response (e.g. \"structures.pane\", \"accepted.border.style\", \"colors.palette\"). Mutually exclusive with sections.")]
+        string[]? select = null,
+        [Description("Return these whole sections in full: items, colors, accepted, structures, kindSupport. Mutually exclusive with select.")]
         string[]? sections = null)
     {
         var result = await CliRunner.RunSchemaAsync().ConfigureAwait(false);
@@ -177,11 +194,29 @@ public sealed class ConfigTools
                 null);
         }
 
-        if (sections is null || sections.Length == 0)
+        var hasSelect = select is { Length: > 0 };
+        var hasSections = sections is { Length: > 0 };
+
+        if (hasSelect && hasSections)
         {
-            return envelope;
+            return McpResults.Failure("conflicting-args", "select and sections are mutually exclusive; pass one or the other.", null);
         }
 
+        if (hasSections)
+        {
+            return BuildSectionsResponse(envelope, sections!);
+        }
+
+        if (hasSelect)
+        {
+            return BuildDetailResponse(envelope, select!);
+        }
+
+        return BuildDefaultIndex(envelope);
+    }
+
+    private static object BuildSectionsResponse(JsonObject envelope, string[] sections)
+    {
         var unknown = sections.Where(s => !ValidSchemaSections.Contains(s, StringComparer.Ordinal)).ToList();
         if (unknown.Count > 0)
         {
@@ -191,13 +226,472 @@ public sealed class ConfigTools
                 null);
         }
 
-        var filtered = new JsonObject { ["version"] = envelope["version"]?.DeepClone() };
+        var filtered = new JsonObject
+        {
+            ["version"] = envelope["version"]?.DeepClone(),
+            ["mode"] = "sections",
+        };
         foreach (var section in sections)
         {
             filtered[section] = envelope[section]?.DeepClone();
         }
 
         return filtered;
+    }
+
+    // §4.1: the only response that projects the live envelope — elides prose (§2.2), replaces
+    // colors.palette with an omission marker (§2.6.2), and stamps addressable ids onto entries
+    // whose natural shape doesn't already carry one. §2.4: any top-level key the projector does
+    // not recognize is emitted whole, never dropped.
+    private static object BuildDefaultIndex(JsonObject envelope)
+    {
+        var index = new JsonObject
+        {
+            ["version"] = envelope["version"]?.DeepClone(),
+            ["mode"] = "index",
+            ["hint"] = DefaultIndexHint,
+        };
+
+        foreach (var kvp in envelope)
+        {
+            if (kvp.Key == "version")
+            {
+                continue;
+            }
+
+            var cloned = kvp.Value?.DeepClone();
+            index[kvp.Key] = kvp.Key switch
+            {
+                "structures" => ProjectStructures(cloned),
+                "colors" => ProjectColors(cloned),
+                "items" => ElideProse(cloned),
+                "accepted" => ProjectAccepted(cloned),
+                "kindSupport" => ElideProse(cloned),
+                _ => cloned,
+            };
+        }
+
+        return index;
+    }
+
+    // §3.2/§4.1: structures entries are keyed by `name`, which never collides with the `id`
+    // the index adds. §4.1's field-object rule: an absent (null) acceptedKey is omitted, not
+    // emitted as null.
+    private static JsonNode? ProjectStructures(JsonNode? node)
+    {
+        if (node is JsonArray entries)
+        {
+            foreach (var entry in entries.OfType<JsonObject>())
+            {
+                if (entry["name"] is JsonValue nameValue && nameValue.TryGetValue<string>(out var name))
+                {
+                    entry["id"] = $"structures.{name}";
+                }
+
+                if (entry["fields"] is JsonArray fields)
+                {
+                    foreach (var field in fields.OfType<JsonObject>())
+                    {
+                        if (field.TryGetPropertyValue("acceptedKey", out var acceptedKey) && acceptedKey is null)
+                        {
+                            field.Remove("acceptedKey");
+                        }
+                    }
+                }
+            }
+        }
+
+        return ElideProse(node);
+    }
+
+    // §2.6.2/§4.4: the palette is replaced by an in-band omission marker, never truncated or
+    // dropped; its count/themeMappedCount are derived from the live array, never hardcoded.
+    // §3.2: recommended entries are keyed by `name`, so an added `id` cannot collide.
+    private static JsonNode? ProjectColors(JsonNode? node)
+    {
+        if (node is JsonObject colors)
+        {
+            if (colors["recommended"] is JsonArray recommended)
+            {
+                foreach (var entry in recommended.OfType<JsonObject>())
+                {
+                    if (entry["name"] is JsonValue nameValue && nameValue.TryGetValue<string>(out var name))
+                    {
+                        entry["id"] = $"colors.recommended.{name}";
+                    }
+                }
+            }
+
+            if (colors["palette"] is JsonArray palette)
+            {
+                var count = palette.Count;
+                var themeMappedCount = palette.OfType<JsonObject>()
+                    .Count(p => p["themeMapped"] is JsonValue tm && tm.TryGetValue<bool>(out var mapped) && mapped);
+
+                colors["palette"] = new JsonObject
+                {
+                    ["omitted"] = true,
+                    ["count"] = count,
+                    ["note"] = PaletteOmittedNote,
+                    ["themeMappedCount"] = themeMappedCount,
+                };
+            }
+        }
+
+        return ElideProse(node);
+    }
+
+    // §3.2: accepted.keys entries are keyed by `key`, which never collides with the `id` the
+    // index adds. §2.6.5: alsoAccepted is normative, not prose — the generic elide-set never
+    // touches it.
+    private static JsonNode? ProjectAccepted(JsonNode? node)
+    {
+        if (node is JsonObject accepted && accepted["keys"] is JsonArray keys)
+        {
+            foreach (var entry in keys.OfType<JsonObject>())
+            {
+                if (entry["key"] is JsonValue keyValue && keyValue.TryGetValue<string>(out var key))
+                {
+                    entry["id"] = $"accepted.keys.{key}";
+                }
+            }
+        }
+
+        return ElideProse(node);
+    }
+
+    // §2.2/§2.4: one recursive projection over the parsed JsonNode, keyed on the elide-set,
+    // applied at every depth — mutates in place and returns the same reference so callers can
+    // use it inline without re-parenting nodes that are still attached to their container.
+    private static JsonNode? ElideProse(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (var prose in ProseKeys)
+                {
+                    obj.Remove(prose);
+                }
+
+                foreach (var kvp in obj.ToList())
+                {
+                    ElideProse(kvp.Value);
+                }
+
+                return obj;
+            case JsonArray arr:
+                foreach (var item in arr)
+                {
+                    ElideProse(item);
+                }
+
+                return arr;
+            default:
+                return node;
+        }
+    }
+
+    // §4.2: entries are returned verbatim and un-projected — the resolved node is the same
+    // bytes the full envelope would have carried, never elided or id-stamped.
+    private static object BuildDetailResponse(JsonObject envelope, string[] select)
+    {
+        var entries = new JsonArray();
+        foreach (var rawId in select)
+        {
+            var resolution = ResolveEntry(envelope, rawId);
+            if (resolution.Ambiguous)
+            {
+                return McpResults.EntryFailure(
+                    "ambiguous-entry",
+                    $"\"{rawId}\" matches an entry in more than one section; qualify it with the section prefix.",
+                    resolution.Candidates!);
+            }
+
+            if (!resolution.Found)
+            {
+                return McpResults.EntryFailure(
+                    "unknown-entry",
+                    $"no schema entry matches \"{rawId}\".",
+                    FindCandidates(envelope, rawId));
+            }
+
+            entries.Add(new JsonObject
+            {
+                ["id"] = resolution.QualifiedId,
+                ["value"] = resolution.Node?.DeepClone(),
+            });
+        }
+
+        return new JsonObject
+        {
+            ["version"] = envelope["version"]?.DeepClone(),
+            ["mode"] = "detail",
+            ["entries"] = entries,
+        };
+    }
+
+    private sealed record ResolveResult(bool Found, bool Ambiguous, JsonNode? Node, string QualifiedId, IReadOnlyList<string>? Candidates)
+    {
+        public static ResolveResult Hit(JsonNode? node, string qualifiedId) => new(true, false, node, qualifiedId, null);
+        public static ResolveResult Miss() => new(false, false, null, "", null);
+        public static ResolveResult AmbiguousHit(IReadOnlyList<string> candidates) => new(false, true, null, "", candidates);
+    }
+
+    // §3.3: split, walk, resolve. §3.3's bare-name convenience applies only to a dot-free id
+    // that is not itself a section name; a dotted id whose first segment is not a valid section
+    // fails outright (no retry).
+    private static ResolveResult ResolveEntry(JsonObject envelope, string id)
+    {
+        if (!id.Contains('.'))
+        {
+            if (ValidSchemaSections.Contains(id, StringComparer.Ordinal))
+            {
+                TryWalk(envelope, id, Array.Empty<string>(), out var whole);
+                return ResolveResult.Hit(whole, id);
+            }
+
+            // Bare-name convenience must consider every addressable id, not just one level below
+            // the section — accepted.keys.<key> and items.items.<id> are two segments deep, so a
+            // bare "border" matching structures.border must also see accepted.keys.border.
+            var candidateIds = ValidSchemaSections
+                .SelectMany(section => EnumerateIds(envelope, section))
+                .Where(fullId => fullId[(fullId.LastIndexOf('.') + 1)..] == id)
+                .Distinct()
+                .ToList();
+
+            var hits = new List<(string QualifiedId, JsonNode? Node)>();
+            foreach (var candidateId in candidateIds)
+            {
+                var candidateSegments = candidateId.Split('.');
+                if (TryWalk(envelope, candidateSegments[0], candidateSegments.Skip(1).ToArray(), out var node))
+                {
+                    hits.Add((candidateId, node));
+                }
+            }
+
+            return hits.Count switch
+            {
+                0 => ResolveResult.Miss(),
+                1 => ResolveResult.Hit(hits[0].Node, hits[0].QualifiedId),
+                _ => ResolveResult.AmbiguousHit(hits.Select(h => h.QualifiedId).ToList()),
+            };
+        }
+
+        var segments = id.Split('.');
+        var sectionSegment = segments[0];
+        if (!ValidSchemaSections.Contains(sectionSegment, StringComparer.Ordinal))
+        {
+            return ResolveResult.Miss();
+        }
+
+        return TryWalk(envelope, sectionSegment, segments.Skip(1).ToArray(), out var result)
+            ? ResolveResult.Hit(result, id)
+            : ResolveResult.Miss();
+    }
+
+    // §3.3 step 2: at an object, match a property by name; at an array, match an element whose
+    // name/key/id/number equals the segment (ordinal; number compared as an invariant decimal
+    // string). Every array is checked against all four keys, per §3.3's shape-agnostic rule.
+    private static bool TryWalk(JsonObject envelope, string sectionName, string[] remainingSegments, out JsonNode? result)
+    {
+        JsonNode? current = envelope[sectionName];
+        foreach (var segment in remainingSegments)
+        {
+            switch (current)
+            {
+                case JsonObject obj when obj.TryGetPropertyValue(segment, out var next):
+                    current = next;
+                    break;
+                case JsonArray arr:
+                    var match = arr.OfType<JsonObject>().FirstOrDefault(el => MatchesSegment(el, segment));
+                    if (match is null)
+                    {
+                        result = null;
+                        return false;
+                    }
+
+                    current = match;
+                    break;
+                default:
+                    result = null;
+                    return false;
+            }
+        }
+
+        result = current;
+        return true;
+    }
+
+    private static bool MatchesSegment(JsonObject obj, string segment)
+    {
+        if (obj["name"] is JsonValue nameValue && nameValue.TryGetValue<string>(out var name) && name == segment)
+        {
+            return true;
+        }
+
+        if (obj["key"] is JsonValue keyValue && keyValue.TryGetValue<string>(out var key) && key == segment)
+        {
+            return true;
+        }
+
+        if (obj["id"] is JsonValue idValue && idValue.TryGetValue<string>(out var id) && id == segment)
+        {
+            return true;
+        }
+
+        if (obj["number"] is JsonValue numberValue && numberValue.TryGetValue<int>(out var number)
+            && number.ToString(CultureInfo.InvariantCulture) == segment)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    // §3.5: up to 5 nearest ids, scoped to the requested section when the id names one. Nearest
+    // is by edit distance rather than a literal substring check, since a one-character typo
+    // (the motivating case) need not be a substring of its intended target.
+    private static List<string> FindCandidates(JsonObject envelope, string id)
+    {
+        var dotIndex = id.IndexOf('.');
+        var section = dotIndex > 0 ? id[..dotIndex] : null;
+        var scoped = section is not null && ValidSchemaSections.Contains(section, StringComparer.Ordinal);
+
+        var pool = scoped
+            ? EnumerateIds(envelope, section!)
+            : ValidSchemaSections.SelectMany(s => EnumerateIds(envelope, s));
+
+        var lowerId = id.ToLowerInvariant();
+        return pool
+            .OrderBy(candidate => LevenshteinDistance(candidate.ToLowerInvariant(), lowerId))
+            .Take(5)
+            .ToList();
+    }
+
+    private static IEnumerable<string> EnumerateIds(JsonObject envelope, string section)
+    {
+        var root = envelope[section];
+        switch (section)
+        {
+            case "structures":
+                if (root is JsonArray structures)
+                {
+                    foreach (var entry in structures.OfType<JsonObject>())
+                    {
+                        if (entry["name"] is JsonValue nv && nv.TryGetValue<string>(out var n))
+                        {
+                            yield return $"structures.{n}";
+                        }
+                    }
+                }
+
+                break;
+            case "kindSupport":
+                if (root is JsonObject kindSupport)
+                {
+                    foreach (var kvp in kindSupport)
+                    {
+                        yield return $"kindSupport.{kvp.Key}";
+                    }
+                }
+
+                break;
+            case "items":
+                if (root is JsonObject items)
+                {
+                    if (items["items"] is JsonArray itemsArr)
+                    {
+                        foreach (var entry in itemsArr.OfType<JsonObject>())
+                        {
+                            if (entry["id"] is JsonValue iv && iv.TryGetValue<string>(out var i))
+                            {
+                                yield return $"items.items.{i}";
+                            }
+                        }
+                    }
+
+                    if (items["kinds"] is JsonObject kinds)
+                    {
+                        foreach (var kvp in kinds)
+                        {
+                            yield return $"items.kinds.{kvp.Key}";
+                        }
+                    }
+                }
+
+                break;
+            case "colors":
+                if (root is JsonObject colors)
+                {
+                    if (colors["recommended"] is JsonArray recommended)
+                    {
+                        foreach (var entry in recommended.OfType<JsonObject>())
+                        {
+                            if (entry["name"] is JsonValue nv2 && nv2.TryGetValue<string>(out var n2))
+                            {
+                                yield return $"colors.recommended.{n2}";
+                            }
+                        }
+                    }
+
+                    yield return "colors.palette";
+                    if (colors["palette"] is JsonArray palette)
+                    {
+                        foreach (var entry in palette.OfType<JsonObject>())
+                        {
+                            if (entry["name"] is JsonValue pnv && pnv.TryGetValue<string>(out var pn))
+                            {
+                                yield return $"colors.palette.{pn}";
+                            }
+
+                            if (entry["number"] is JsonValue pnumValue && pnumValue.TryGetValue<int>(out var pnum))
+                            {
+                                yield return $"colors.palette.{pnum.ToString(CultureInfo.InvariantCulture)}";
+                            }
+                        }
+                    }
+                }
+
+                break;
+            case "accepted":
+                if (root is JsonObject accepted && accepted["keys"] is JsonArray keys)
+                {
+                    foreach (var entry in keys.OfType<JsonObject>())
+                    {
+                        if (entry["key"] is JsonValue kv && kv.TryGetValue<string>(out var k))
+                        {
+                            yield return $"accepted.keys.{k}";
+                        }
+                    }
+                }
+
+                break;
+        }
+    }
+
+    private static int LevenshteinDistance(string a, string b)
+    {
+        var d = new int[a.Length + 1, b.Length + 1];
+        for (var i = 0; i <= a.Length; i++)
+        {
+            d[i, 0] = i;
+        }
+
+        for (var j = 0; j <= b.Length; j++)
+        {
+            d[0, j] = j;
+        }
+
+        for (var i = 1; i <= a.Length; i++)
+        {
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + cost);
+            }
+        }
+
+        return d[a.Length, b.Length];
     }
 
     // SPEC-V2-FRAMEWORK.md §12.6.2: an explicit configPath argument overrides resolution outright.
@@ -242,5 +736,13 @@ internal static class McpResults
         code,
         message,
         path,
+    };
+
+    public static object EntryFailure(string code, string message, IReadOnlyList<string> candidates) => new
+    {
+        ok = false,
+        code,
+        message,
+        candidates,
     };
 }
