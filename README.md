@@ -153,8 +153,9 @@ Pane keys:
 | `minSize` / `maxSize` | integers — clamps on the resolved width |
 | `distribute` | `"greedy"` (default) — each sibling claims what it wants, in order; `"min-rows"` — size siblings to minimise total rows instead; `"even"` — divide the remaining width equally among siblings, ignoring their content/fill sizing |
 | `gutter` | integer, default `0` — columns between children on a **vertical** split; has no effect on a horizontal split |
-| `align` | `"left"` (default), `"center"`, `"right"` |
+| `align` | `"left"` (default), `"center"`, `"right"` — aligns this pane's **content** within its own box |
 | `valign` | `"top"` (default), `"middle"`, `"bottom"` |
+| `selfAlign` | `"left"` (default), `"center"`, `"right"` — aligns the **pane itself** within the leftover space of its parent's layout, distinct from `align`/`valign` |
 | `overflow` | `"wrap"`, `"truncate"`, `"overflow"` |
 | `ellipsis` | the marker used when truncating |
 | `height` | `"content"` or `"fill"` (default) — sizes the pane to its own content or lets it fill, same vocabulary as `size` on the width axis |
@@ -163,6 +164,9 @@ Pane keys:
 | `border.style` | `"rounded"` (default), `"square"`, `"heavy"`, `"double"`, `"ascii"`, or `"none"` |
 | `border.edges` | `top` / `right` / `bottom` / `left`, each boolean, defaulting to `true` |
 | `items` | the items to render, for a leaf pane |
+| `id` | an optional identifier for the pane, in its own namespace — never shadows or is shadowed by an item `id` |
+| `title` | an item, authored exactly like any entry in `items`, rendered as a caption spliced into the pane's top border line — requires `border.edges.top` |
+| `titleAlign` | `"left"` (default), `"center"`, `"right"` — position of `title` along the border run; has no effect without `title` |
 
 `split` names the dividing line, not the arrangement of children along it. `"vertical"` panes are
 divided by a vertical line — children sit side by side, first child leftmost — the shape in the
@@ -204,6 +208,34 @@ searches for the width split that makes the *whole statusline* as short as possi
 The surface as a whole also takes its own `maxRows`, separate from any single pane's: `{ "surface":
 { "maxRows": 8 } }` bounds the total rows the whole statusline may occupy, however many panes want
 more. `8` is the default.
+
+A pane can carry its own `id`, a `title` caption, and a `selfAlign`:
+
+```json
+{
+  "split": "vertical",
+  "children": [
+    { "id": "left", "size": "fill", "items": [ { "item": "directory" } ] },
+    {
+      "id": "right",
+      "size": "content",
+      "selfAlign": "right",
+      "title": { "item": "model" },
+      "titleAlign": "center",
+      "items": [ { "item": "context" } ]
+    }
+  ]
+}
+```
+
+`selfAlign` moves the whole `right` pane to the right edge of the leftover width in its parent's
+row, while `align`/`valign` (unset here) still govern how `context`'s own content sits inside that
+pane's box — the two never conflict because they act on different things. `title` is authored the
+same way any item is — here it renders the `model` item — but is flagged as the pane's title and
+drawn into the top border line itself rather than as a content row, so it never consumes a row or
+counts against `maxRows`. It requires a top border edge, drops silently (with a `--check` note)
+under `surface.border.collapse: true`, and `titleAlign` places it left, center, or right along
+that border run.
 
 ### Borders
 
