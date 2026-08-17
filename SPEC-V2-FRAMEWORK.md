@@ -2595,6 +2595,14 @@ the feature would work solely in the configuration nobody wants, and the example
 would not work at all. Resolution goes to the registry, which does not know or care what is on
 screen.
 
+`remote-url` is not the only link base available, and not always the cheapest one. For linking
+`repo` specifically, `repo-host` (§9.6.2.1) resolves the host straight from the session payload —
+`{ "item": "repo", "link": "https://{repo-host}/{}" }` — with no subprocess at all, where
+`{remote-url}` costs a lazily-probed, 30-second-cached `git remote get-url`. The two can
+legitimately disagree (a fork whose origin is the fork while the harness reports the upstream), so
+this is not "prefer `repo-host` always" — it is the answer when the base and the item it decorates
+are both `repo`.
+
 A referenced id that names nothing must be distinguishable from one that names a real item,
 because silently dropping the link makes a typo and a working config produce identical output.
 `--check` **reports** a `link` template naming an unknown id — as a `warning`, per §9.4.1, since
@@ -5515,7 +5523,7 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
 `default` read straight off `ItemRegistry`, and `example` is produced by *running*
 `BuildDefaultSegment` against §9.3.1's fixture — the `"main"` in the shape above is an
 illustration of that output, not a string stored anywhere. `reports` is prose, it is written once
-here, and the sixteen strings are:
+here, and the seventeen strings are:
 
 | id | `reports` |
 |---|---|
@@ -5535,6 +5543,7 @@ here, and the sixteen strings are:
 | `engram` | recent Engram memory activity. Its colour reflects whether the store is reachable and active rather than a magnitude, so it is a state indicator and not a gauge |
 | `vim` | the current vim mode, when vim mode is enabled |
 | `remote-url` | the git remote's URL. Opt-in rather than default because resolving it shells out to git |
+| `repo-host` | the host the workspace repo lives on, from the session payload rather than a git probe |
 
 The three with a second sentence are the `Semantic` ones (§6). For a decorative item the colour is
 the author's choice and needs no explanation; for these three the colour *is* information, and a
@@ -5568,7 +5577,7 @@ the argument for keeping worked examples few, real, and re-checked whenever the 
 reopened.
 
 `tools/check-examples.sh` now catches precisely this instance — it runs `--items --json` and
-compares. It is scoped to the sixteen builtins' default renders (§9.6.2.2), so it retires the
+compares. It is scoped to the seventeen builtins' default renders (§9.6.2.2), so it retires the
 specific trap this glyph fell into without retiring the general warning above: every example
 outside that scope is still an unverified assertion, and this paragraph is still the reason to
 treat it as one.
@@ -5576,7 +5585,7 @@ treat it as one.
 **Why `kinds` is a section and not a column.** The accepted keys do not vary by item id. Every
 builtin takes `format`, `color`, `overflow`, and `link`, and nothing else; what varies is *how the
 item is written* — §4.1's `command`, §4.3's `from`/`extract`/`case`, §3.3's `parts`. Putting a key
-list on each row would store one per-kind fact sixteen times and grow a seventeenth copy with the
+list on each row would store one per-kind fact seventeen times and grow an eighteenth copy with the
 next item added. That is precisely the drift the very next paragraph of §9 warns about, and it
 would have been committed by the sentence above it. The corroboration that two sections is right
 was already in the document: §12.6's `list_items` row says the tool must return "what each emits,
@@ -5664,7 +5673,7 @@ Four rulings in that, none of them about formatting:
 **Once this flag exists, it is the oracle for every item example in this document — and that is
 mechanically checkable.** §9.6.2.1 says a spec example naming a specific rendered value is an
 assertion about the implementation that no document-versus-document check can verify. `--items`
-closes exactly that gap for the sixteen builtins: its `example` field is `BuildDefaultSegment` run
+closes exactly that gap for the seventeen builtins: its `example` field is `BuildDefaultSegment` run
 against §9.3.1's fixture, so a check that runs `--items --json` and greps this document for
 example values that disagree is a document-versus-*code* check, which is the class §13.3's two
 checks cannot reach. It is worth building *because* the alternative already failed three times in a
@@ -5682,7 +5691,7 @@ enforces four rules, all exact, none guessing at what a line "looks like":
 - a markdown table preceded by a line that is **nothing but** an `items-table` HTML comment must
   **enumerate the live set exactly** — no id absent, none listed that no longer exists, and each
   row's `(opt-in)` marker agreeing with that item's `default: false`;
-- a prose **count** of the builtins — "all sixteen built-in items", "the sixteen builtins" — must
+- a prose **count** of the builtins — "all N built-in items", "the N builtins" — must
   be the live count. The numeral must be immediately followed by `builtin(s)` or `built-in item(s)`,
   which is what keeps "the nearest of the sixteen" (the ANSI palette, closed by the standard, not by
   this registry) and SPEC.md's "14 built-in segments" (v1's concept, true in past tense) out of it.

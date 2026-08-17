@@ -168,6 +168,12 @@ public static class SegmentBuilder
             ? null
             : $"{repo.Owner}/{repo.Name}";
 
+    internal static Segment? BuildRepoHost(RepoInfo? repo) =>
+        ResolveRepoHost(repo) is { } raw ? SingleColor("dim", raw) : null;
+
+    internal static string? ResolveRepoHost(RepoInfo? repo) =>
+        string.IsNullOrEmpty(repo?.Host) ? null : repo!.Host;
+
     internal const string WorktreeFormat = "worktree:{}";
 
     internal static Segment? BuildWorktree(WorktreeInfo? worktree) =>

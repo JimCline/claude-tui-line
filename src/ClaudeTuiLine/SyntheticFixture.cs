@@ -15,7 +15,7 @@ public static class SyntheticFixture
     public static readonly StatusInput Input = new()
     {
         Cwd = "/home/you/code/acme-web",
-        Workspace = new WorkspaceInfo { Repo = new RepoInfo { Owner = "acme", Name = "acme-web" } },
+        Workspace = new WorkspaceInfo { Repo = new RepoInfo { Host = "github.com", Owner = "acme", Name = "acme-web" } },
         Worktree = new WorktreeInfo { Name = "acme-web", Branch = "main" },
         Pr = new PrInfo { Number = 128, ReviewState = "APPROVED" },
         Model = new ModelInfo { DisplayName = "Claude Sonnet 5" },

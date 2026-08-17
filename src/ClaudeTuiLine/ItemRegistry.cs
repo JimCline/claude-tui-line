@@ -62,6 +62,7 @@ public static class ItemRegistry
         new("vim", "the current vim mode, when vim mode is enabled", ctx => SegmentBuilder.ResolveVim(ctx.Input.Vim), ctx => SegmentBuilder.BuildVimMode(ctx.Input.Vim), ItemColorKind.Decorative),
         new("model-short", "an abbreviated model name, for panes too narrow for the full one", ctx => SegmentBuilder.ResolveModelShort(ctx.Input.Model), ctx => SegmentBuilder.BuildModelShort(ctx.Input.Model), ItemColorKind.Decorative),
         new("remote-url", "the git remote's URL. Opt-in rather than default because resolving it shells out to git", ctx => SegmentBuilder.ResolveRemoteUrl(ctx.RemoteUrl), ctx => SegmentBuilder.BuildRemoteUrl(ctx.RemoteUrl), ItemColorKind.Decorative),
+        new("repo-host", "the host the workspace repo lives on, from the session payload rather than a git probe", ctx => SegmentBuilder.ResolveRepoHost(ctx.Input.Workspace?.Repo), ctx => SegmentBuilder.BuildRepoHost(ctx.Input.Workspace?.Repo), ItemColorKind.Decorative),
     };
 
     private static readonly IReadOnlyDictionary<string, ItemDefinition> ById =
@@ -71,12 +72,14 @@ public static class ItemRegistry
     // opt-in-only ones — exposed in the same declaration order for the same reason DefaultIds is.
     public static readonly IReadOnlyList<ItemDefinition> All = Items;
 
-    // model-short and remote-url are both opt-in-only (never part of the default 14-segment
-    // pipeline): remote-url specifically because ItemContext.RemoteUrl's probe is lazy and must
+    // model-short, remote-url, and repo-host are all opt-in-only (never part of the default
+    // 14-segment pipeline): remote-url because ItemContext.RemoteUrl's probe is lazy and must
     // stay unfired for a render that never references it (§3.2) — including it here would probe
-    // on every render regardless of placement.
+    // on every render regardless of placement. repo-host is excluded for a different reason — it
+    // fires no subprocess, but a bare hostname is noise in a rendered statusline; its purpose is
+    // to be referenced by a link template, not displayed on its own.
     public static readonly IReadOnlyList<string> DefaultIds =
-        Items.Where(i => i.Id is not ("model-short" or "remote-url"))
+        Items.Where(i => i.Id is not ("model-short" or "remote-url" or "repo-host"))
             .Select(i => i.Id)
             .ToList();
 

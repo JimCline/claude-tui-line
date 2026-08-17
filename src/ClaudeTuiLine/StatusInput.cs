@@ -52,6 +52,9 @@ public sealed class WorkspaceInfo
 
 public sealed class RepoInfo
 {
+    [JsonPropertyName("host")]
+    public string? Host { get; set; }
+
     [JsonPropertyName("owner")]
     public string? Owner { get; set; }
 

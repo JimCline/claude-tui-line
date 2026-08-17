@@ -119,5 +119,5 @@ Report, briefly:
   rather than immediately
 
 Do not invent configuration examples in your summary. Point them at the project README, which
-documents every pane key, all sixteen built-in items, custom `command` items, derived items,
+documents every pane key, all seventeen built-in items, custom `command` items, derived items,
 colours, and hyperlinks.

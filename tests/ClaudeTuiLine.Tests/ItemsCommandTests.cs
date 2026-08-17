@@ -3,9 +3,9 @@ namespace ClaudeTuiLine.Tests;
 public class ItemsCommandTests
 {
     [Fact]
-    public void ItemRegistryAll_ContainsSixteenUniquelyIdentifiedItemsWithNonEmptyReports()
+    public void ItemRegistryAll_ContainsSeventeenUniquelyIdentifiedItemsWithNonEmptyReports()
     {
-        Assert.Equal(16, ItemRegistry.All.Count);
+        Assert.Equal(17, ItemRegistry.All.Count);
         Assert.Equal(ItemRegistry.All.Count, ItemRegistry.All.Select(i => i.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(ItemRegistry.All, i => Assert.False(string.IsNullOrWhiteSpace(i.Reports)));
     }
@@ -30,12 +30,12 @@ public class ItemsCommandTests
     }
 
     [Fact]
-    public void Build_MarksOnlyModelShortAndRemoteUrlAsNonDefault()
+    public void Build_MarksOnlyModelShortRemoteUrlAndRepoHostAsNonDefault()
     {
         var result = ItemsCommand.Build();
 
         var nonDefault = result.Items.Where(i => !i.Default).Select(i => i.Id).OrderBy(id => id, StringComparer.Ordinal);
-        Assert.Equal(new[] { "model-short", "remote-url" }, nonDefault);
+        Assert.Equal(new[] { "model-short", "remote-url", "repo-host" }, nonDefault);
     }
 
     [Fact]
@@ -64,6 +64,16 @@ public class ItemsCommandTests
         // BuildGitBranch's default segment carries no glyph — Plain is exactly the branch name.
         var gitBranch = result.Items.Single(i => i.Id == "git-branch");
         Assert.Equal("main", gitBranch.Example);
+    }
+
+    [Fact]
+    public void Build_RepoHostExampleIsTheFixtureHost()
+    {
+        var result = ItemsCommand.Build();
+
+        var repoHost = result.Items.Single(i => i.Id == "repo-host");
+        Assert.Equal("the host the workspace repo lives on, from the session payload rather than a git probe", repoHost.Reports);
+        Assert.Equal("github.com", repoHost.Example);
     }
 
     [Fact]

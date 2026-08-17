@@ -199,6 +199,83 @@ public class HyperlinkTests
     }
 
     [Fact]
+    public void TicketRecipe_ExtractCaseAndLink_BuildsUrlFromPostExtractPostCaseValue()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var ctx = new ItemContext(input, gitBranch: "fix/eng-1234-thing", engram: null, remoteUrlProbe: () => null);
+
+        var ticket = new PaneItem(null, null, null, null, Id: "ticket", From: "git-branch",
+            Extract: "[A-Za-z]{2,}-[0-9]+", Case: "upper", Link: "https://linear.app/acme-corp/issue/{}");
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { ticket });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+        var resolved = LeafItems.Resolve(new[] { ticket }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("ENG-1234", decision.Text);
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://linear.app/acme-corp/issue/ENG-1234", url);
+    }
+
+    [Fact]
+    public void TicketRecipe_BranchWithNoMatch_ItemDoesNotRender()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var ctx = new ItemContext(input, gitBranch: "main", engram: null, remoteUrlProbe: () => null);
+
+        var ticket = new PaneItem(null, null, null, null, Id: "ticket", From: "git-branch",
+            Extract: "[A-Za-z]{2,}-[0-9]+", Case: "upper", Link: "https://linear.app/acme-corp/issue/{}");
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { ticket });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+
+        Assert.Null(values["ticket"]);
+    }
+
+    [Fact]
+    public void TicketRecipe_NoLinkTemplate_PlainTextWithNoHyperlink()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var ctx = new ItemContext(input, gitBranch: "fix/eng-1234-thing", engram: null, remoteUrlProbe: () => null);
+
+        var ticket = new PaneItem(null, null, null, null, Id: "ticket", From: "git-branch",
+            Extract: "[A-Za-z]{2,}-[0-9]+", Case: "upper");
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { ticket });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+        var resolved = LeafItems.Resolve(new[] { ticket }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("ENG-1234", decision.Text);
+        Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
+    }
+
+    [Fact]
+    public void RepoLinkedViaRepoHost_WrapsMarkupInLink_WithoutInvokingRemoteUrlProbe()
+    {
+        var probeInvoked = false;
+        var input = new StatusInput
+        {
+            Model = new ModelInfo { DisplayName = "Claude Opus 4.5" },
+            Workspace = new WorkspaceInfo { Repo = new RepoInfo { Host = "github.com", Owner = "JimCline", Name = "claude-tui-line" } },
+        };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => { probeInvoked = true; return null; });
+        var item = new PaneItem("repo", null, null, null, Link: "https://{repo-host}/{}");
+        var values = new Dictionary<string, string?>
+        {
+            ["repo"] = ItemRegistry.Find("repo")!.ResolveValue(ctx),
+            ["repo-host"] = ItemRegistry.Find("repo-host")!.ResolveValue(ctx),
+        };
+
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://github.com/JimCline/claude-tui-line", url);
+        Assert.False(probeInvoked, "repo-host must resolve from the session payload, never the git-remote probe");
+    }
+
+    [Fact]
     public void BuildItemSegment_RawUnterminatedAnsiColor_PlainIsStrippedAndMarkupSelfResets()
     {
         var segment = SegmentBuilder.BuildItemSegment("\x1b[31mHello", null);

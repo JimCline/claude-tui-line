@@ -32,7 +32,7 @@ public class SyntheticFixtureTests
         var ctx = SyntheticFixture.CreateItemContext();
         var repo = SyntheticFixture.Input.Workspace!.Repo!;
 
-        Assert.Equal($"https://github.com/{repo.Owner}/{repo.Name}", ctx.RemoteUrl);
+        Assert.Equal($"https://{repo.Host}/{repo.Owner}/{repo.Name}", ctx.RemoteUrl);
         Assert.Equal(repo.Name, SyntheticFixture.Input.Worktree!.Name);
     }
 

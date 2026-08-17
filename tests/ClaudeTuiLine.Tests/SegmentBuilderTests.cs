@@ -108,6 +108,50 @@ public class SegmentBuilderTests
         Assert.Empty(Others(segments));
     }
 
+    // --- repo-host (opt-in only, not part of Build()'s default pipeline) ---
+
+    [Fact]
+    public void RepoHost_Present_ResolvesToHost()
+    {
+        var repo = new RepoInfo { Host = "github.com", Owner = "JimCline", Name = "claude-tui-line" };
+
+        Assert.Equal("github.com", SegmentBuilder.ResolveRepoHost(repo));
+        Assert.Equal(Expect("dim", "github.com"), SegmentBuilder.BuildRepoHost(repo)!.Markup);
+    }
+
+    [Fact]
+    public void RepoHost_Null_Suppressed()
+    {
+        var repo = new RepoInfo { Host = null, Owner = "JimCline", Name = "claude-tui-line" };
+
+        Assert.Null(SegmentBuilder.ResolveRepoHost(repo));
+        Assert.Null(SegmentBuilder.BuildRepoHost(repo));
+    }
+
+    [Fact]
+    public void RepoHost_Empty_Suppressed()
+    {
+        var repo = new RepoInfo { Host = "", Owner = "JimCline", Name = "claude-tui-line" };
+
+        Assert.Null(SegmentBuilder.ResolveRepoHost(repo));
+        Assert.Null(SegmentBuilder.BuildRepoHost(repo));
+    }
+
+    [Fact]
+    public void RepoHost_NullRepo_SuppressedNoException()
+    {
+        Assert.Null(SegmentBuilder.ResolveRepoHost(null));
+        Assert.Null(SegmentBuilder.BuildRepoHost(null));
+    }
+
+    [Fact]
+    public void Repo_WithHostSet_TextStaysOwnerSlashName_HostDoesNotLeak()
+    {
+        var repo = new RepoInfo { Host = "github.com", Owner = "JimCline", Name = "claude-tui-line" };
+
+        Assert.Equal("JimCline/claude-tui-line", SegmentBuilder.ResolveRepo(repo));
+    }
+
     // --- Segment 4: Worktree ---
 
     [Fact]

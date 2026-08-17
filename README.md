@@ -310,9 +310,13 @@ everything else is in the **default set** — the list you get when a pane omits
 | `engram` | Engram memory activity |
 | `vim` | vim mode, when enabled |
 | `remote-url` | the git remote URL *(opt-in)* |
+| `repo-host` | the host the workspace repo lives on, from the session payload *(opt-in)* |
 
-`model-short` and `remote-url` are opt-in rather than default — `remote-url` because resolving it
-shells out to git, which you should only pay for if you asked for it.
+`model-short`, `remote-url`, and `repo-host` are opt-in rather than default. `remote-url` is
+opt-in because resolving it shells out to git, which you should only pay for if you asked for it.
+`repo-host` costs nothing to resolve — it's excluded because a bare hostname is noise in a
+rendered statusline; its purpose is to be referenced from a `link` template, not displayed on its
+own.
 
 Each item entry accepts:
 
@@ -437,6 +441,40 @@ Items can carry an OSC 8 hyperlink, which terminals that support it render as cl
 
 `{}` is this item's own value; `{other-id}` is another item's — and the referenced item does not
 need to be displayed anywhere. Terminals without OSC 8 support just show the text.
+
+To make your repo item clickable, `repo-host` is a cheaper link base than `{remote-url}` above:
+it reads the host straight from the session payload instead of shelling out to git, and it composes
+with `repo`'s own `owner/name` rather than duplicating it:
+
+```json
+{ "item": "repo", "color": "blue", "link": "https://{repo-host}/{}" }
+```
+
+`{}` here is `repo`'s own value (`owner/name`); `repo-host` supplies just the host, so the two
+compose into a full URL with no subprocess involved. `repo-host` isn't itself displayed anywhere.
+
+### Linking a branch's ticket id
+
+Derived items plus a hyperlink is enough to turn a branch name into a clickable issue link, with
+no builtin item needed for it — see [SPEC-V2-FRAMEWORK.md §3.2](SPEC-V2-FRAMEWORK.md) for the
+underlying mechanism this recipe is built from:
+
+```json
+{ "id": "ticket", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+",
+  "case": "upper", "link": "https://linear.app/acme-corp/issue/{}" }
+```
+
+`acme-corp` is your workspace slug, typed once in your own config — there's no separate
+`workspace` setting to configure, since the link template already is the place a URL base lives.
+Drop `link` for plain text with no hyperlink:
+
+```json
+{ "id": "ticket", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+", "case": "upper" }
+```
+
+A branch with no matching ticket id (e.g. `main`) renders nothing at all — not an empty segment.
+This isn't Linear-specific: the same regex matches Jira, Shortcut, and most other trackers: it's
+the `link` template that decides where it points.
 
 ### CLI
 

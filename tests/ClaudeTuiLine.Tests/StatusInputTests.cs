@@ -68,6 +68,25 @@ public class StatusInputTests
             JsonSerializer.Deserialize(json, StatusInputJsonContext.Default.StatusInput));
     }
 
+    // The bug T6 pins: workspace.repo.host was present in every real Claude Code payload
+    // (captured live, 2026-08-17) but RepoInfo had no Host property to receive it, so
+    // System.Text.Json's default Skip-unmapped-members handling silently dropped it. This is the
+    // one test in the suite that exercises the actual deserialization boundary where the value was
+    // lost — every other repo-host test starts from a RepoInfo already populated. current_dir,
+    // project_dir, added_dirs, and the top-level version key are real sibling fields from that
+    // same payload, included deliberately to prove Skip handling still tolerates them.
+    [Fact]
+    public void RealCapturedWorkspace_DeserializesHostAlongsideOwnerAndName()
+    {
+        var json = ReadFixture("real_captured_workspace.json");
+        var input = JsonSerializer.Deserialize(json, StatusInputJsonContext.Default.StatusInput);
+
+        Assert.NotNull(input);
+        Assert.Equal("github.com", input!.Workspace?.Repo?.Host);
+        Assert.Equal("JimCline", input.Workspace?.Repo?.Owner);
+        Assert.Equal("claude-tui-line", input.Workspace?.Repo?.Name);
+    }
+
     [Fact]
     public void UnknownFields_AreIgnoredWithoutThrowing()
     {
