@@ -445,20 +445,47 @@ public class HeightLadderTests
     }
 
     [Fact]
-    public void Render_EmptiedLeafBudgetUnderThree_SuppressesSameAsDeclaredEmptyAtSameBudget()
+    public void Render_BudgetUnderThree_SuppressionKeyedOnBudgetNotContent()
     {
         var pane = Leaf(Bordered, OverflowMode.Truncate, Array.Empty<PaneItem>());
         var values = new Dictionary<string, string?>();
 
-        var resolvedDeclaredEmpty = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 2 };
+        var resolvedUnderBudget = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 2, ItemsEmptied = false };
+        var resolvedAtBudget = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 3, ItemsEmptied = false };
+
+        var underBudgetContribution = PaneTreeRenderer.Render(resolvedUnderBudget, Ctx, values, Tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+        var atBudgetContribution = PaneTreeRenderer.Render(resolvedAtBudget, Ctx, values, Tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
+
+        // §2.8.2: the <3-row suppression decision (`heightSuppressed`) is keyed on ClipRows (the
+        // budget) alone. Content is held constant across both arms (ItemsEmptied = false in both;
+        // the items-less pane's one ctx:0% default content row is present either way), isolating
+        // the budget's effect: edges are omitted below the 3-row threshold and kept at it.
+        Assert.Equal(1, underBudgetContribution.Buffer.Rows.Count);
+        Assert.Equal(3, atBudgetContribution.Buffer.Rows.Count);
+    }
+
+    // SPEC context-zero-render §2.8.2 / AMENDMENT 1 (task #80's content-dependence, made
+    // explicit): unlike Render_BudgetUnderThree_SuppressionKeyedOnBudgetNotContent above, this
+    // holds the budget constant and varies ItemsEmptied instead. An items-less pane with
+    // ItemsEmptied = false falls back to the default statusline segments
+    // (SizeResolver.cs:1177-1180), which after context-zero-render is never empty — its one
+    // ctx:0% content row lets the <3-row budget spend itself on content instead of the border, so
+    // the border is dropped (1 row). ItemsEmptied = true has zero content rows by definition, so
+    // there is no beneficiary for reclaiming the edge rows, and the empty box is kept (2 rows).
+    [Fact]
+    public void Render_ItemsEmptiedAtSameBudget_RowCountDivergesByContentPresence()
+    {
+        var pane = Leaf(Bordered, OverflowMode.Truncate, Array.Empty<PaneItem>());
+        var values = new Dictionary<string, string?>();
+
+        var resolvedDeclaredEmpty = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 2, ItemsEmptied = false };
         var resolvedEmptied = SizeResolver.Resolve(pane, 10, Ctx, values,new Dictionary<string, Segment>(),  new RenderNoteCollector()) with { ClipRows = 2, ItemsEmptied = true };
 
         var declaredEmptyContribution = PaneTreeRenderer.Render(resolvedDeclaredEmpty, Ctx, values, Tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
         var emptiedContribution = PaneTreeRenderer.Render(resolvedEmptied, Ctx, values, Tokens,new Dictionary<string, Segment>(),  new RenderNoteCollector());
 
-        // §2.8.2: the <3-row suppression decision is keyed on ClipRows (the budget) alone —
-        // flipping ItemsEmptied must not change whether the border suppresses.
-        Assert.Equal(declaredEmptyContribution.Buffer.Rows.Count, emptiedContribution.Buffer.Rows.Count);
+        Assert.Equal(1, declaredEmptyContribution.Buffer.Rows.Count);
+        Assert.Equal(2, emptiedContribution.Buffer.Rows.Count);
     }
 
     [Fact]

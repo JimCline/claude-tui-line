@@ -304,7 +304,7 @@ everything else is in the **default set** — the list you get when a pane omits
 | `effort` | reasoning effort level |
 | `thinking` | whether extended thinking is on |
 | `output-style` | active output style |
-| `context` | context window usage |
+| `context` | context window usage; renders `0%` when no usage has been reported |
 | `rate-limits` | five-hour and seven-day usage |
 | `agent` | active agent name |
 | `engram` | Engram memory activity |

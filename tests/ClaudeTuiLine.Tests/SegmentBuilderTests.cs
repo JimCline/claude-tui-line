@@ -12,6 +12,12 @@ public class SegmentBuilderTests
     private static ItemContext Ctx(StatusInput input, string? gitBranch = null, EngramResult? engram = null) =>
         new(input, gitBranch, engram, remoteUrlProbe: () => null);
 
+    // The context item now renders "ctx:0%" even with no context data
+    // (SPEC context-zero-render §2.8), so single-item tests filter it out to keep
+    // asserting only about the item under test.
+    private static IReadOnlyList<Segment> Others(IReadOnlyList<Segment> segments) =>
+        segments.Where(s => !s.Plain.StartsWith("ctx:", StringComparison.Ordinal)).ToList();
+
     // --- Segment 1: Directory ---
 
     [Fact]
@@ -22,7 +28,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("claude-tui-line", seg.Plain);
         Assert.Equal(Expect("teal", "claude-tui-line"), seg.Markup);
     }
@@ -31,7 +37,7 @@ public class SegmentBuilderTests
     public void Directory_Absent_NoSegment()
     {
         var segments = SegmentBuilder.Build(Ctx(Empty()));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     [Fact]
@@ -42,7 +48,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("[hacked]", seg.Plain);
         Assert.Equal(Expect("teal", "[hacked]"), seg.Markup); // brackets doubled ([[hacked]]), not passed through raw
     }
@@ -54,7 +60,7 @@ public class SegmentBuilderTests
     {
         var segments = SegmentBuilder.Build(Ctx(Empty(), gitBranch: "main"));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("main", seg.Plain);
         Assert.Equal(Expect("green", "main"), seg.Markup);
     }
@@ -65,7 +71,7 @@ public class SegmentBuilderTests
         const string hostile = "[red]x[/]";
         var segments = SegmentBuilder.Build(Ctx(Empty(), gitBranch: hostile));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal(hostile, seg.Plain);
         Assert.Equal(Expect("green", hostile), seg.Markup);
     }
@@ -74,7 +80,7 @@ public class SegmentBuilderTests
     public void GitBranch_Empty_NoSegment()
     {
         var segments = SegmentBuilder.Build(Ctx(Empty(), gitBranch: ""));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     // --- Segment 3: GitHub repo ---
@@ -87,7 +93,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("jimcline/claude-tui-line", seg.Plain);
         Assert.Equal(Expect("dim", "jimcline/claude-tui-line"), seg.Markup);
     }
@@ -99,7 +105,7 @@ public class SegmentBuilderTests
         input.Workspace = new WorkspaceInfo { Repo = new RepoInfo { Owner = null, Name = "claude-tui-line" } };
 
         var segments = SegmentBuilder.Build(Ctx(input));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     // --- Segment 4: Worktree ---
@@ -112,7 +118,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("worktree:feature-x", seg.Plain);
         Assert.Equal(Expect("purple", "worktree:feature-x"), seg.Markup);
     }
@@ -125,7 +131,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("worktree:feature-x(main)", seg.Plain);
         Assert.Equal(Expect("purple", "worktree:feature-x(main)"), seg.Markup);
     }
@@ -145,7 +151,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal(expectedPlain, seg.Plain);
         Assert.Equal(Expect("olive", expectedPlain), seg.Markup);
     }
@@ -157,7 +163,7 @@ public class SegmentBuilderTests
         input.Pr = new PrInfo { ReviewState = "approved" };
 
         var segments = SegmentBuilder.Build(Ctx(input));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     // --- Segment 6: Model ---
@@ -170,7 +176,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("Claude Opus 4.5", seg.Plain);
         Assert.Equal(Expect("navy", "Claude Opus 4.5"), seg.Markup);
     }
@@ -185,7 +191,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("effort:high", seg.Plain);
         Assert.Equal(Expect("dim", "effort:high"), seg.Markup);
     }
@@ -200,7 +206,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("thinking", seg.Plain);
         Assert.Equal(Expect("purple", "thinking"), seg.Markup);
     }
@@ -214,7 +220,7 @@ public class SegmentBuilderTests
         input.Thinking = new ThinkingInfo { Enabled = enabled };
 
         var segments = SegmentBuilder.Build(Ctx(input));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     // --- Segment 9: Output style ---
@@ -229,7 +235,7 @@ public class SegmentBuilderTests
         input.OutputStyle = new OutputStyleInfo { Name = name };
 
         var segments = SegmentBuilder.Build(Ctx(input));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     [Fact]
@@ -240,7 +246,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("style:concise", seg.Plain);
         Assert.Equal(Expect("dim", "style:concise"), seg.Markup);
     }
@@ -284,10 +290,161 @@ public class SegmentBuilderTests
     }
 
     [Fact]
-    public void Context_Absent_NoSegment()
+    public void Context_Absent_RendersZeroPercent()
     {
         var segments = SegmentBuilder.Build(Ctx(Empty()));
-        Assert.Empty(segments);
+
+        var seg = Assert.Single(segments);
+        Assert.Equal("ctx:0%", seg.Plain);
+    }
+
+    [Fact]
+    public void Context_Absent_MarkupUsesZeroThresholdTag()
+    {
+        var segments = SegmentBuilder.Build(Ctx(Empty()));
+
+        var seg = Assert.Single(segments);
+        var tag = ColorResolution.ResolveStandardThreshold(0);
+        Assert.Equal($"ctx:[{tag}]0%[/]", seg.Markup);
+    }
+
+    [Fact]
+    public void Context_WindowPresentPercentageAbsent_RendersZeroPercent()
+    {
+        var input = Empty();
+        input.ContextWindow = new ContextWindowInfo();
+
+        var segments = SegmentBuilder.Build(Ctx(input));
+
+        var seg = Assert.Single(segments);
+        Assert.Equal("ctx:0%", seg.Plain);
+    }
+
+    [Fact]
+    public void Context_PercentageAbsentTokenCountsPresent_SuppressesParenthetical()
+    {
+        var input = Empty();
+        input.ContextWindow = new ContextWindowInfo { TotalInputTokens = 150000, ContextWindowSize = 200000 };
+
+        var segments = SegmentBuilder.Build(Ctx(input));
+
+        var seg = Assert.Single(segments);
+        Assert.Equal("ctx:0%", seg.Plain);
+        Assert.DoesNotContain("(", seg.Markup);
+        Assert.DoesNotContain("150k", seg.Markup);
+    }
+
+    [Fact]
+    public void ResolveContext_Absent_ReturnsZero()
+    {
+        Assert.Equal("0", SegmentBuilder.ResolveContext(null));
+        Assert.Equal("0", SegmentBuilder.ResolveContext(new ContextWindowInfo()));
+    }
+
+    [Fact]
+    public void ResolveContext_Absent_HasNoPercentSignAndParses()
+    {
+        var raw = SegmentBuilder.ResolveContext(null);
+        Assert.DoesNotContain("%", raw);
+        Assert.True(int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed));
+        Assert.Equal(0, parsed);
+    }
+
+    [Fact]
+    public void Context_PresentValue_UnchangedFromBeforeThisChange()
+    {
+        var input = Empty();
+        input.ContextWindow = new ContextWindowInfo
+        {
+            UsedPercentage = 62.5,
+            TotalInputTokens = 125000,
+            ContextWindowSize = 200000,
+        };
+
+        var segments = SegmentBuilder.Build(Ctx(input));
+
+        var seg = Assert.Single(segments);
+        Assert.Equal("ctx:62% (125k/200k)", seg.Plain);
+        Assert.Equal("ctx:[olive]62%[/] [dim](125k/200k)[/]", seg.Markup);
+    }
+
+    [Fact]
+    public void Context_DisplayTextAndBuildSegment_AgreeWhenAbsent()
+    {
+        var displayText = SegmentBuilder.ResolveContextDisplayText(null);
+        Assert.Equal("ctx:0%", displayText);
+        Assert.Equal(displayText, SegmentBuilder.BuildContext(null)!.Plain);
+    }
+
+    [Fact]
+    public async Task Context_AbsentInStandalonePane_DoesNotCollapse()
+    {
+        var plainText = await RenderPaneWithSoleItem("context", Empty());
+        Assert.Contains("ctx:0%", plainText);
+    }
+
+    [Fact]
+    public async Task RateLimits_AbsentInStandalonePane_StillCollapses()
+    {
+        var plainText = await RenderPaneWithSoleItem("rate-limits", Empty());
+        Assert.Equal(string.Empty, plainText.Trim());
+    }
+
+    /// <summary>
+    /// SPEC context-zero-render §7 T11: a numeric "thresholds" colour rule must see the context
+    /// item's default-zero value and evaluate against it, rather than treating an absent-context
+    /// value as valueless and falling through to the rule's default branch.
+    /// </summary>
+    [Fact]
+    public void Context_ThresholdRule_SeesDefaultZeroValue_NotSkippedAsValueless()
+    {
+        var rawValue = ItemRegistry.Find("context")!.ResolveValue(Ctx(Empty()));
+        Assert.Equal("0", rawValue);
+
+        var rule = new ColorResolution.ColorRule(
+            Thresholds: new[] { new ColorResolution.ThresholdRule(0, new ColorResolution.ColorValue.Literal("red")) },
+            Match: null,
+            Default: new ColorResolution.ColorValue.Literal("green"),
+            From: "context");
+        var values = new Dictionary<string, string?> { ["context"] = rawValue };
+
+        var resolvedColor = ColorResolution.Resolve(new ColorResolution.ColorExpr.Inline(rule), values, new Dictionary<string, ColorResolution.ColorRule>());
+
+        Assert.Equal("red", resolvedColor);
+    }
+
+    private static async Task<string> RenderPaneWithSoleItem(string itemId, StatusInput input)
+    {
+        var json = $$"""
+        {
+          "surface": {
+            "pane": { "border": { "enabled": false }, "items": [ { "item": "{{itemId}}" } ] }
+          }
+        }
+        """;
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, json);
+        ResolvedConfig topLevel;
+        Pane pane;
+        try
+        {
+            (topLevel, pane) = ConfigLoader.LoadAll(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        var ctx = Ctx(input);
+        var values = (await ItemValueResolver.ResolveAsync(
+            pane, ctx, topLevel.Colors, rawStdinJson: null, cacheDir: Path.GetTempPath(), widthsDir: Path.GetTempPath(), surfaceWidth: null,
+            new RenderNoteCollector())).Values;
+
+        var surfaceWidth = SurfaceLayout.ComputeWidth("112", topLevel.ChromeReserve)!.Value;
+        var resolved = SizeResolver.Resolve(pane, surfaceWidth, ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+        var rendered = PaneTreeRenderer.Render(resolved, ctx, values, topLevel.Colors, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        return string.Join('\n', rendered.Buffer.Rows.Select(r => Markup.Remove(r.Markup)));
     }
 
     // --- Segment 11: Rate limits ---
@@ -304,7 +461,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         var v = (int)pct;
         Assert.Equal($"5h:{v}%", seg.Plain);
         Assert.Equal($"5h:[{expectedTag}]{v}%[/]", seg.Markup);
@@ -322,7 +479,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("5h:30% / 7d:85%", seg.Plain);
         Assert.Equal("5h:[green]30%[/] [dim]/[/] 7d:[maroon]85%[/]", seg.Markup);
     }
@@ -335,7 +492,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("7d:60%", seg.Plain);
         Assert.Equal("7d:[olive]60%[/]", seg.Markup);
     }
@@ -347,7 +504,7 @@ public class SegmentBuilderTests
         input.RateLimits = new RateLimitsInfo();
 
         var segments = SegmentBuilder.Build(Ctx(input));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     // --- Segment 12: Agent ---
@@ -360,7 +517,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("agent:implementor", seg.Plain);
         Assert.Equal(Expect("purple", "agent:implementor"), seg.Markup);
     }
@@ -372,7 +529,7 @@ public class SegmentBuilderTests
     {
         var segments = SegmentBuilder.Build(Ctx(Empty(), engram: new EngramResult(42, null)));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("engram:42", seg.Plain);
         Assert.Equal("[dim]engram:42[/]", seg.Markup);
     }
@@ -382,7 +539,7 @@ public class SegmentBuilderTests
     {
         var segments = SegmentBuilder.Build(Ctx(Empty(), engram: new EngramResult(null, "✱ captured")));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("✱ captured", seg.Plain);
         Assert.Equal(Expect("purple", "✱ captured"), seg.Markup);
     }
@@ -392,7 +549,7 @@ public class SegmentBuilderTests
     {
         var segments = SegmentBuilder.Build(Ctx(Empty(), engram: new EngramResult(7, "◉ recalled")));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("engram:7 ◉ recalled", seg.Plain);
         Assert.Equal("[dim]engram:7[/] [purple]◉ recalled[/]", seg.Markup);
     }
@@ -401,7 +558,7 @@ public class SegmentBuilderTests
     public void Engram_Null_NoSegment()
     {
         var segments = SegmentBuilder.Build(Ctx(Empty()));
-        Assert.Empty(segments);
+        Assert.Empty(Others(segments));
     }
 
     // --- Segment 14: Vim mode ---
@@ -414,7 +571,7 @@ public class SegmentBuilderTests
 
         var segments = SegmentBuilder.Build(Ctx(input));
 
-        var seg = Assert.Single(segments);
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("[NORMAL]", seg.Plain);
         Assert.Equal(Expect("olive", "[NORMAL]"), seg.Markup);
     }

@@ -251,16 +251,11 @@ public static class SegmentBuilder
 
     internal static Segment? BuildContext(ContextWindowInfo? ctx)
     {
-        if (ctx?.UsedPercentage is not { } usedPercentage)
-        {
-            return null;
-        }
-
-        var pctInt = RoundHalfToEven(usedPercentage);
+        var pctInt = RoundHalfToEven(EffectiveContextPercentage(ctx));
         var tag = ColorResolution.ResolveStandardThreshold(pctInt);
         var plain = ResolveContextDisplayText(ctx)!;
 
-        if (ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size)
+        if (ctx?.UsedPercentage is not null && ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size)
         {
             var markup = $"ctx:[{tag}]{pctInt}%[/] [dim]({totalInput / 1000}k/{size / 1000}k)[/]";
             return new Segment(markup, plain);
@@ -282,16 +277,19 @@ public static class SegmentBuilder
     /// </summary>
     internal static string? ResolveContextDisplayText(ContextWindowInfo? ctx)
     {
-        if (ctx?.UsedPercentage is not { } usedPercentage)
-        {
-            return null;
-        }
-
-        var pctInt = RoundHalfToEven(usedPercentage);
-        return ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size
+        var pctInt = RoundHalfToEven(EffectiveContextPercentage(ctx));
+        return ctx?.UsedPercentage is not null && ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size
             ? $"ctx:{pctInt}% ({totalInput / 1000}k/{size / 1000}k)"
             : $"ctx:{pctInt}%";
     }
+
+    /// <summary>
+    /// The context-window percentage to render when the harness has reported none.
+    /// A session that has sent nothing has genuinely used none of its window, so an
+    /// absent percentage is zero rather than unknown — see SPEC context-zero-render §2.5.
+    /// </summary>
+    internal static double EffectiveContextPercentage(ContextWindowInfo? ctx) =>
+        ctx?.UsedPercentage ?? 0.0;
 
     /// <summary>
     /// The bare percentage, with no "ctx:" label and no token-count detail — unlike
@@ -300,9 +298,8 @@ public static class SegmentBuilder
     /// <c>items</c> list.
     /// </summary>
     internal static string? ResolveContext(ContextWindowInfo? ctx) =>
-        ctx?.UsedPercentage is { } usedPercentage
-            ? RoundHalfToEven(usedPercentage).ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : null;
+        RoundHalfToEven(EffectiveContextPercentage(ctx))
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     internal static Segment? BuildRateLimits(RateLimitsInfo? rateLimits)
     {
