@@ -250,6 +250,113 @@ public class HyperlinkTests
         Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
     }
 
+    // item-specific-config.md §12.9 T11-T16, T18: the `linear` builtin.
+
+    [Fact]
+    public void Linear_IsNotInDefaultIds()
+    {
+        Assert.DoesNotContain("linear", ItemRegistry.DefaultIds);
+    }
+
+    [Fact]
+    public void Linear_BranchWithTicket_ExtractsAndUppercases()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var ctx = new ItemContext(input, gitBranch: "fix/eng-1234-thing", engram: null, remoteUrlProbe: () => null);
+
+        Assert.Equal("ENG-1234", ItemRegistry.Find("linear")!.ResolveValue(ctx));
+    }
+
+    [Fact]
+    public void Linear_BranchWithNoMatch_Suppressed()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var ctx = new ItemContext(input, gitBranch: "main", engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("linear", null, null, null);
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { item });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+
+        Assert.Null(values["linear"]);
+        Assert.Null(resolved.Value);
+        Assert.Null(resolved.Display);
+    }
+
+    [Fact]
+    public void Linear_WorkspaceConfigured_WrapsInDefaultLinkTemplate_FromPostExtractPostCaseValue()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var itemSettings = new ItemSettingsJsonConfig { Linear = new LinearItemSettings { Workspace = "acme-corp" } };
+        var ctx = new ItemContext(input, gitBranch: "fix/eng-1234-thing", engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("linear", null, null, null);
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { item });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://linear.app/acme-corp/issue/ENG-1234", url);
+    }
+
+    [Fact]
+    public void Linear_WorkspaceAbsent_PlainTextNoHyperlink()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var ctx = new ItemContext(input, gitBranch: "fix/eng-1234-thing", engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("linear", null, null, null);
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { item });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("ENG-1234", decision.Text);
+        Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
+    }
+
+    [Fact]
+    public void Linear_PlacementLinkWinsOverDefaultTemplate_AndWrapsExactlyOnce()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var itemSettings = new ItemSettingsJsonConfig { Linear = new LinearItemSettings { Workspace = "acme-corp" } };
+        var ctx = new ItemContext(input, gitBranch: "fix/eng-1234-thing", engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("linear", null, null, null, Link: "https://other-tracker.example/{}");
+        var pane = new Pane(PaneSplit.None, Array.Empty<Pane>(), "content", NoBorder, null, "…", null, new[] { item });
+
+        var values = ItemValueResolver.Resolve(pane, ctx);
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://other-tracker.example/ENG-1234", url);
+
+        var introducer = OscHyperlink.Close[..^2];
+        var wrapCount = 0;
+        for (var i = decision.Markup.IndexOf(introducer, StringComparison.Ordinal); i >= 0;
+             i = decision.Markup.IndexOf(introducer, i + 1, StringComparison.Ordinal))
+        {
+            wrapCount++;
+        }
+        Assert.Equal(2, wrapCount); // one open + one close = one wrap
+    }
+
+    [Fact]
+    public void Linear_NullOrEmptyBranch_SuppressedWithoutException()
+    {
+        var input = new StatusInput { Model = new ModelInfo { DisplayName = "Claude Opus 4.5" } };
+        var nullBranchCtx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+        var emptyBranchCtx = new ItemContext(input, gitBranch: "", engram: null, remoteUrlProbe: () => null);
+
+        Assert.Null(ItemRegistry.Find("linear")!.ResolveValue(nullBranchCtx));
+        Assert.Null(ItemRegistry.Find("linear")!.ResolveValue(emptyBranchCtx));
+    }
+
     [Fact]
     public void RepoLinkedViaRepoHost_WrapsMarkupInLink_WithoutInvokingRemoteUrlProbe()
     {

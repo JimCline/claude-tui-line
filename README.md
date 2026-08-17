@@ -311,12 +311,14 @@ everything else is in the **default set** — the list you get when a pane omits
 | `vim` | vim mode, when enabled |
 | `remote-url` | the git remote URL *(opt-in)* |
 | `repo-host` | the host the workspace repo lives on, from the session payload *(opt-in)* |
+| `linear` | the Linear ticket id extracted from the current git branch, uppercased *(opt-in)* |
 
-`model-short`, `remote-url`, and `repo-host` are opt-in rather than default. `remote-url` is
-opt-in because resolving it shells out to git, which you should only pay for if you asked for it.
-`repo-host` costs nothing to resolve — it's excluded because a bare hostname is noise in a
+`model-short`, `remote-url`, `repo-host`, and `linear` are opt-in rather than default. `remote-url`
+is opt-in because resolving it shells out to git, which you should only pay for if you asked for
+it. `repo-host` costs nothing to resolve — it's excluded because a bare hostname is noise in a
 rendered statusline; its purpose is to be referenced from a `link` template, not displayed on its
-own.
+own. `linear` is excluded because most branches carry no ticket id, so a default placement would
+render nothing on the majority of renders.
 
 Each item entry accepts:
 
@@ -326,6 +328,33 @@ Each item entry accepts:
 
 `format`'s `{}` is the item's value. `maxLines` caps how many lines an item's own output may
 produce — opt-in, no cap unless set.
+
+### Item settings
+
+A handful of builtins take their own settings, keyed by item id under a top-level
+`itemSettings`:
+
+```json
+{
+  "itemSettings": {
+    "directory": { "depth": 2 },
+    "context": { "showDetail": false },
+    "rateLimits": { "windows": "5h" },
+    "pr": { "reviewStateLabels": { "approved": "✓" } },
+    "linear": { "workspace": "acme-corp" }
+  }
+}
+```
+
+`directory.depth` shows that many trailing path segments instead of just the basename.
+`context.showDetail` toggles the token-count parenthetical. `rateLimits.windows` narrows
+which of the five-hour/seven-day windows render — `"5h"`, `"7d"`, or `"both"` (the default).
+`pr.reviewStateLabels` overrides the built-in review-state labels, keyed by the lowercase review
+state token (`"approved"`, `"changes_requested"`, `"draft"`). `linear.workspace`
+is covered below, under [Linking a branch's ticket id](#linking-a-branchs-ticket-id).
+
+These settings are per item id, not per placement: if you place the same builtin twice in a
+render, both placements see the same settings.
 
 ### Custom items
 
@@ -455,26 +484,31 @@ compose into a full URL with no subprocess involved. `repo-host` isn't itself di
 
 ### Linking a branch's ticket id
 
-Derived items plus a hyperlink is enough to turn a branch name into a clickable issue link, with
-no builtin item needed for it — see [SPEC-V2-FRAMEWORK.md §3.2](SPEC-V2-FRAMEWORK.md) for the
-underlying mechanism this recipe is built from:
+For Linear specifically, use the `linear` builtin — it extracts and uppercases the ticket id
+from the current branch for you, and links to the issue once you set your workspace slug at the
+top level:
+
+```json
+{
+  "itemSettings": { "linear": { "workspace": "acme-corp" } },
+  "surface": { "pane": { "items": [{ "item": "linear" }] } }
+}
+```
+
+Drop `workspace` for plain text with no hyperlink. A branch with no matching ticket id (e.g.
+`main`) renders nothing at all — not an empty segment.
+
+For any other tracker (Jira, Shortcut, ...), derived items plus a hyperlink do the same job —
+see [SPEC-V2-FRAMEWORK.md §3.2](SPEC-V2-FRAMEWORK.md) for the underlying mechanism this recipe
+is built from:
 
 ```json
 { "id": "ticket", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+",
-  "case": "upper", "link": "https://linear.app/acme-corp/issue/{}" }
+  "case": "upper", "link": "https://your-tracker.example/issue/{}" }
 ```
 
-`acme-corp` is your workspace slug, typed once in your own config — there's no separate
-`workspace` setting to configure, since the link template already is the place a URL base lives.
-Drop `link` for plain text with no hyperlink:
-
-```json
-{ "id": "ticket", "from": "git-branch", "extract": "[A-Za-z]{2,}-[0-9]+", "case": "upper" }
-```
-
-A branch with no matching ticket id (e.g. `main`) renders nothing at all — not an empty segment.
-This isn't Linear-specific: the same regex matches Jira, Shortcut, and most other trackers: it's
-the `link` template that decides where it points.
+The same regex matches Jira, Shortcut, and most other trackers: it's the `link` template that
+decides where it points. Drop `link` for plain text with no hyperlink.
 
 ### CLI
 

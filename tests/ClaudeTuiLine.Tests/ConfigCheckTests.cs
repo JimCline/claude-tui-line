@@ -2553,6 +2553,91 @@ public class ConfigCheckTests
         Assert.All(unknownKeyDiagnostics, d => Assert.Equal(DiagnosticSeverity.Warning, d.Severity));
     }
 
+    // ---- item-specific-config.md §8: itemSettings. ----
+
+    [Fact]
+    public void ItemSettingsAbsent_UnknownKeyDiagnosticsUnaffected()
+    {
+        var config = Parse("""{"items":[{"item":"directory"}]}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Path.StartsWith("/itemSettings", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void UnknownKeyOnItemSettingsDirectory_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"itemSettings":{"directory":{"depht":2}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var matches = diagnostics.Where(d => d.Code == "unknown-key" && d.Path == "/itemSettings/directory/depht").ToList();
+        Assert.Single(matches);
+        Assert.Equal("unknown key 'depht' on the directory item's settings — did you mean 'depth'?", matches[0].Message);
+    }
+
+    [Fact]
+    public void UnknownKeyOnItemSettings_ReportsWithSuggestion()
+    {
+        var config = Parse("""{"itemSettings":{"drectory":{}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/itemSettings/drectory" &&
+            d.Message == "unknown key 'drectory' on itemSettings — did you mean 'directory'?");
+    }
+
+    [Fact]
+    public void RateLimitsWindows_InvalidValue_ProducesValidationError()
+    {
+        var config = Parse("""{"itemSettings":{"rateLimits":{"windows":"9y"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Path == "/itemSettings/rateLimits/windows" && d.Code == "unknown-enum-value");
+    }
+
+    [Fact]
+    public void RateLimitsWindows_ValidValue_ProducesNoValidationError()
+    {
+        var config = Parse("""{"itemSettings":{"rateLimits":{"windows":"5h"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Path == "/itemSettings/rateLimits/windows");
+    }
+
+    [Fact]
+    public void DirectoryDepth_ZeroOrNegative_ProducesValidationError()
+    {
+        var zero = Parse("""{"itemSettings":{"directory":{"depth":0}}}""");
+        var negative = Parse("""{"itemSettings":{"directory":{"depth":-1}}}""");
+
+        Assert.Contains(ConfigChecker.Check(zero), d => d.Path == "/itemSettings/directory/depth" && d.Code == "invalid-depth");
+        Assert.Contains(ConfigChecker.Check(negative), d => d.Path == "/itemSettings/directory/depth" && d.Code == "invalid-depth");
+    }
+
+    [Fact]
+    public void DirectoryDepth_Positive_ProducesNoValidationError()
+    {
+        var config = Parse("""{"itemSettings":{"directory":{"depth":2}}}""");
+
+        Assert.DoesNotContain(ConfigChecker.Check(config), d => d.Path == "/itemSettings/directory/depth");
+    }
+
+    [Fact]
+    public void ItemSettingsLinear_UnknownKey_ReportsWithSuggestion()
+    {
+        // item-specific-config.md §12.9 T17.
+        var config = Parse("""{"itemSettings":{"linear":{"workspce":"x"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.Contains(diagnostics, d => d.Code == "unknown-key" && d.Path == "/itemSettings/linear/workspce" &&
+            d.Message == "unknown key 'workspce' on the linear item's settings — did you mean 'workspace'?");
+    }
+
     [Fact]
     public void BorderConfig_KnownKeySet_ExcludesShorthand()
     {

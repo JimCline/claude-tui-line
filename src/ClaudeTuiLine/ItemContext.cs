@@ -14,6 +14,13 @@ public sealed class ItemContext
     public string? GitBranch { get; }
     public EngramResult? Engram { get; }
 
+    /// <summary>
+    /// Per-item settings from the user's config, keyed by item id. Null when the user configured
+    /// none. Item ids resolve one value per render (ItemValueResolver.Resolve), so these are
+    /// per-item, never per-placement.
+    /// </summary>
+    public ItemSettingsJsonConfig? ItemSettings { get; }
+
     private readonly Lazy<string?> _remoteUrl;
 
     /// <summary>
@@ -24,11 +31,12 @@ public sealed class ItemContext
     /// </summary>
     public string? RemoteUrl => _remoteUrl.Value;
 
-    public ItemContext(StatusInput input, string? gitBranch, EngramResult? engram, Func<string?> remoteUrlProbe)
+    public ItemContext(StatusInput input, string? gitBranch, EngramResult? engram, Func<string?> remoteUrlProbe, ItemSettingsJsonConfig? itemSettings = null)
     {
         Input = input;
         GitBranch = gitBranch;
         Engram = engram;
+        ItemSettings = itemSettings;
         _remoteUrl = new Lazy<string?>(remoteUrlProbe, System.Threading.LazyThreadSafetyMode.None);
     }
 }

@@ -4316,7 +4316,7 @@ payload" is not a value and two people implementing that sentence produce two di
 {
   "cwd": "/home/you/code/acme-web",
   "workspace": { "repo": { "owner": "acme", "name": "acme-web" } },
-  "worktree": { "name": "acme-web", "branch": "main" },
+  "worktree": { "name": "acme-web", "branch": "feat/eng-1234" },
   "pr": { "number": 128, "review_state": "APPROVED" },
   "model": { "display_name": "Claude Sonnet 5" },
   "effort": { "level": "medium" },
@@ -4334,9 +4334,10 @@ payload" is not a value and two people implementing that sentence produce two di
 }
 ```
 
-wrapped in an `ItemContext` whose machine-probed fields are canned to match: `gitBranch` = `"main"`,
-`remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` with **`Facts` = 3** and
-**`Verb` = `"◉ recalled"`**, which `BuildEngram` renders as `engram:3 ◉ recalled`.
+wrapped in an `ItemContext` whose machine-probed fields are canned to match: `gitBranch` =
+`"feat/eng-1234"`, `remoteUrl` = `"https://github.com/acme/acme-web"`, and an `EngramResult` with
+**`Facts` = 3** and **`Verb` = `"◉ recalled"`**, which `BuildEngram` renders as
+`engram:3 ◉ recalled`.
 
 That third value used to read "a small non-zero activity count — whatever shape makes `engram`
 render *present*", which is the same defect as the `output_style` one below wearing a milder face:
@@ -4375,9 +4376,20 @@ payload hold here?" — the right question fifteen times and the wrong one once.
 the only fields where those differ are the ones with suppression logic behind them. Suppression is
 invisible from the payload side, which is why this needed a rule and not care.
 
+**`worktree.branch` (and the canned `gitBranch` that must equal it) is `feat/eng-1234` and must not
+be set back to `main`.** `main` is the *realistic* value and it is what this fixture said until
+`linear` was built against it — `linear` extracts a ticket id from the branch with
+`[A-Za-z]{2,}-[0-9]+`, so `main` yields no match, the item suppresses itself, and `--items` reports
+it with a permanently empty example. That is the `output_style` defect above in a second guise, and
+it generalises the rule: **suppression is not the only renderer logic invisible from the payload
+side — extraction is too.** Any field a builder parses, matches, or extracts from must hold a value
+that survives that parse, not merely a value a real payload could carry. The branch is deliberately
+prefixed rather than a bare `eng-1234` so the example shows the extraction rather than disguising it
+as an identity.
+
 **Redundant fields must agree with each other.** `used_percentage: 34.0` is `68000 / 200000`;
-`worktree.branch` is the same `"main"` the canned `gitBranch` reports; `workspace.repo` names the
-same repo as the canned remote URL and the worktree. A fixture with `used_percentage: 80` and
+`worktree.branch` is the same `"feat/eng-1234"` the canned `gitBranch` reports; `workspace.repo`
+names the same repo as the canned remote URL and the worktree. A fixture with `used_percentage: 80` and
 40k of 200k tokens describes a state Claude Code cannot produce, `--preview` renders it faithfully,
 and the first person to notice spends their afternoon looking for the bug in `context`.
 
@@ -5506,7 +5518,7 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
   "version": "…",
   "items": [
     { "id": "git-branch", "reports": "the current branch, or nothing outside a repo",
-      "color": "decorative", "default": true, "example": "main" }
+      "color": "decorative", "default": true, "example": "feat/eng-1234" }
   ],
   "kinds": {
     "builtin":  { "required": ["item"],    "optional": ["format", "color", "overflow", "link"] },
@@ -5523,7 +5535,7 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
 `default` read straight off `ItemRegistry`, and `example` is produced by *running*
 `BuildDefaultSegment` against §9.3.1's fixture — the `"main"` in the shape above is an
 illustration of that output, not a string stored anywhere. `reports` is prose, it is written once
-here, and the seventeen strings are:
+here, and the eighteen strings are:
 
 | id | `reports` |
 |---|---|
@@ -5544,6 +5556,7 @@ here, and the seventeen strings are:
 | `vim` | the current vim mode, when vim mode is enabled |
 | `remote-url` | the git remote's URL. Opt-in rather than default because resolving it shells out to git |
 | `repo-host` | the host the workspace repo lives on, from the session payload rather than a git probe |
+| `linear` | the Linear ticket id extracted from the current git branch, uppercased; links to the issue when `itemSettings.linear.workspace` is set |
 
 The three with a second sentence are the `Semantic` ones (§6). For a decorative item the colour is
 the author's choice and needs no explanation; for these three the colour *is* information, and a
@@ -5577,7 +5590,7 @@ the argument for keeping worked examples few, real, and re-checked whenever the 
 reopened.
 
 `tools/check-examples.sh` now catches precisely this instance — it runs `--items --json` and
-compares. It is scoped to the seventeen builtins' default renders (§9.6.2.2), so it retires the
+compares. It is scoped to the eighteen builtins' default renders (§9.6.2.2), so it retires the
 specific trap this glyph fell into without retiring the general warning above: every example
 outside that scope is still an unverified assertion, and this paragraph is still the reason to
 treat it as one.
@@ -5639,12 +5652,13 @@ second walk of the registry.** One id column, one example, one `reports`, in two
 ```
 Default items — rendered unless you remove them:
   directory     acme-web                            the working directory
-  git-branch    main                                the current branch, or nothing outside a repo
+  git-branch    feat/eng-1234                       the current branch, or nothing outside a repo
   …
 
 Opt-in items — rendered only where you place them:
   model-short   Sonnet 5                            an abbreviated name, for panes too narrow …
   remote-url    https://github.com/acme/acme-web    the git remote's URL. Opt-in because …
+  linear        ENG-1234                            the Linear ticket id extracted from …
 
 Item kinds: builtin, command, derived, compound. Run with --json for the schema of each.
 ```
@@ -5673,7 +5687,7 @@ Four rulings in that, none of them about formatting:
 **Once this flag exists, it is the oracle for every item example in this document — and that is
 mechanically checkable.** §9.6.2.1 says a spec example naming a specific rendered value is an
 assertion about the implementation that no document-versus-document check can verify. `--items`
-closes exactly that gap for the seventeen builtins: its `example` field is `BuildDefaultSegment` run
+closes exactly that gap for the eighteen builtins: its `example` field is `BuildDefaultSegment` run
 against §9.3.1's fixture, so a check that runs `--items --json` and greps this document for
 example values that disagree is a document-versus-*code* check, which is the class §13.3's two
 checks cannot reach. It is worth building *because* the alternative already failed three times in a

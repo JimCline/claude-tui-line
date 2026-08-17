@@ -12,6 +12,9 @@ public class SegmentBuilderTests
     private static ItemContext Ctx(StatusInput input, string? gitBranch = null, EngramResult? engram = null) =>
         new(input, gitBranch, engram, remoteUrlProbe: () => null);
 
+    private static ItemContext CtxWithSettings(StatusInput input, ItemSettingsJsonConfig itemSettings) =>
+        new(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
     // The context item now renders "ctx:0%" even with no context data
     // (SPEC context-zero-render §2.8), so single-item tests filter it out to keep
     // asserting only about the item under test.
@@ -51,6 +54,49 @@ public class SegmentBuilderTests
         var seg = Assert.Single(Others(segments));
         Assert.Equal("[hacked]", seg.Plain);
         Assert.Equal(Expect("teal", "[hacked]"), seg.Markup); // brackets doubled ([[hacked]]), not passed through raw
+    }
+
+    // item-specific-config.md T2/T3: itemSettings.directory.depth.
+
+    [Fact]
+    public void Directory_DepthTwo_ShowsTwoTrailingSegments()
+    {
+        var input = Empty();
+        input.Cwd = "/Users/example/git/repos/claude-tui-line";
+        var settings = new DirectoryItemSettings { Depth = 2 };
+
+        Assert.Equal("repos/claude-tui-line", SegmentBuilder.ResolveDirectory(input.Cwd, settings));
+        Assert.Equal("repos/claude-tui-line", SegmentBuilder.BuildDirectory(input.Cwd, settings)!.Plain);
+    }
+
+    [Fact]
+    public void Directory_DepthAbsent_UsesBasename()
+    {
+        var input = Empty();
+        input.Cwd = "/Users/example/git/repos/claude-tui-line";
+
+        Assert.Equal("claude-tui-line", SegmentBuilder.ResolveDirectory(input.Cwd, settings: null));
+        Assert.Equal("claude-tui-line", SegmentBuilder.ResolveDirectory(input.Cwd, new DirectoryItemSettings()));
+    }
+
+    [Fact]
+    public void Directory_TwoPlacementsOfSameId_ShareTheSameDepth()
+    {
+        // item-specific-config.md T10: resolution is per-id, not per-placement — two placements
+        // of `directory` in the same render see the same itemSettings.
+        var input = Empty();
+        input.Cwd = "/Users/example/git/repos/claude-tui-line";
+        var ctx = CtxWithSettings(input, new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { Depth = 2 } });
+
+        var items = new List<PaneItem> { new("directory", null, null, null), new("directory", null, null, null) };
+        var noBorder = new PaneBorder(new ColorResolution.ColorExpr.Literal("grey"), null, PaneBorderEdges.All);
+        var root = new Pane(PaneSplit.None, Array.Empty<Pane>(), "fill", noBorder, null, "…", null, items);
+
+        var values = ItemValueResolver.Resolve(root, ctx);
+        var resolved = LeafItems.Resolve(items, values, ctx, new Dictionary<string, Segment>());
+
+        Assert.Equal(2, resolved.Count);
+        Assert.All(resolved, r => Assert.Equal("repos/claude-tui-line", r.Value));
     }
 
     // --- Segment 2: Git branch ---

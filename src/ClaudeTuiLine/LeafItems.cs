@@ -19,7 +19,12 @@ public static class LeafItems
     /// default (<see cref="ItemRegistry.ItemDefinition.BuildDefaultSegment"/>), or
     /// <paramref name="Value"/> unchanged for an id with no registry row (a <c>command</c> item).
     /// </param>
-    public sealed record ResolvedItem(PaneItem Config, string? Value, Segment? Display);
+    /// <param name="DefaultLink">
+    /// SPEC-V2-FRAMEWORK.md item-specific-config §12.4: the registry row's own link template
+    /// (<see cref="ItemRegistry.ItemDefinition.DefaultLinkTemplate"/>), used by
+    /// <see cref="LeafContent"/> only when the placement carries no explicit <c>link</c> of its own.
+    /// </param>
+    public sealed record ResolvedItem(PaneItem Config, string? Value, Segment? Display, string? DefaultLink = null);
 
     public static IReadOnlyList<ResolvedItem> Resolve(
         IReadOnlyList<PaneItem> items,
@@ -63,7 +68,8 @@ public static class LeafItems
                 display = merged;
             }
 
-            resolved.Add(new ResolvedItem(item, value, display));
+            var defaultLink = key is { } linkId ? ItemRegistry.Find(linkId)?.DefaultLinkTemplate?.Invoke(ctx) : null;
+            resolved.Add(new ResolvedItem(item, value, display, defaultLink));
         }
 
         return resolved;

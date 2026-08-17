@@ -28,11 +28,93 @@ public sealed class UserConfig
     [JsonPropertyName("colors")]
     public Dictionary<string, ColorRuleJsonConfig>? Colors { get; set; }
 
+    [JsonPropertyName("itemSettings")]
+    public ItemSettingsJsonConfig? ItemSettings { get; set; }
+
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
     /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
     /// per-object scoping from binding rather than from a second hand-maintained shape mirror.
     /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+/// <summary>
+/// Per-item settings, keyed by builtin item id. Declared as properties rather than a
+/// dictionary so each item's settings get their own JsonTypeInfo, which is what lets
+/// ConfigCheck's unknown-key diagnostic scope per object without a second shape mirror.
+/// </summary>
+public sealed class ItemSettingsJsonConfig
+{
+    [JsonPropertyName("directory")]
+    public DirectoryItemSettings? Directory { get; set; }
+
+    [JsonPropertyName("context")]
+    public ContextItemSettings? Context { get; set; }
+
+    [JsonPropertyName("rateLimits")]
+    public RateLimitsItemSettings? RateLimits { get; set; }
+
+    [JsonPropertyName("pr")]
+    public PrItemSettings? Pr { get; set; }
+
+    [JsonPropertyName("linear")]
+    public LinearItemSettings? Linear { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+public sealed class DirectoryItemSettings
+{
+    /// <summary>How many trailing path segments to show. 1 = basename (today's behaviour).</summary>
+    [JsonPropertyName("depth")]
+    public int? Depth { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+public sealed class ContextItemSettings
+{
+    /// <summary>Whether the token-count parenthetical renders beside the percentage. Default true.</summary>
+    [JsonPropertyName("showDetail")]
+    public bool? ShowDetail { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+public sealed class RateLimitsItemSettings
+{
+    /// <summary>Which window(s) to display: "5h", "7d", or "both" (default).</summary>
+    [JsonPropertyName("windows")]
+    public string? Windows { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+public sealed class PrItemSettings
+{
+    /// <summary>Overrides for the review-state suffix, keyed by review state token (e.g. "approved").</summary>
+    [JsonPropertyName("reviewStateLabels")]
+    public Dictionary<string, string>? ReviewStateLabels { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+public sealed class LinearItemSettings
+{
+    /// <summary>
+    /// The Linear workspace slug, used only to build this item's default issue link. Absent
+    /// leaves the ticket id rendering as plain text.
+    /// </summary>
+    [JsonPropertyName("workspace")]
+    public string? Workspace { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 }
@@ -535,6 +617,12 @@ internal sealed class BorderConfigConverter : JsonConverter<BorderConfig?>
 [JsonSerializable(typeof(PaneItemPartJsonConfig))]
 [JsonSerializable(typeof(ThresholdJsonConfig))]
 [JsonSerializable(typeof(MatchJsonConfig))]
+[JsonSerializable(typeof(ItemSettingsJsonConfig))]
+[JsonSerializable(typeof(DirectoryItemSettings))]
+[JsonSerializable(typeof(ContextItemSettings))]
+[JsonSerializable(typeof(RateLimitsItemSettings))]
+[JsonSerializable(typeof(PrItemSettings))]
+[JsonSerializable(typeof(LinearItemSettings))]
 public partial class ConfigJsonContext : JsonSerializerContext
 {
 }
@@ -558,7 +646,8 @@ public sealed record ResolvedConfig(
     ColorSystemSupport ColorSystem,
     IReadOnlyDictionary<string, ColorResolution.ColorRule> Colors,
     int SurfaceMaxRows = ConfigLoader.DefaultSurfaceMaxRows,
-    bool Collapse = false);
+    bool Collapse = false,
+    ItemSettingsJsonConfig? ItemSettings = null);
 
 public static class ConfigLoader
 {
@@ -605,7 +694,7 @@ public static class ConfigLoader
         var surfaceMaxRows = config?.Surface?.MaxRows ?? DefaultSurfaceMaxRows;
         var collapse = config?.Surface?.Border?.Collapse ?? false;
 
-        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows, collapse);
+        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows, collapse, config?.ItemSettings);
     }
 
     private static readonly (string Token, ColorSystemSupport Value)[] ColorSystemAccepted =

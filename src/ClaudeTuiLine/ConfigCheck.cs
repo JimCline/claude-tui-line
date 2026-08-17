@@ -71,6 +71,7 @@ public static class ConfigChecker
         diagnostics.AddRange(CheckCommandShape(root, rootPath));
         diagnostics.AddRange(CheckArgvPlaceholders(root, rootPath));
         diagnostics.AddRange(CheckEnums(config));
+        diagnostics.AddRange(CheckItemSettings(config));
         diagnostics.AddRange(CheckLeafOnlyKeysOnSplits(config));
         diagnostics.AddRange(CheckKeyNotApplicable(config));
         diagnostics.AddRange(CheckBorderInsideOnLeaf(config));
@@ -572,6 +573,26 @@ public static class ConfigChecker
                     yield return UnknownEnumValue($"{path}/parts/{i}/case", parts[i].Case, "case", ItemValueResolver.CaseAcceptedTokens);
                 }
             }
+        }
+    }
+
+    private static readonly string[] RateLimitsWindowsAcceptedTokens = { "5h", "7d", "both" };
+
+    // §3.3 of item-specific-config.md: enum/range validation for itemSettings values that
+    // WalkRawObjects' unknown-key pass cannot catch, since a legal-but-unrecognized string is a
+    // known key with a bad value, not an unknown key.
+    private static IEnumerable<Diagnostic> CheckItemSettings(UserConfig? config)
+    {
+        if (config?.ItemSettings?.RateLimits?.Windows is { } windows
+            && !RateLimitsWindowsAcceptedTokens.Contains(windows, StringComparer.Ordinal))
+        {
+            yield return UnknownEnumValue("/itemSettings/rateLimits/windows", windows, "windows", RateLimitsWindowsAcceptedTokens);
+        }
+
+        if (config?.ItemSettings?.Directory?.Depth is int depth && depth <= 0)
+        {
+            yield return new Diagnostic("/itemSettings/directory/depth", DiagnosticSeverity.Error, "invalid-depth",
+                $"depth ({depth}) must be a positive integer");
         }
     }
 
@@ -1231,6 +1252,42 @@ public static class ConfigChecker
         if (config.Layout is { } layout)
         {
             yield return (layout.Extra, ConfigJsonContext.Default.LayoutConfig, "layout", "/layout");
+        }
+
+        if (config.ItemSettings is { } itemSettings)
+        {
+            yield return (itemSettings.Extra, ConfigJsonContext.Default.ItemSettingsJsonConfig,
+                "itemSettings", "/itemSettings");
+
+            if (itemSettings.Directory is { } directorySettings)
+            {
+                yield return (directorySettings.Extra, ConfigJsonContext.Default.DirectoryItemSettings,
+                    "the directory item's settings", "/itemSettings/directory");
+            }
+
+            if (itemSettings.Context is { } contextSettings)
+            {
+                yield return (contextSettings.Extra, ConfigJsonContext.Default.ContextItemSettings,
+                    "the context item's settings", "/itemSettings/context");
+            }
+
+            if (itemSettings.RateLimits is { } rateLimitsSettings)
+            {
+                yield return (rateLimitsSettings.Extra, ConfigJsonContext.Default.RateLimitsItemSettings,
+                    "the rate-limits item's settings", "/itemSettings/rateLimits");
+            }
+
+            if (itemSettings.Pr is { } prSettings)
+            {
+                yield return (prSettings.Extra, ConfigJsonContext.Default.PrItemSettings,
+                    "the pr item's settings", "/itemSettings/pr");
+            }
+
+            if (itemSettings.Linear is { } linearSettings)
+            {
+                yield return (linearSettings.Extra, ConfigJsonContext.Default.LinearItemSettings,
+                    "the linear item's settings", "/itemSettings/linear");
+            }
         }
 
         if (config.Surface is { } surface)

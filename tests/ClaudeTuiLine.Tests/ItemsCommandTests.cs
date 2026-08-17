@@ -3,9 +3,9 @@ namespace ClaudeTuiLine.Tests;
 public class ItemsCommandTests
 {
     [Fact]
-    public void ItemRegistryAll_ContainsSeventeenUniquelyIdentifiedItemsWithNonEmptyReports()
+    public void ItemRegistryAll_ContainsEighteenUniquelyIdentifiedItemsWithNonEmptyReports()
     {
-        Assert.Equal(17, ItemRegistry.All.Count);
+        Assert.Equal(18, ItemRegistry.All.Count);
         Assert.Equal(ItemRegistry.All.Count, ItemRegistry.All.Select(i => i.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(ItemRegistry.All, i => Assert.False(string.IsNullOrWhiteSpace(i.Reports)));
     }
@@ -30,12 +30,12 @@ public class ItemsCommandTests
     }
 
     [Fact]
-    public void Build_MarksOnlyModelShortRemoteUrlAndRepoHostAsNonDefault()
+    public void Build_MarksOnlyModelShortRemoteUrlRepoHostAndLinearAsNonDefault()
     {
         var result = ItemsCommand.Build();
 
         var nonDefault = result.Items.Where(i => !i.Default).Select(i => i.Id).OrderBy(id => id, StringComparer.Ordinal);
-        Assert.Equal(new[] { "model-short", "remote-url", "repo-host" }, nonDefault);
+        Assert.Equal(new[] { "linear", "model-short", "remote-url", "repo-host" }, nonDefault);
     }
 
     [Fact]
@@ -63,7 +63,17 @@ public class ItemsCommandTests
 
         // BuildGitBranch's default segment carries no glyph — Plain is exactly the branch name.
         var gitBranch = result.Items.Single(i => i.Id == "git-branch");
-        Assert.Equal("main", gitBranch.Example);
+        Assert.Equal("feat/eng-1234", gitBranch.Example);
+    }
+
+    [Fact]
+    public void Build_LinearExampleIsTheExtractedUppercasedTicketId()
+    {
+        // item-specific-config.md §13.6 T19.
+        var result = ItemsCommand.Build();
+
+        var linear = result.Items.Single(i => i.Id == "linear");
+        Assert.Equal("ENG-1234", linear.Example);
     }
 
     [Fact]

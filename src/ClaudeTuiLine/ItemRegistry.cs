@@ -36,7 +36,8 @@ public static class ItemRegistry
         string Reports,
         Func<ItemContext, string?> ResolveValue,
         Func<ItemContext, Segment?> BuildDefaultSegment,
-        ItemColorKind ColorKind);
+        ItemColorKind ColorKind,
+        Func<ItemContext, string?>? DefaultLinkTemplate = null);
 
     // Declaration order is also the default rendering order (SegmentBuilder.Build iterates
     // DefaultIds in this order) — kept as one list rather than a separate ordering table so the
@@ -46,24 +47,34 @@ public static class ItemRegistry
     // without a description fails to compile instead of shipping as a bare id.
     private static readonly ItemDefinition[] Items =
     {
-        new("directory", "the working directory", ctx => SegmentBuilder.ResolveDirectory(ctx.Input.Cwd), ctx => SegmentBuilder.BuildDirectory(ctx.Input.Cwd), ItemColorKind.Decorative),
+        new("directory", "the working directory", ctx => SegmentBuilder.ResolveDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory), ctx => SegmentBuilder.BuildDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory), ItemColorKind.Decorative),
         new("git-branch", "the current branch, or nothing outside a repo", ctx => SegmentBuilder.ResolveGitBranch(ctx.GitBranch), ctx => SegmentBuilder.BuildGitBranch(ctx.GitBranch), ItemColorKind.Decorative),
         new("repo", "the workspace repo as owner/name", ctx => SegmentBuilder.ResolveRepo(ctx.Input.Workspace?.Repo), ctx => SegmentBuilder.BuildRepo(ctx.Input.Workspace?.Repo), ItemColorKind.Decorative),
         new("worktree", "the worktree's name and branch, when the session is in one", ctx => SegmentBuilder.ResolveWorktree(ctx.Input.Worktree), ctx => SegmentBuilder.BuildWorktree(ctx.Input.Worktree), ItemColorKind.Decorative),
-        new("pr", "the pull request number and its review state", ctx => SegmentBuilder.ResolvePullRequest(ctx.Input.Pr), ctx => SegmentBuilder.BuildPullRequest(ctx.Input.Pr), ItemColorKind.Decorative),
+        new("pr", "the pull request number and its review state", ctx => SegmentBuilder.ResolvePullRequest(ctx.Input.Pr, ctx.ItemSettings?.Pr), ctx => SegmentBuilder.BuildPullRequest(ctx.Input.Pr, ctx.ItemSettings?.Pr), ItemColorKind.Decorative),
         new("model", "the model's display name", ctx => SegmentBuilder.ResolveModel(ctx.Input.Model), ctx => SegmentBuilder.BuildModel(ctx.Input.Model), ItemColorKind.Decorative),
         new("effort", "the reasoning effort level", ctx => SegmentBuilder.ResolveEffort(ctx.Input.Effort), ctx => SegmentBuilder.BuildEffort(ctx.Input.Effort), ItemColorKind.Decorative),
         new("thinking", "whether extended thinking is on", ctx => SegmentBuilder.ResolveThinking(ctx.Input.Thinking), ctx => SegmentBuilder.BuildThinking(ctx.Input.Thinking), ItemColorKind.Decorative),
         new("output-style", "the active output style", ctx => SegmentBuilder.ResolveOutputStyle(ctx.Input.OutputStyle), ctx => SegmentBuilder.BuildOutputStyle(ctx.Input.OutputStyle), ItemColorKind.Decorative),
-        new("context", "how much of the context window is in use. Its colour follows that percentage through the configured thresholds, so it warms as the window fills. Renders 0% when the harness has reported no usage yet, so it never disappears from a fresh session.", ctx => SegmentBuilder.ResolveContext(ctx.Input.ContextWindow), ctx => SegmentBuilder.BuildContext(ctx.Input.ContextWindow), ItemColorKind.Semantic),
-        new("rate-limits", "usage against the five-hour and seven-day limits. Its colour follows the higher of the two through the thresholds, since the nearer limit is the one that will stop you", ctx => SegmentBuilder.ResolveRateLimits(ctx.Input.RateLimits), ctx => SegmentBuilder.BuildRateLimits(ctx.Input.RateLimits), ItemColorKind.Semantic),
+        new("context", "how much of the context window is in use. Its colour follows that percentage through the configured thresholds, so it warms as the window fills. Renders 0% when the harness has reported no usage yet, so it never disappears from a fresh session.", ctx => SegmentBuilder.ResolveContext(ctx.Input.ContextWindow), ctx => SegmentBuilder.BuildContext(ctx.Input.ContextWindow, ctx.ItemSettings?.Context), ItemColorKind.Semantic),
+        new("rate-limits", "usage against the five-hour and seven-day limits. Its colour follows the higher of the two through the thresholds, since the nearer limit is the one that will stop you", ctx => SegmentBuilder.ResolveRateLimits(ctx.Input.RateLimits), ctx => SegmentBuilder.BuildRateLimits(ctx.Input.RateLimits, ctx.ItemSettings?.RateLimits), ItemColorKind.Semantic),
         new("agent", "the name of the active agent, when the session is running one", ctx => SegmentBuilder.ResolveAgent(ctx.Input.Agent), ctx => SegmentBuilder.BuildAgent(ctx.Input.Agent), ItemColorKind.Decorative),
         new("engram", "recent Engram memory activity. Its colour reflects whether the store is reachable and active rather than a magnitude, so it is a state indicator and not a gauge", ctx => SegmentBuilder.ResolveEngram(ctx.Engram), ctx => SegmentBuilder.BuildEngram(ctx.Engram), ItemColorKind.Semantic),
         new("vim", "the current vim mode, when vim mode is enabled", ctx => SegmentBuilder.ResolveVim(ctx.Input.Vim), ctx => SegmentBuilder.BuildVimMode(ctx.Input.Vim), ItemColorKind.Decorative),
         new("model-short", "an abbreviated model name, for panes too narrow for the full one", ctx => SegmentBuilder.ResolveModelShort(ctx.Input.Model), ctx => SegmentBuilder.BuildModelShort(ctx.Input.Model), ItemColorKind.Decorative),
         new("remote-url", "the git remote's URL. Opt-in rather than default because resolving it shells out to git", ctx => SegmentBuilder.ResolveRemoteUrl(ctx.RemoteUrl), ctx => SegmentBuilder.BuildRemoteUrl(ctx.RemoteUrl), ItemColorKind.Decorative),
         new("repo-host", "the host the workspace repo lives on, from the session payload rather than a git probe", ctx => SegmentBuilder.ResolveRepoHost(ctx.Input.Workspace?.Repo), ctx => SegmentBuilder.BuildRepoHost(ctx.Input.Workspace?.Repo), ItemColorKind.Decorative),
+        new("linear", "the Linear ticket id extracted from the current git branch, uppercased; links to the issue when itemSettings.linear.workspace is set",
+            ctx => SegmentBuilder.ResolveLinear(ctx.GitBranch),
+            ctx => SegmentBuilder.BuildLinear(ctx.GitBranch),
+            ItemColorKind.Decorative,
+            DefaultLinkTemplate: ctx => LinearDefaultLink(ctx)),
     };
+
+    private static string? LinearDefaultLink(ItemContext ctx) =>
+        ctx.ItemSettings?.Linear?.Workspace is { Length: > 0 } ws
+            ? $"https://linear.app/{ws}/issue/{{}}"
+            : null;
 
     private static readonly IReadOnlyDictionary<string, ItemDefinition> ById =
         Items.ToDictionary(i => i.Id, i => i, StringComparer.OrdinalIgnoreCase);
@@ -72,14 +83,17 @@ public static class ItemRegistry
     // opt-in-only ones — exposed in the same declaration order for the same reason DefaultIds is.
     public static readonly IReadOnlyList<ItemDefinition> All = Items;
 
-    // model-short, remote-url, and repo-host are all opt-in-only (never part of the default
-    // 14-segment pipeline): remote-url because ItemContext.RemoteUrl's probe is lazy and must
-    // stay unfired for a render that never references it (§3.2) — including it here would probe
-    // on every render regardless of placement. repo-host is excluded for a different reason — it
-    // fires no subprocess, but a bare hostname is noise in a rendered statusline; its purpose is
-    // to be referenced by a link template, not displayed on its own.
+    // model-short, remote-url, repo-host, and linear are all opt-in-only (never part of the
+    // default 14-segment pipeline): remote-url because ItemContext.RemoteUrl's probe is lazy and
+    // must stay unfired for a render that never references it (§3.2) — including it here would
+    // probe on every render regardless of placement. repo-host is excluded for a different reason
+    // — it fires no subprocess, but a bare hostname is noise in a rendered statusline; its purpose
+    // is to be referenced by a link template, not displayed on its own. linear is excluded for a
+    // third reason distinct from both: most branches carry no ticket id, so a default placement
+    // would render nothing on the majority of renders, and adding a default segment moves the ~28
+    // whole-statusline assertions in SegmentBuilderTests.cs for no benefit.
     public static readonly IReadOnlyList<string> DefaultIds =
-        Items.Where(i => i.Id is not ("model-short" or "remote-url" or "repo-host"))
+        Items.Where(i => i.Id is not ("model-short" or "remote-url" or "repo-host" or "linear"))
             .Select(i => i.Id)
             .ToList();
 

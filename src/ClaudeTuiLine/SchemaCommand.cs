@@ -100,10 +100,10 @@ public static class SchemaCommand
     private static StructureFieldJson Field(string name, string type, string description, string? acceptedKey = null) =>
         new(name, type, description, acceptedKey);
 
-    // §5.3: hand-authored, twelve entries — there is no runtime derivation available under AOT.
+    // §5.3: hand-authored, eighteen entries — there is no runtime derivation available under AOT.
     // SchemaCommandTests.V4 asserts, by reflection in the test, that each entry with a non-null
     // `record` matches its record type's [JsonPropertyName] values exactly; V4 also pins the entry
-    // set itself to these twelve names.
+    // set itself to these eighteen names.
     private static IReadOnlyList<StructureEntryJson> BuildStructures() => new[]
     {
         new StructureEntryJson(
@@ -111,7 +111,7 @@ public static class SchemaCommand
             "UserConfig",
             "The config document root.",
             Array.Empty<string>(),
-            new[] { "border", "layout", "items", "surface", "colorSystem", "colors" },
+            new[] { "border", "layout", "items", "surface", "colorSystem", "colors", "itemSettings" },
             new[]
             {
                 Field("border", "border | string (shorthand)", "Top-level border, used for the single root leaf pane when no surface/pane tree is configured."),
@@ -120,6 +120,7 @@ public static class SchemaCommand
                 Field("surface", "surface", "The pane tree root. When present, items above is ignored and the pane tree is authoritative."),
                 Field("colorSystem", "string", "Opt-in rendering colour-system profile.", "colorSystem"),
                 Field("colors", "object<string,colorRule>", "Named, reusable colour tokens table, referenced elsewhere as \"@name\"."),
+                Field("itemSettings", "itemSettings", "Per-item settings, keyed by builtin item id."),
             },
             Array.Empty<string>(),
             Parse("{}")),
@@ -342,5 +343,87 @@ public static class SchemaCommand
                 "A part may not carry parts or link — both are declared as wire keys solely so violating them is reported as a part-forbidden-key diagnostic rather than an unknown-key warning.",
             },
             Parse("""{"text":"agent:"}""")),
+
+        new StructureEntryJson(
+            "itemSettings",
+            "ItemSettingsJsonConfig",
+            "Per-item settings, keyed by builtin item id.",
+            Array.Empty<string>(),
+            new[] { "directory", "context", "rateLimits", "pr", "linear" },
+            new[]
+            {
+                Field("directory", "directoryItemSettings", "Settings for the directory item."),
+                Field("context", "contextItemSettings", "Settings for the context item."),
+                Field("rateLimits", "rateLimitsItemSettings", "Settings for the rate-limits item."),
+                Field("pr", "prItemSettings", "Settings for the pr item."),
+                Field("linear", "linearItemSettings", "Settings for the linear item."),
+            },
+            Array.Empty<string>(),
+            Parse("{}")),
+
+        new StructureEntryJson(
+            "directoryItemSettings",
+            "DirectoryItemSettings",
+            "Settings for the directory item.",
+            Array.Empty<string>(),
+            new[] { "depth" },
+            new[]
+            {
+                Field("depth", "integer", "How many trailing path segments to show. 1 = basename (the default)."),
+            },
+            Array.Empty<string>(),
+            Parse("""{"depth":2}""")),
+
+        new StructureEntryJson(
+            "contextItemSettings",
+            "ContextItemSettings",
+            "Settings for the context item.",
+            Array.Empty<string>(),
+            new[] { "showDetail" },
+            new[]
+            {
+                Field("showDetail", "boolean", "Whether the token-count parenthetical renders beside the percentage. Default true."),
+            },
+            Array.Empty<string>(),
+            Parse("""{"showDetail":false}""")),
+
+        new StructureEntryJson(
+            "rateLimitsItemSettings",
+            "RateLimitsItemSettings",
+            "Settings for the rate-limits item.",
+            Array.Empty<string>(),
+            new[] { "windows" },
+            new[]
+            {
+                Field("windows", "string", "Which window(s) to display: \"5h\", \"7d\", or \"both\" (the default)."),
+            },
+            Array.Empty<string>(),
+            Parse("""{"windows":"5h"}""")),
+
+        new StructureEntryJson(
+            "prItemSettings",
+            "PrItemSettings",
+            "Settings for the pr item.",
+            Array.Empty<string>(),
+            new[] { "reviewStateLabels" },
+            new[]
+            {
+                Field("reviewStateLabels", "object<string,string>", "Overrides for the review-state suffix, keyed by review state token (e.g. \"approved\")."),
+            },
+            Array.Empty<string>(),
+            Parse("""{"reviewStateLabels":{"approved":" [OK]"}}""")),
+
+        new StructureEntryJson(
+            "linearItemSettings",
+            "LinearItemSettings",
+            "Settings for the linear item.",
+            Array.Empty<string>(),
+            new[] { "workspace" },
+            new[]
+            {
+                Field("workspace", "string", "The Linear workspace slug, used only to build this item's default issue link. Absent leaves the ticket id rendering as plain text."),
+            },
+            Array.Empty<string>(),
+            Parse("""{"workspace":"acme-corp"}""")),
     };
 }

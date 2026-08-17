@@ -146,11 +146,30 @@ public static class SegmentBuilder
         return changed ? BuildCompoundSegment(merged) : compound;
     }
 
-    internal static Segment? BuildDirectory(string? cwd) =>
-        string.IsNullOrEmpty(cwd) ? null : SingleColor("teal", Basename(cwd));
+    internal static Segment? BuildDirectory(string? cwd, DirectoryItemSettings? settings = null) =>
+        string.IsNullOrEmpty(cwd) ? null : SingleColor("teal", TrailingSegments(cwd, settings?.Depth ?? 1));
 
-    internal static string? ResolveDirectory(string? cwd) =>
-        string.IsNullOrEmpty(cwd) ? null : Basename(cwd);
+    internal static string? ResolveDirectory(string? cwd, DirectoryItemSettings? settings = null) =>
+        string.IsNullOrEmpty(cwd) ? null : TrailingSegments(cwd, settings?.Depth ?? 1);
+
+    /// <summary>The last <paramref name="depth"/> path segments of <paramref name="path"/>, joined by '/'. depth &lt;= 1 is the plain basename.</summary>
+    private static string TrailingSegments(string path, int depth)
+    {
+        if (depth <= 1)
+        {
+            return Basename(path);
+        }
+
+        var trimmed = path.TrimEnd('/');
+        var segments = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return "/";
+        }
+
+        var take = Math.Min(depth, segments.Length);
+        return string.Join('/', segments[^take..]);
+    }
 
     internal static Segment? BuildGitBranch(string? branch) =>
         string.IsNullOrEmpty(branch) ? null : SingleColor("green", branch);
@@ -174,6 +193,18 @@ public static class SegmentBuilder
     internal static string? ResolveRepoHost(RepoInfo? repo) =>
         string.IsNullOrEmpty(repo?.Host) ? null : repo!.Host;
 
+    internal const string TicketPattern = "[A-Za-z]{2,}-[0-9]+";
+
+    internal static string? ResolveLinear(string? gitBranch) =>
+        string.IsNullOrEmpty(gitBranch)
+            ? null
+            : ItemValueResolver.ExtractValue(gitBranch, TicketPattern) is { } id
+                ? ItemValueResolver.ApplyCase(id, "upper")
+                : null;
+
+    internal static Segment? BuildLinear(string? gitBranch) =>
+        ResolveLinear(gitBranch) is { } raw ? SingleColor("blue", raw) : null;
+
     internal const string WorktreeFormat = "worktree:{}";
 
     internal static Segment? BuildWorktree(WorktreeInfo? worktree) =>
@@ -191,29 +222,31 @@ public static class SegmentBuilder
 
     internal const string PullRequestFormat = "PR {}";
 
-    internal static Segment? BuildPullRequest(PrInfo? pr) =>
-        ResolvePullRequest(pr) is { } raw ? SingleColor("olive", LeafItems.ApplyFormat(PullRequestFormat, raw)) : null;
+    internal static Segment? BuildPullRequest(PrInfo? pr, PrItemSettings? settings = null) =>
+        ResolvePullRequest(pr, settings) is { } raw ? SingleColor("olive", LeafItems.ApplyFormat(PullRequestFormat, raw)) : null;
 
-    internal static string? ResolvePullRequest(PrInfo? pr)
+    internal static string? ResolvePullRequest(PrInfo? pr, PrItemSettings? settings = null)
     {
         if (pr?.Number is not { } number)
         {
             return null;
         }
 
-        return $"#{number.ToString(System.Globalization.CultureInfo.InvariantCulture)}{ReviewStateSuffix(pr.ReviewState)}";
+        return $"#{number.ToString(System.Globalization.CultureInfo.InvariantCulture)}{ReviewStateSuffix(pr.ReviewState, settings)}";
     }
 
-    private static string ReviewStateSuffix(string? reviewState) =>
+    private static string ReviewStateSuffix(string? reviewState, PrItemSettings? settings) =>
         string.IsNullOrEmpty(reviewState)
             ? string.Empty
-            : reviewState switch
-            {
-                "approved" => " [approved]",
-                "changes_requested" => " [changes]",
-                "draft" => " [draft]",
-                _ => $" [{reviewState}]",
-            };
+            : settings?.ReviewStateLabels?.GetValueOrDefault(reviewState) is { } overridden
+                ? overridden
+                : reviewState switch
+                {
+                    "approved" => " [approved]",
+                    "changes_requested" => " [changes]",
+                    "draft" => " [draft]",
+                    _ => $" [{reviewState}]",
+                };
 
     internal static Segment? BuildModel(ModelInfo? model) =>
         model is null || string.IsNullOrEmpty(model.DisplayName) ? null : SingleColor("navy", model.DisplayName);
@@ -255,13 +288,14 @@ public static class SegmentBuilder
     private static bool IsDefaultOrEmptyStyle(OutputStyleInfo? style) =>
         style is null || string.IsNullOrEmpty(style.Name) || string.Equals(style.Name, "default", StringComparison.OrdinalIgnoreCase);
 
-    internal static Segment? BuildContext(ContextWindowInfo? ctx)
+    internal static Segment? BuildContext(ContextWindowInfo? ctx, ContextItemSettings? settings = null)
     {
         var pctInt = RoundHalfToEven(EffectiveContextPercentage(ctx));
         var tag = ColorResolution.ResolveStandardThreshold(pctInt);
-        var plain = ResolveContextDisplayText(ctx)!;
+        var plain = ResolveContextDisplayText(ctx, settings)!;
+        var showDetail = settings?.ShowDetail ?? true;
 
-        if (ctx?.UsedPercentage is not null && ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size)
+        if (showDetail && ctx?.UsedPercentage is not null && ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size)
         {
             var markup = $"ctx:[{tag}]{pctInt}%[/] [dim]({totalInput / 1000}k/{size / 1000}k)[/]";
             return new Segment(markup, plain);
@@ -281,10 +315,11 @@ public static class SegmentBuilder
     /// <see cref="ContextWindowInfo.TotalInputTokens"/>/<see cref="ContextWindowInfo.ContextWindowSize"/>,
     /// neither of which is present in <see cref="ResolveContext"/>'s raw value.
     /// </summary>
-    internal static string? ResolveContextDisplayText(ContextWindowInfo? ctx)
+    internal static string? ResolveContextDisplayText(ContextWindowInfo? ctx, ContextItemSettings? settings = null)
     {
         var pctInt = RoundHalfToEven(EffectiveContextPercentage(ctx));
-        return ctx?.UsedPercentage is not null && ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size
+        var showDetail = settings?.ShowDetail ?? true;
+        return showDetail && ctx?.UsedPercentage is not null && ctx.TotalInputTokens is { } totalInput && ctx.ContextWindowSize is { } size
             ? $"ctx:{pctInt}% ({totalInput / 1000}k/{size / 1000}k)"
             : $"ctx:{pctInt}%";
     }
@@ -307,10 +342,12 @@ public static class SegmentBuilder
         RoundHalfToEven(EffectiveContextPercentage(ctx))
             .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    internal static Segment? BuildRateLimits(RateLimitsInfo? rateLimits)
+    internal static Segment? BuildRateLimits(RateLimitsInfo? rateLimits, RateLimitsItemSettings? settings = null)
     {
+        var windows = settings?.Windows ?? "both";
+
         string? fivePlain = null, fiveMarkup = null;
-        if (rateLimits?.FiveHour?.UsedPercentage is { } fivePct)
+        if (windows is "5h" or "both" && rateLimits?.FiveHour?.UsedPercentage is { } fivePct)
         {
             var v = RoundHalfToEven(fivePct);
             var tag = ColorResolution.ResolveStandardThreshold(v);
@@ -319,7 +356,7 @@ public static class SegmentBuilder
         }
 
         string? sevenPlain = null, sevenMarkup = null;
-        if (rateLimits?.SevenDay?.UsedPercentage is { } sevenPct)
+        if (windows is "7d" or "both" && rateLimits?.SevenDay?.UsedPercentage is { } sevenPct)
         {
             var v = RoundHalfToEven(sevenPct);
             var tag = ColorResolution.ResolveStandardThreshold(v);

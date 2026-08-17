@@ -49,9 +49,13 @@ public static class LeafContent
             spans = null;
         }
 
-        if (resolved.Config.Link is { Length: > 0 } linkTemplate
+        var template = resolved.Config.Link is { Length: > 0 } configured
+            ? configured
+            : resolved.DefaultLink;
+
+        if (template is { Length: > 0 }
             && resolved.Value is { } ownValue
-            && TryBuildLink(linkTemplate, ownValue, values, compounds, out var url))
+            && TryBuildLink(template, ownValue, values, compounds, out var url))
         {
             markup = OscHyperlink.Wrap(url, markup);
         }
