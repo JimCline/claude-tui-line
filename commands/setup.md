@@ -8,109 +8,40 @@ Work through these steps in order. **Stop and report** at the first one that fai
 carrying on — a half-installed statusline is worse than none, because Claude Code will run a
 broken command once a second.
 
-## 1. Check the toolchain
+## 1. Run install.sh
 
 ```bash
-(cd "${CLAUDE_PLUGIN_ROOT}/src/ClaudeTuiLine" && dotnet --version)
+"${CLAUDE_PLUGIN_ROOT}/install.sh"
 ```
 
-Needs .NET 10 or newer. If `dotnet` is missing or older, stop and tell the user to install the
-.NET 10 SDK from https://dotnet.microsoft.com/download. Do not attempt to install it yourself.
+This is the one implementation of the install — toolchain check, both builds, the backup ledger
+entry, the `settings.json` write, and MCP/plugin registration all live there, not here. Run it and
+watch its own prompts: it asks per action class (build, deploy, statusline rewrite, registration)
+before writing anything, and it never edits `settings.json` without appending a ledger entry first.
 
-Run it from the project directory, not from wherever the user happens to be. `dotnet --version`
-reports the SDK selected *for the current directory*, which a `global.json` anywhere above it can
-pin — so checking in one directory and building in another can pass a check for an SDK the build
-never uses, and report the resulting failure as a build error rather than a toolchain one.
+**This requires a locally-sourced plugin — a git checkout, not a marketplace-synced snapshot.**
+`${CLAUDE_PLUGIN_ROOT}` points at a snapshot when the plugin came from a marketplace, and
+`install.sh` refuses to run against one (it would register the snapshot itself, which the next sync
+overwrites). If it refuses for this reason, **show the user its refusal message verbatim** rather
+than reinterpreting it — it names the actual checkout to run `install.sh` from instead.
 
-## 2. Build the binary
+If it exits non-zero, show the user its output and stop — do not retry pieces of it by hand or
+re-derive what it does in prose.
 
-Build into the plugin's own data directory so it survives plugin updates and never collides with
-a working tree the user may also be building in.
+If it succeeds, relay what it printed:
 
-**Check that `CLAUDE_PLUGIN_DATA` is actually set before using it in a path**, and fall back if it
-is not:
+- which directory the binaries went to
+- the ledger entry kind it appended (`origin` or `checkpoint`) and the backup path — and if it was
+  a `checkpoint` rather than an `origin`, say so explicitly (see step 3 below for why that matters)
+- whether it registered the MCP server and the plugin, or left either alone
 
-```bash
-BIN_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/claude-tui-line}/bin"
-dotnet publish "${CLAUDE_PLUGIN_ROOT}/src/ClaudeTuiLine/ClaudeTuiLine.csproj" \
-  -c Release -o "$BIN_DIR"
-```
+Read `statusLine.command` back out of `~/.claude/settings.json` for use in step 2 — do not assume
+it matches what `install.sh` printed; step 2 exists precisely because printed intent and written
+fact can differ.
 
-The guard is not defensive padding. Unset, `"${CLAUDE_PLUGIN_DATA}/bin"` expands to **`/bin`**, and
-the command becomes a release build published into the system binary directory — which either fails
-on permissions or, with a privileged shell, succeeds. Step 4 would then write
-`"command": "/bin/claude-tui-line"` into settings.json and step 5 would confirm it renders. An unset
-variable in a path expansion does not announce itself; it quietly names a different, real,
-usually-worse directory. Use `$BIN_DIR` everywhere below rather than re-expanding the variable, so
-there is one place this can be wrong.
+## 2. Show the user what they will get — by running what was actually written
 
-The result is `$BIN_DIR/claude-tui-line`. Confirm it exists and is executable before going further,
-and report which directory it went to — if the fallback was used, the user should hear that from
-you rather than discover it. Report the build's exit code; if it is nonzero, show the error lines
-and stop.
-
-## 2b. Build the MCP server
-
-The same `$BIN_DIR` from step 2 — one install location, so the launcher script and `CliLocator`
-agree about where things are.
-
-```bash
-dotnet publish "${CLAUDE_PLUGIN_ROOT}/src/ClaudeTuiLineMcp/ClaudeTuiLineMcp.csproj" \
-  -c Release -o "$BIN_DIR"
-```
-
-The result is `$BIN_DIR/claude-tui-line-mcp`. Confirm it exists and is executable. Report the exit
-code; if nonzero, show the error lines and stop.
-
-This publish is framework-dependent and must stay that way — see #83. Do not add `--self-contained`
-or a `-r` flag to make it match step 2's output.
-
-## 3. Back up whatever statusline is already configured
-
-**This step is mandatory and must happen before step 4 writes anything.**
-
-Read `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md` and follow it in full. Do not improvise a
-timestamped file copy — the ledger exists because the obvious design fails on the *second* use,
-capturing claude-tui-line's own command as the thing to restore, and revert then restores the tool
-the user was trying to escape.
-
-For this command the entry is usually **`origin`**: the state before claude-tui-line ever touched
-this machine, written exactly once ever. Two conditions make it a `checkpoint` instead, and the
-ledger requires checking both — an `origin` already exists (setup has run here before), **or** the
-current `statusLine` already points at a claude-tui-line binary. The second happens when someone
-wires the binary up by hand and runs setup afterwards; recording that as `origin` would make the
-tool its own escape hatch, permanently, since `origin` is written once ever.
-
-Record `"statusLine": null` if there is no existing key. That is a real, restorable state, and it
-is different from not knowing what was there.
-
-Report the backup path and which kind of entry you appended. If the backup cannot be written,
-**stop** — do not proceed to step 4.
-
-## 4. Point Claude Code at the binary
-
-Edit `~/.claude/settings.json` to set:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "<the absolute path to $BIN_DIR/claude-tui-line>",
-    "refreshInterval": 1
-  }
-}
-```
-
-Expand it to a real absolute path — settings.json does not interpolate shell or plugin variables,
-so a literal `${CLAUDE_PLUGIN_DATA}` or `$BIN_DIR` is written through verbatim and Claude Code runs
-a command that does not exist. Step 5 is what catches that, and only if you follow it as written.
-
-Write the file per **"Writing `settings.json`"** in `${CLAUDE_PLUGIN_ROOT}/docs/backup-ledger.md`:
-only that key, atomically, everything else preserved.
-
-## 5. Show the user what they will get — by running what you actually wrote
-
-Read the `statusLine.command` value back out of `~/.claude/settings.json` and run **that string,
+Read the `statusLine.command` value out of `~/.claude/settings.json` and run **that string,
 verbatim**:
 
 ```bash
@@ -128,13 +59,13 @@ so every item that depends on workspace, session, usage, or editor-state fields 
 sitting blank. Do not hand-roll a payload here — §9.3 requires exactly one synthetic payload, and a
 second standing fixture in a command file is the defect §12.7.1 names, written once more.
 
-**Not `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`.** That path was already proven in step 2 and is
-not what is in doubt. The one untested thing after step 4 is *the expansion* — whether the absolute
-path you substituted is the path that exists. Testing the variable instead of the value verifies
-the half that was never at risk: if the expansion is wrong, or the literal `${CLAUDE_PLUGIN_DATA}`
-was written through unexpanded, this preview still renders perfectly, setup still reports success,
-and the user gets a blank statusline with nothing anywhere pointing at why. Reading the value back
-out costs one step and is the only version of this check that can fail when the install is broken.
+**Not `${CLAUDE_PLUGIN_DATA}/bin/claude-tui-line`.** That path was already proven in step 1 and is
+not what is in doubt. The one untested thing after step 1 is *the expansion* — whether the absolute
+path written into settings.json is the path that exists. Testing the variable instead of the value
+verifies the half that was never at risk: if the expansion is wrong, or a literal `${...}` was
+written through unexpanded, this preview still renders perfectly, setup still reports success, and
+the user gets a blank statusline with nothing anywhere pointing at why. Reading the value back out
+costs one step and is the only version of this check that can fail when the install is broken.
 
 `/claude-tui-line:revert` already verifies this way, printing and running the command it restored.
 Two commands answering the same question differently is worse than either being wrong alone, and
@@ -150,11 +81,11 @@ observation, same conclusion, because this is the paragraph above's rule applied
   real session or a real PR number still renders absent here. Say it produced no output, say why,
   and hand them the one-liner to run in their own terminal rather than chasing it here.
 
-**This does not weaken what step 5 is for.** The failure it exists to catch — an unexpanded
-`${CLAUDE_PLUGIN_DATA}` or a wrong absolute path written into settings.json — cannot present as
-empty stdout, because a command that does not exist does not run: the shell exits nonzero and puts
-"command not found" on stderr, landing in the first bucket. The bucket that got softer is the one
-that never held this check's quarry.
+**This does not weaken what step 2 is for.** The failure it exists to catch — an unexpanded
+variable or a wrong absolute path written into settings.json — cannot present as empty stdout,
+because a command that does not exist does not run: the shell exits nonzero and puts "command not
+found" on stderr, landing in the first bucket. The bucket that got softer is the one that never
+held this check's quarry.
 
 Then say that the payload is **synthetic**: `--fixture`'s output is invented data with the real
 working directory substituted in, not the user's actual session, PR, or usage state, so the render
@@ -163,7 +94,7 @@ reads as reporting live data, and the user's first act is questioning numbers th
 which is the same reason empty stdout is inconclusive above, stated for the populated case instead
 of the blank one.
 
-## 6. Tell them what happens next
+## 3. Tell them what happens next
 
 Report, briefly:
 
@@ -172,8 +103,8 @@ Report, briefly:
   `~/.claude/claude-tui-line/backups/ledger.jsonl`, and targets the `origin` entry by default no
   matter how many changes come after.
 
-  **If step 3 wrote a `checkpoint` rather than an `origin`**, say so and give its timestamp. Bare
-  `/claude-tui-line:revert` then does *not* restore what you just backed up — it restores the
+  **If step 1 reported a `checkpoint` rather than an `origin`**, say so and give its timestamp. Bare
+  `/claude-tui-line:revert` then does *not* restore what was just backed up — it restores the
   older `origin`, correctly and by design, and the user who read "your statusline is backed up"
   will not expect that. Tell them the argument to pass to get this state back. The default is
   right; leaving the difference unsaid is what is wrong

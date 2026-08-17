@@ -39,6 +39,18 @@ from source rather than shipping a binary.
 statusline you already have** before touching anything, writes the new `statusLine` setting, and
 shows you a rendered preview.
 
+If you're working from a local checkout instead of installing from GitHub — e.g. you cloned the
+repo to contribute, or you want the plugin's commands to track your working tree instead of a
+synced snapshot — register it as a local marketplace and plugin instead of the two `/plugin`
+commands above:
+
+```
+claude plugin marketplace add /path/to/claude-tui-line
+claude plugin install claude-tui-line@claude-tui-line -s user
+```
+
+`install.sh` (below) does this for you as part of a full install.
+
 Three more commands cover the rest of the lifecycle — adopt an existing statusline, change it in
 conversation, and go back:
 
@@ -63,37 +75,25 @@ by default, so the escape hatch survives any number of changes. See
 ```bash
 git clone https://github.com/JimCline/claude-tui-line.git
 cd claude-tui-line
+./install.sh
 ```
 
-Run `tools/install.sh` to do the rest in one shot — it builds the CLI (and the MCP server),
-prints a freshness check comparing the binary against your checked-out commit, and prints the
-`settings.json` block below with the real path already filled in. Safe to rerun any time you pull
-new commits.
+`install.sh` builds both the CLI and the MCP server into gitignored `publish/`/`publish-mcp/`
+staging directories, then — with separate consent, since this replaces a binary Claude Code may be
+exec'ing once a second — deploys them into the shared `$BIN_DIR` the compiled code already expects
+(`${CLAUDE_PLUGIN_DATA:-$HOME/.claude/claude-tui-line}/bin`). It registers the MCP server and the
+plugin as pointing at this checkout, and — with your consent, and only after taking a backup —
+points `settings.json`'s `statusLine` at the deployed binary. It reports what it changed and how to
+undo each part; see [docs/backup-ledger.md](docs/backup-ledger.md) for the statusline/config backup
+mechanism specifically. Safe to rerun any time you pull new commits — an already-correct install
+reports so and writes nothing.
 
-Or do it by hand, the steps the script mechanizes:
+`refreshInterval: 1` in the `statusLine` it writes means the binary runs once per second, so
+**startup cost is render cost** — which is why this is AOT-compiled rather than a script.
 
-```bash
-dotnet publish src/ClaudeTuiLine/ClaudeTuiLine.csproj -c Release -o publish
-```
-
-Then point Claude Code at the binary, in `~/.claude/settings.json`:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "/absolute/path/to/claude-tui-line/publish/claude-tui-line",
-    "refreshInterval": 1
-  }
-}
-```
-
-`refreshInterval: 1` means the binary runs once per second, so **startup cost is render cost** —
-which is why this is AOT-compiled rather than a script.
-
-If you already have a statusline script, back it up before you replace it. Installing as a plugin
-instead gets you `/claude-tui-line:migrate`, which does the backup and maps your script's elements
-onto items — though it needs the CLI, which is not built yet.
+If you already have a statusline script, `install.sh` backs it up before replacing it — see
+[docs/backup-ledger.md](docs/backup-ledger.md). Installing as a plugin instead also gets you
+`/claude-tui-line:migrate`, which does the same backup and maps your script's elements onto items.
 
 ## Configuration
 

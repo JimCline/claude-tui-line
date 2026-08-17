@@ -64,6 +64,13 @@ gone. Write it with `>>`, never with a whole-file write tool:
 printf '%s\n' "$entry_json" >> ~/.claude/claude-tui-line/backups/ledger.jsonl
 ```
 
+**Guard against a torn final line before appending, not just when reading.** If a previous writer's
+`>>` was interrupted mid-line, the file may not end in a newline. Appending straight onto that torn
+line would merge two entries onto one line and corrupt both. Before the `printf` above, check
+whether the file is non-empty and its last byte is not `\n`; if so, write a `\n` first. This is the
+write-side counterpart to "Reading it" above — `src/ClaudeTuiLineMcp/BackupLedger.cs` guards the
+same condition on the compiled path.
+
 This was a JSON array until SPEC §12.2.1, and the reason for the change is worth carrying at the
 call site. An array cannot be appended to — its closing bracket has to move — so adding an entry
 meant reading the whole file and writing it back. **You** are the thing that does that: no compiled
@@ -228,11 +235,54 @@ the one definition; the commands cite it rather than restating it.
    command believes it restored one key.
 2. **Atomically** — temp file in the same directory, then rename. A statusline command runs once a
    second, so a torn write is read almost immediately.
-3. **Preserve every other key and the file's formatting.** Edit it; do not regenerate it. A
-   reformatted settings.json makes the real change unreviewable and buries anything unintended.
+3. **Preserve every other key and match the file's formatting.** Edit it; do not regenerate it. This
+   means key/value fidelity for everything but `statusLine`, *and* matching the file's existing
+   indentation style (space count, or tabs) — not byte-exact reproduction of the whole file, which no
+   general-purpose JSON writer guarantees, but close enough that a diff of the write shows only the
+   intended change. A reformatted settings.json makes the real change unreviewable and buries
+   anything unintended.
 4. **`"statusLine": null` restores by removing the key.** There genuinely was no statusline, and
    the absence of the key is the faithful reproduction of that state — not an empty object, and
    not a no-op.
+
+## Restoring
+
+The capture side above has no restore counterpart documented anywhere, even though the hash rules
+in "Checking a hash before restoring" already anticipate one. Any command that restores from the
+ledger — `revert` today, and anything else built against it later — follows this. The
+`ledger.jsonl` schema does not change for this; restoring only reads entries already defined above.
+
+1. **Select the entry.** A full revert to pre-install state selects the `origin` entry. Any other
+   restore selects a `checkpoint` — by default the newest one, or a specific one the user names.
+2. **Verify the backup copies before touching anything live.** Hash the `settingsCopy` (and
+   `scriptCopy`, when present) files in the backup directory and compare against `settingsSha256` /
+   `scriptSha256` in the entry. A mismatch means the backup store itself is damaged: **stop, restore
+   nothing**, and report which file failed to verify. This is the "backup copies" row of "Checking a
+   hash before restoring" — it is the only file whose hash is expected to still match.
+3. **Verify the user's original script, if the entry records one**, by hashing the live file at
+   `scriptOriginalPath` and comparing against `scriptSha256`. A mismatch means the user has edited
+   that file since the backup was taken — restoring the `statusLine` command would point at
+   different code than what was backed up. Report the mismatch and let the user choose between the
+   live version and the backed-up copy; do not silently restore over their edit. Do **not** perform
+   this check against the live `settings.json` or the live `claude-tui-line.json` — per "Checking a
+   hash before restoring" above, those are expected to differ from their backups by design, and
+   hash-checking them would make every restore fail.
+4. **Append a `checkpoint` recording the state a restore is about to replace**, following "The
+   procedure, in order" below, before either write in steps 5-6 happens. A restore is itself a
+   state-changing write, and rule 4 above admits no exception for it: the entry captures the live
+   (pre-restore) `settings.json` and `claude-tui-line.json` exactly as any other checkpoint would, so
+   a restore can itself be undone. Capturing after the write instead would record the state the
+   restore just produced, not the state it replaced — the same ordering the "once per invocation,
+   before the first write" and "never proceed with a write on the theory the backup can be taken
+   afterwards" rules require everywhere else in this document.
+5. **Restore the `statusLine` key**, and only that key, following "Writing `settings.json`" above:
+   atomically, preserving every other key and the file's formatting. An entry recording
+   `"statusLine": null` restores by **removing the key entirely** — not by writing an empty object —
+   because that is what a faithful reproduction of "no statusline configured" looks like.
+6. **Restore `claude-tui-line.json` from `configCopy`.** When `configCopy` is a filename, copy it
+   back to the path recorded in `configOriginalPath`. When `configCopy` is `null`, the entry recorded
+   that no config file existed at capture time, so the correct restore is the **absence of the
+   file** — delete it if a config file exists now, rather than writing an empty one.
 
 ## The procedure, in order
 
