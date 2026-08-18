@@ -57,6 +57,10 @@ public static class ItemRegistry
         new("thinking", "whether extended thinking is on", ctx => SegmentBuilder.ResolveThinking(ctx.Input.Thinking), ctx => SegmentBuilder.BuildThinking(ctx.Input.Thinking), ItemColorKind.Decorative),
         new("output-style", "the active output style", ctx => SegmentBuilder.ResolveOutputStyle(ctx.Input.OutputStyle), ctx => SegmentBuilder.BuildOutputStyle(ctx.Input.OutputStyle), ItemColorKind.Decorative),
         new("context", "how much of the context window is in use. Its colour follows that percentage through the configured thresholds, so it warms as the window fills. Renders 0% when the harness has reported no usage yet, so it never disappears from a fresh session.", ctx => SegmentBuilder.ResolveContext(ctx.Input.ContextWindow), ctx => SegmentBuilder.BuildContext(ctx.Input.ContextWindow, ctx.ItemSettings?.Context), ItemColorKind.Semantic),
+        new("token-usage", "the session's cumulative token spend, summed from the local transcript — input-side (including cached reads), output, and the cache-hit rate. Distinct from context, which reports how full the window is right now rather than what the session has spent in total. Opt-in because resolving it parses a file that grows with the session",
+            ctx => SegmentBuilder.ResolveTokenUsage(ctx.TokenUsage),
+            ctx => SegmentBuilder.BuildTokenUsage(ctx.TokenUsage),
+            ItemColorKind.Decorative),
         new("rate-limits", "usage against the five-hour and seven-day limits. Its colour follows the higher of the two through the thresholds, since the nearer limit is the one that will stop you", ctx => SegmentBuilder.ResolveRateLimits(ctx.Input.RateLimits), ctx => SegmentBuilder.BuildRateLimits(ctx.Input.RateLimits, ctx.ItemSettings?.RateLimits), ItemColorKind.Semantic),
         new("agent", "the name of the active agent, when the session is running one", ctx => SegmentBuilder.ResolveAgent(ctx.Input.Agent), ctx => SegmentBuilder.BuildAgent(ctx.Input.Agent), ItemColorKind.Decorative),
         new("engram", "recent Engram memory activity. Its colour reflects whether the store is reachable and active rather than a magnitude, so it is a state indicator and not a gauge", ctx => SegmentBuilder.ResolveEngram(ctx.Engram), ctx => SegmentBuilder.BuildEngram(ctx.Engram), ItemColorKind.Semantic),
@@ -83,17 +87,23 @@ public static class ItemRegistry
     // opt-in-only ones — exposed in the same declaration order for the same reason DefaultIds is.
     public static readonly IReadOnlyList<ItemDefinition> All = Items;
 
-    // model-short, remote-url, repo-host, and linear are all opt-in-only (never part of the
-    // default 14-segment pipeline): remote-url because ItemContext.RemoteUrl's probe is lazy and
-    // must stay unfired for a render that never references it (§3.2) — including it here would
-    // probe on every render regardless of placement. repo-host is excluded for a different reason
-    // — it fires no subprocess, but a bare hostname is noise in a rendered statusline; its purpose
-    // is to be referenced by a link template, not displayed on its own. linear is excluded for a
-    // third reason distinct from both: most branches carry no ticket id, so a default placement
-    // would render nothing on the majority of renders, and adding a default segment moves the ~28
-    // whole-statusline assertions in SegmentBuilderTests.cs for no benefit.
+    // model-short, remote-url, repo-host, linear, and token-usage are all opt-in-only (never part
+    // of the default 14-segment pipeline): remote-url because ItemContext.RemoteUrl's probe is
+    // lazy and must stay unfired for a render that never references it (§3.2) — including it here
+    // would probe on every render regardless of placement. repo-host is excluded for a different
+    // reason — it fires no subprocess, but a bare hostname is noise in a rendered statusline; its
+    // purpose is to be referenced by a link template, not displayed on its own. linear is excluded
+    // for a third reason distinct from both: most branches carry no ticket id, so a default
+    // placement would render nothing on the majority of renders, and adding a default segment
+    // moves the ~28 whole-statusline assertions in SegmentBuilderTests.cs for no benefit.
+    // token-usage is excluded for a fifth reason: resolving it reads and parses the session's
+    // transcript JSONL, a file that reaches multiple megabytes over a long session, so it must
+    // stay unread for any render that does not reference it — the same laziness argument as
+    // remote-url, but paid in file I/O rather than a subprocess. A fresh session also has no
+    // transcript on disk yet, so a default placement would render nothing on exactly the renders a
+    // new user sees first.
     public static readonly IReadOnlyList<string> DefaultIds =
-        Items.Where(i => i.Id is not ("model-short" or "remote-url" or "repo-host" or "linear"))
+        Items.Where(i => i.Id is not ("model-short" or "remote-url" or "repo-host" or "linear" or "token-usage"))
             .Select(i => i.Id)
             .ToList();
 

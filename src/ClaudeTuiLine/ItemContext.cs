@@ -31,12 +31,22 @@ public sealed class ItemContext
     /// </summary>
     public string? RemoteUrl => _remoteUrl.Value;
 
-    public ItemContext(StatusInput input, string? gitBranch, EngramResult? engram, Func<string?> remoteUrlProbe, ItemSettingsJsonConfig? itemSettings = null)
+    private readonly Lazy<TokenTotals?> _tokenUsage;
+
+    /// <summary>
+    /// SPEC token-usage-item.md §7: parsing the session transcript costs a multi-megabyte file
+    /// read, so this is read at most once per render and only when something actually reads it —
+    /// the item placed, or a colors-table <c>from</c> naming it — never unconditionally.
+    /// </summary>
+    public TokenTotals? TokenUsage => _tokenUsage.Value;
+
+    public ItemContext(StatusInput input, string? gitBranch, EngramResult? engram, Func<string?> remoteUrlProbe, ItemSettingsJsonConfig? itemSettings = null, Func<TokenTotals?>? tokenUsageProbe = null)
     {
         Input = input;
         GitBranch = gitBranch;
         Engram = engram;
         ItemSettings = itemSettings;
         _remoteUrl = new Lazy<string?>(remoteUrlProbe, System.Threading.LazyThreadSafetyMode.None);
+        _tokenUsage = new Lazy<TokenTotals?>(tokenUsageProbe ?? (() => null), System.Threading.LazyThreadSafetyMode.None);
     }
 }

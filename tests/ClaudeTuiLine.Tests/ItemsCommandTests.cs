@@ -3,9 +3,9 @@ namespace ClaudeTuiLine.Tests;
 public class ItemsCommandTests
 {
     [Fact]
-    public void ItemRegistryAll_ContainsEighteenUniquelyIdentifiedItemsWithNonEmptyReports()
+    public void ItemRegistryAll_ContainsNineteenUniquelyIdentifiedItemsWithNonEmptyReports()
     {
-        Assert.Equal(18, ItemRegistry.All.Count);
+        Assert.Equal(19, ItemRegistry.All.Count);
         Assert.Equal(ItemRegistry.All.Count, ItemRegistry.All.Select(i => i.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(ItemRegistry.All, i => Assert.False(string.IsNullOrWhiteSpace(i.Reports)));
     }
@@ -30,12 +30,12 @@ public class ItemsCommandTests
     }
 
     [Fact]
-    public void Build_MarksOnlyModelShortRemoteUrlRepoHostAndLinearAsNonDefault()
+    public void Build_MarksOnlyModelShortRemoteUrlRepoHostLinearAndTokenUsageAsNonDefault()
     {
         var result = ItemsCommand.Build();
 
         var nonDefault = result.Items.Where(i => !i.Default).Select(i => i.Id).OrderBy(id => id, StringComparer.Ordinal);
-        Assert.Equal(new[] { "linear", "model-short", "remote-url", "repo-host" }, nonDefault);
+        Assert.Equal(new[] { "linear", "model-short", "remote-url", "repo-host", "token-usage" }, nonDefault);
     }
 
     [Fact]
@@ -74,6 +74,16 @@ public class ItemsCommandTests
 
         var linear = result.Items.Single(i => i.Id == "linear");
         Assert.Equal("ENG-1234", linear.Example);
+    }
+
+    [Fact]
+    public void Build_TokenUsageExampleIsTheExactRenderedString()
+    {
+        // SPEC token-usage-item.md §13.3 T12: the real anti-revert guard for §13.1's fixture rules.
+        var result = ItemsCommand.Build();
+
+        var tokenUsage = result.Items.Single(i => i.Id == "token-usage");
+        Assert.Equal("tok:500k/38k cache:94%", tokenUsage.Example);
     }
 
     [Fact]

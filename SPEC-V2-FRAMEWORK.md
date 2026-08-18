@@ -4387,6 +4387,13 @@ that survives that parse, not merely a value a real payload could carry. The bra
 prefixed rather than a bare `eng-1234` so the example shows the extraction rather than disguising it
 as an identity.
 
+**The canned token totals must keep summing to a round input-side figure with a non-zero
+cache-read share, and must not be set to zeros.** A zeroed block renders `tok:0/0` with no cache
+clause — a technically-valid payload that makes the example useless and hides any regression in the
+cache-percentage path. This is the same defect as `output_style.name: "default"` in a third guise:
+**a field a builder sums, divides, or extracts from must hold a value that survives that
+arithmetic**, not merely a value a real payload could carry.
+
 **Redundant fields must agree with each other.** `used_percentage: 34.0` is `68000 / 200000`;
 `worktree.branch` is the same `"feat/eng-1234"` the canned `gitBranch` reports; `workspace.repo`
 names the same repo as the canned remote URL and the worktree. A fixture with `used_percentage: 80` and
@@ -5535,7 +5542,7 @@ is the §1 failure appearing *inside* the paragraph that warns about it.
 `default` read straight off `ItemRegistry`, and `example` is produced by *running*
 `BuildDefaultSegment` against §9.3.1's fixture — the `"main"` in the shape above is an
 illustration of that output, not a string stored anywhere. `reports` is prose, it is written once
-here, and the eighteen strings are:
+here, and the nineteen strings are:
 
 | id | `reports` |
 |---|---|
@@ -5550,6 +5557,7 @@ here, and the eighteen strings are:
 | `thinking` | whether extended thinking is on |
 | `output-style` | the active output style |
 | `context` | how much of the context window is in use. Its colour follows that percentage through the configured thresholds, so it warms as the window fills |
+| `token-usage` | the session's cumulative token spend, summed from the local transcript — input-side (including cached reads), output, and the cache-hit rate. Distinct from `context`, which reports how full the window is right now rather than what the session has spent in total. Opt-in because resolving it parses a file that grows with the session |
 | `rate-limits` | usage against the five-hour and seven-day limits. Its colour follows the *higher* of the two through the thresholds, since the nearer limit is the one that will stop you |
 | `agent` | the name of the active agent, when the session is running one |
 | `engram` | recent Engram memory activity. Its colour reflects whether the store is reachable and active rather than a magnitude, so it is a state indicator and not a gauge |
@@ -5558,12 +5566,14 @@ here, and the eighteen strings are:
 | `repo-host` | the host the workspace repo lives on, from the session payload rather than a git probe |
 | `linear` | the Linear ticket id extracted from the current git branch, uppercased; links to the issue when `itemSettings.linear.workspace` is set |
 
-The three with a second sentence are the `Semantic` ones (§6). For a decorative item the colour is
-the author's choice and needs no explanation; for these three the colour *is* information, and a
-row that describes the text while leaving the colour unexplained gives an authoring tool the
-smaller half. `rate-limits` taking the higher of two windows and `engram` being a state rather than
-a magnitude are both facts you would otherwise have to read the implementation to learn, and both
-change what a sensible `thresholds` override looks like.
+A second sentence appears where a row needs to disambiguate itself from a neighbouring item or to
+explain why it is opt-in; it does not correlate with colour kind. For the `Semantic` items (§6) the
+colour *is* information, and a row that describes the text while leaving the colour unexplained
+gives an authoring tool the smaller half — `rate-limits` taking the higher of two windows and
+`engram` being a state rather than a magnitude are both facts you would otherwise have to read the
+implementation to learn, and both change what a sensible `thresholds` override looks like.
+`token-usage` is `Decorative` but still carries a second sentence, to draw the boundary against
+`context`: the two report different things and are easy to conflate without it.
 
 **If the implementation disagrees with one of these strings, that is a finding, not a string to
 quietly correct.** `reports` states what the item is *for*; the builder states what it currently
@@ -5590,7 +5600,7 @@ the argument for keeping worked examples few, real, and re-checked whenever the 
 reopened.
 
 `tools/check-examples.sh` now catches precisely this instance — it runs `--items --json` and
-compares. It is scoped to the eighteen builtins' default renders (§9.6.2.2), so it retires the
+compares. It is scoped to the nineteen builtins' default renders (§9.6.2.2), so it retires the
 specific trap this glyph fell into without retiring the general warning above: every example
 outside that scope is still an unverified assertion, and this paragraph is still the reason to
 treat it as one.
@@ -5598,7 +5608,7 @@ treat it as one.
 **Why `kinds` is a section and not a column.** The accepted keys do not vary by item id. Every
 builtin takes `format`, `color`, `overflow`, and `link`, and nothing else; what varies is *how the
 item is written* — §4.1's `command`, §4.3's `from`/`extract`/`case`, §3.3's `parts`. Putting a key
-list on each row would store one per-kind fact seventeen times and grow an eighteenth copy with the
+list on each row would store one per-kind fact eighteen times and grow a nineteenth copy with the
 next item added. That is precisely the drift the very next paragraph of §9 warns about, and it
 would have been committed by the sentence above it. The corroboration that two sections is right
 was already in the document: §12.6's `list_items` row says the tool must return "what each emits,
@@ -5659,6 +5669,7 @@ Opt-in items — rendered only where you place them:
   model-short   Sonnet 5                            an abbreviated name, for panes too narrow …
   remote-url    https://github.com/acme/acme-web    the git remote's URL. Opt-in because …
   linear        ENG-1234                            the Linear ticket id extracted from …
+  token-usage   tok:500k/38k cache:94%              the session's cumulative token spend, summed …
 
 Item kinds: builtin, command, derived, compound. Run with --json for the schema of each.
 ```
@@ -5687,7 +5698,7 @@ Four rulings in that, none of them about formatting:
 **Once this flag exists, it is the oracle for every item example in this document — and that is
 mechanically checkable.** §9.6.2.1 says a spec example naming a specific rendered value is an
 assertion about the implementation that no document-versus-document check can verify. `--items`
-closes exactly that gap for the eighteen builtins: its `example` field is `BuildDefaultSegment` run
+closes exactly that gap for the nineteen builtins: its `example` field is `BuildDefaultSegment` run
 against §9.3.1's fixture, so a check that runs `--items --json` and greps this document for
 example values that disagree is a document-versus-*code* check, which is the class §13.3's two
 checks cannot reach. It is worth building *because* the alternative already failed three times in a

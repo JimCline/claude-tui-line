@@ -305,6 +305,7 @@ everything else is in the **default set** — the list you get when a pane omits
 | `thinking` | whether extended thinking is on |
 | `output-style` | active output style |
 | `context` | context window usage; renders `0%` when no usage has been reported |
+| `token-usage` | cumulative token spend for the session, read from the local transcript *(opt-in)* |
 | `rate-limits` | five-hour and seven-day usage |
 | `agent` | active agent name |
 | `engram` | Engram memory activity |
@@ -313,12 +314,14 @@ everything else is in the **default set** — the list you get when a pane omits
 | `repo-host` | the host the workspace repo lives on, from the session payload *(opt-in)* |
 | `linear` | the Linear ticket id extracted from the current git branch, uppercased *(opt-in)* |
 
-`model-short`, `remote-url`, `repo-host`, and `linear` are opt-in rather than default. `remote-url`
-is opt-in because resolving it shells out to git, which you should only pay for if you asked for
-it. `repo-host` costs nothing to resolve — it's excluded because a bare hostname is noise in a
-rendered statusline; its purpose is to be referenced from a `link` template, not displayed on its
-own. `linear` is excluded because most branches carry no ticket id, so a default placement would
-render nothing on the majority of renders.
+`model-short`, `remote-url`, `repo-host`, `linear`, and `token-usage` are opt-in rather than
+default. `remote-url` is opt-in because resolving it shells out to git, which you should only pay
+for if you asked for it. `repo-host` costs nothing to resolve — it's excluded because a bare
+hostname is noise in a rendered statusline; its purpose is to be referenced from a `link` template,
+not displayed on its own. `linear` is excluded because most branches carry no ticket id, so a
+default placement would render nothing on the majority of renders. `token-usage` is excluded
+because resolving it parses the session's transcript file, which grows over a long session, and a
+fresh session has no transcript on disk yet.
 
 Each item entry accepts:
 

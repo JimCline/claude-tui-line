@@ -443,6 +443,61 @@ public static class SegmentBuilder
     internal static string? ResolveVim(VimInfo? vim) =>
         string.IsNullOrEmpty(vim?.Mode) ? null : vim!.Mode;
 
+    /// <summary>
+    /// SPEC token-usage-item.md §3.5: the bare input-side total as a parseable integer string —
+    /// no label, no k/M suffix, no percentage — so §6 threshold rules and derived items' `from`
+    /// can consume it as a number, mirroring <see cref="ResolveContext"/>'s bare percentage.
+    /// </summary>
+    internal static string? ResolveTokenUsage(TokenTotals? totals) =>
+        totals is null ? null : totals.InputSide.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// SPEC token-usage-item.md §3.1-§3.3: <c>tok:INPUT/OUTPUT cache:NN%</c>, cache clause omitted
+    /// entirely when the input-side total is zero rather than rendered as a misleading `cache:0%`.
+    /// </summary>
+    internal static Segment? BuildTokenUsage(TokenTotals? totals)
+    {
+        if (totals is null)
+        {
+            return null;
+        }
+
+        var inputSide = totals.InputSide;
+        var plain = inputSide == 0
+            ? $"tok:{Compact(inputSide)}/{Compact(totals.OutputTokens)}"
+            : $"tok:{Compact(inputSide)}/{Compact(totals.OutputTokens)} cache:{RoundAwayFromZero(100.0 * totals.CacheReadTokens / inputSide)}%";
+
+        return SingleColor("dim", plain);
+    }
+
+    /// <summary>
+    /// SPEC token-usage-item.md §3.4: n &lt; 1,000 renders verbatim, n &lt; 1,000,000 rounds to the
+    /// nearest thousand with a "k" suffix, otherwise one decimal place in millions with an "M"
+    /// suffix. <see cref="System.Globalization.CultureInfo.InvariantCulture"/> is mandatory — a
+    /// comma decimal separator under a European locale would corrupt the "M" form.
+    /// </summary>
+    internal static string Compact(long n)
+    {
+        if (n < 0)
+        {
+            n = 0;
+        }
+
+        if (n < 1_000)
+        {
+            return n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (n < 1_000_000)
+        {
+            return Math.Round(n / 1_000.0, MidpointRounding.AwayFromZero).ToString(System.Globalization.CultureInfo.InvariantCulture) + "k";
+        }
+
+        return (n / 1_000_000.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "M";
+    }
+
+    private static int RoundAwayFromZero(double value) => (int)Math.Round(value, MidpointRounding.AwayFromZero);
+
     private static int RoundHalfToEven(double value) => (int)Math.Round(value, MidpointRounding.ToEven);
 
     private static string Basename(string path)

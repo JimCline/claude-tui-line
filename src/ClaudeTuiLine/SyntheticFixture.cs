@@ -41,7 +41,12 @@ public static class SyntheticFixture
     // prefixes "engram:" and the fact count ahead of the verb, so if that rendered form and this
     // fixture ever disagree, the builder is the fact and the spec clause is the finding.
     public static ItemContext CreateItemContext() =>
-        new(Input, gitBranch: "feat/eng-1234", engram: new EngramResult(3, "◉ recalled"), remoteUrlProbe: () => "https://github.com/acme/acme-web");
+        new(Input, gitBranch: "feat/eng-1234", engram: new EngramResult(3, "◉ recalled"), remoteUrlProbe: () => "https://github.com/acme/acme-web",
+            tokenUsageProbe: () => new TokenTotals(
+                InputTokens: 4_000,
+                CacheCreationTokens: 26_000,
+                CacheReadTokens: 470_000,
+                OutputTokens: 38_000));
 
     // §12.3.1/§12.7.1/§12.7.2: the payload the --fixture flag emits. Every field of Input, except
     // Cwd, which is replaced by the process's real working directory — piping this through
