@@ -471,6 +471,14 @@ Items can carry an OSC 8 hyperlink, which terminals that support it render as cl
 `{}` is this item's own value; `{other-id}` is another item's — and the referenced item does not
 need to be displayed anywhere. Terminals without OSC 8 support just show the text.
 
+`git-branch` and `directory` already link by default, with no config needed: `git-branch` infers
+its remote's `/tree/<branch>` page from `git remote get-url origin` (the same probe `remote-url`
+uses, bounded by its 30-second cache), and `directory` links to a `file://` URI for the real
+working directory, independent of any `depth` setting. Because `git-branch` is part of the default
+pipeline, this means the default statusline now probes the git remote on every render — bounded to
+roughly one subprocess every 30 seconds by that same cache, local only, no network. Your own `link`
+config on either item still overrides its default.
+
 To make your repo item clickable, `repo-host` is a cheaper link base than `{remote-url}` above:
 it reads the host straight from the session payload instead of shelling out to git, and it composes
 with `repo`'s own `owner/name` rather than duplicating it:

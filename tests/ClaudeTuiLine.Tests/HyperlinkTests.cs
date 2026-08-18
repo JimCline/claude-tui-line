@@ -688,4 +688,227 @@ public class HyperlinkTests
         Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
         Assert.Equal(ownMarkup, decision.Markup);
     }
+
+    // default-links-branch-directory.md §3/§7.1: `git-branch`'s DefaultLinkTemplate.
+
+    [Fact]
+    public void GitBranch_RemoteConfigured_DefaultLinksToTreePath()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: "main", engram: null, remoteUrlProbe: () => "https://github.com/o/r");
+
+        var item = new PaneItem("git-branch", null, null, null);
+        var values = new Dictionary<string, string?> { ["git-branch"] = ItemRegistry.Find("git-branch")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://github.com/o/r/tree/main", url);
+    }
+
+    [Fact]
+    public void GitBranch_NoRemote_PlainTextNoHyperlink()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: "main", engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("git-branch", null, null, null);
+        var values = new Dictionary<string, string?> { ["git-branch"] = ItemRegistry.Find("git-branch")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("main", decision.Text);
+        Assert.False(OscHyperlink.TryUnwrap(decision.Markup, out _, out _));
+    }
+
+    [Fact]
+    public void GitBranch_OutsideRepo_Suppressed()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => "https://github.com/o/r");
+
+        var item = new PaneItem("git-branch", null, null, null);
+        var values = new Dictionary<string, string?> { ["git-branch"] = ItemRegistry.Find("git-branch")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+
+        Assert.Null(resolved.Value);
+        Assert.Null(resolved.Display);
+    }
+
+    [Fact]
+    public void GitBranch_SlashInBranchName_SlashSurvivesUnescaped()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: "feature/foo", engram: null, remoteUrlProbe: () => "https://github.com/o/r");
+
+        var item = new PaneItem("git-branch", null, null, null);
+        var values = new Dictionary<string, string?> { ["git-branch"] = ItemRegistry.Find("git-branch")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://github.com/o/r/tree/feature/foo", url);
+    }
+
+    [Fact]
+    public void GitBranch_HashInBranchName_IsPercentEncoded()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: "fix#12", engram: null, remoteUrlProbe: () => "https://github.com/o/r");
+
+        var item = new PaneItem("git-branch", null, null, null);
+        var values = new Dictionary<string, string?> { ["git-branch"] = ItemRegistry.Find("git-branch")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://github.com/o/r/tree/fix%2312", url);
+    }
+
+    [Fact]
+    public void GitBranch_PlacementLinkWinsOverDefaultTemplate()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: "main", engram: null, remoteUrlProbe: () => "https://github.com/o/r");
+
+        var item = new PaneItem("git-branch", null, null, null, Link: "https://other-host.example/{}");
+        var values = new Dictionary<string, string?> { ["git-branch"] = ItemRegistry.Find("git-branch")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://other-host.example/main", url);
+    }
+
+    [Fact]
+    public void GitBranch_DefaultTemplate_DoesNotDependOnRemoteUrlPlaceholder()
+    {
+        var input = new StatusInput();
+        var ctx = new ItemContext(input, gitBranch: "main", engram: null, remoteUrlProbe: () => "https://github.com/o/r");
+
+        var template = ItemRegistry.Find("git-branch")!.DefaultLinkTemplate!(ctx);
+
+        Assert.NotNull(template);
+        Assert.DoesNotContain('{', template);
+    }
+
+    // default-links-branch-directory.md §4/§7.2: `directory`'s DefaultLinkTemplate.
+
+    [Fact]
+    public void Directory_DefaultLinksToAbsoluteFileUri()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_DepthOne_LinkUsesFullPathNotBasename()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("proj", decision.Text);
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_DepthTwo_LinkUnchangedByDepth()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { Depth = 2 } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("me/proj", decision.Text);
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_SpaceInPath_IsPercentEncoded()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/my proj" };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/my%20proj/", url);
+    }
+
+    [Fact]
+    public void Directory_BraceInPath_LinkIsNotSuppressed()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/{build}" };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Contains("%7Bbuild%7D", url);
+    }
+
+    [Fact]
+    public void Directory_NullCwd_Suppressed()
+    {
+        var input = new StatusInput { Cwd = null };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+
+        Assert.Null(resolved.Value);
+        Assert.Null(resolved.Display);
+    }
+
+    [Fact]
+    public void Directory_PlacementLinkWinsOverDefaultTemplate()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null, Link: "https://other.example/{}");
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://other.example/proj", url);
+    }
+
+    // default-links-branch-directory.md §4.2/§4.3: FileUri.ForDirectory's construction directly,
+    // including the Windows shape — pure string transform, does not need a Windows host to run.
+
+    [Fact]
+    public void FileUri_ForDirectory_WindowsStylePath_ProducesFileUriWithDriveLetter()
+    {
+        var uri = FileUri.ForDirectory(@"C:\Users\me\my proj");
+
+        Assert.Equal("file:///C:/Users/me/my%20proj/", uri);
+    }
 }

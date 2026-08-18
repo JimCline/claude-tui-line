@@ -37,6 +37,11 @@ public static class ItemRegistry
         Func<ItemContext, string?> ResolveValue,
         Func<ItemContext, Segment?> BuildDefaultSegment,
         ItemColorKind ColorKind,
+        // default-links-branch-directory.md §2.2: `values` (what a link template's `{other-id}`
+        // placeholders read) is built before any DefaultLinkTemplate is invoked, from the user's
+        // own configured links only — a default template can therefore reference only `{}` (its
+        // own value) and literal text; any other placeholder resolves to null and silently drops
+        // the link.
         Func<ItemContext, string?>? DefaultLinkTemplate = null);
 
     // Declaration order is also the default rendering order (SegmentBuilder.Build iterates
@@ -47,8 +52,16 @@ public static class ItemRegistry
     // without a description fails to compile instead of shipping as a bare id.
     private static readonly ItemDefinition[] Items =
     {
-        new("directory", "the working directory", ctx => SegmentBuilder.ResolveDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory), ctx => SegmentBuilder.BuildDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory), ItemColorKind.Decorative),
-        new("git-branch", "the current branch, or nothing outside a repo", ctx => SegmentBuilder.ResolveGitBranch(ctx.GitBranch), ctx => SegmentBuilder.BuildGitBranch(ctx.GitBranch), ItemColorKind.Decorative),
+        new("directory", "the working directory",
+            ctx => SegmentBuilder.ResolveDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory),
+            ctx => SegmentBuilder.BuildDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory),
+            ItemColorKind.Decorative,
+            DefaultLinkTemplate: ctx => FileUri.ForDirectory(ctx.Input.Cwd)),
+        new("git-branch", "the current branch, or nothing outside a repo",
+            ctx => SegmentBuilder.ResolveGitBranch(ctx.GitBranch),
+            ctx => SegmentBuilder.BuildGitBranch(ctx.GitBranch),
+            ItemColorKind.Decorative,
+            DefaultLinkTemplate: GitBranchDefaultLink),
         new("repo", "the workspace repo as owner/name", ctx => SegmentBuilder.ResolveRepo(ctx.Input.Workspace?.Repo), ctx => SegmentBuilder.BuildRepo(ctx.Input.Workspace?.Repo), ItemColorKind.Decorative),
         new("worktree", "the worktree's name and branch, when the session is in one", ctx => SegmentBuilder.ResolveWorktree(ctx.Input.Worktree), ctx => SegmentBuilder.BuildWorktree(ctx.Input.Worktree), ItemColorKind.Decorative),
         new("pr", "the pull request number and its review state", ctx => SegmentBuilder.ResolvePullRequest(ctx.Input.Pr, ctx.ItemSettings?.Pr), ctx => SegmentBuilder.BuildPullRequest(ctx.Input.Pr, ctx.ItemSettings?.Pr), ItemColorKind.Decorative),
@@ -75,6 +88,34 @@ public static class ItemRegistry
         ctx.ItemSettings?.Linear?.Workspace is { Length: > 0 } ws
             ? $"https://linear.app/{ws}/issue/{{}}"
             : null;
+
+    // The value substituted for `{}` is not URL-escaped (LeafContent.cs:123 strips ANSI and nothing
+    // else), and a branch name may legally contain `#` and `%` — so the branch is escaped here and the
+    // template returned with no placeholders. Braces are escaped because the returned string is
+    // re-tokenized by PlaceholderTemplate (see the default-links spec §2.3).
+    private static string? GitBranchDefaultLink(ItemContext ctx)
+    {
+        if (ctx.RemoteUrl is not { Length: > 0 } remote || ctx.GitBranch is not { Length: > 0 } branch)
+        {
+            return null;
+        }
+
+        return $"{EscapeTemplateLiteral(remote)}/tree/{EscapeBranchForPath(branch)}";
+    }
+
+    // Only braces: the remote URL is already a URL and may legitimately contain percent-escapes,
+    // which re-escaping would double.
+    private static string EscapeTemplateLiteral(string s) =>
+        s.Replace("{", "%7B", StringComparison.Ordinal).Replace("}", "%7D", StringComparison.Ordinal);
+
+    // A path segment, not a whole path: `/` is deliberately preserved so `feature/foo` keeps its shape
+    // (GitHub serves /tree/feature/foo; %2F breaks it). git already forbids space, `~^:?*[` and `\` in
+    // ref names, so `%` and `#` are the only escapes needed. `%` MUST come first.
+    private static string EscapeBranchForPath(string s) => s
+        .Replace("%", "%25", StringComparison.Ordinal)
+        .Replace("#", "%23", StringComparison.Ordinal)
+        .Replace("{", "%7B", StringComparison.Ordinal)
+        .Replace("}", "%7D", StringComparison.Ordinal);
 
     private static readonly IReadOnlyDictionary<string, ItemDefinition> ById =
         Items.ToDictionary(i => i.Id, i => i, StringComparer.OrdinalIgnoreCase);

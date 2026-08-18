@@ -74,7 +74,15 @@ public class ItemFormatParityTests
         var color = ColorResolution.Resolve(item.Color, values, new Dictionary<string, ColorResolution.ColorRule>());
         var renderedSegment = SegmentBuilder.BuildItemSegment(decision.Text, decision.Markup, color);
 
-        Assert.Equal(defaultSegment?.Markup, renderedSegment.Markup);
+        // default-links-branch-directory.md §1.1: a DefaultLinkTemplate is invoked only from the
+        // configured-items path (LeafItems.Resolve), never from the bare default pipeline this
+        // fixture's `defaultSegment` comes from — so an id with a default link (here, `directory`,
+        // whose fixture Cwd resolves one) legitimately gains an OSC-8 wrap the default-pipeline
+        // segment never had. Unwrap it before the parity comparison, which is about formatting and
+        // colour, not about link presence.
+        var renderedMarkup = OscHyperlink.TryUnwrap(renderedSegment.Markup, out _, out var inner) ? inner : renderedSegment.Markup;
+
+        Assert.Equal(defaultSegment?.Markup, renderedMarkup);
     }
 
     /// <summary>
