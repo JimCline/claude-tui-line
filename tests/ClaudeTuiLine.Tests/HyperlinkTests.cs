@@ -911,4 +911,209 @@ public class HyperlinkTests
 
         Assert.Equal("file:///C:/Users/me/my%20proj/", uri);
     }
+
+    // directory-openwith.md §9.1: the `vscode` target.
+
+    [Fact]
+    public void Directory_OpenWithVsCode_LinksToVsCodeUri()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("vscode://file/Users/me/proj", url);
+    }
+
+    [Fact]
+    public void Directory_OpenWithVsCode_DepthDoesNotAffectLink()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/deep/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { Depth = 1, OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.Equal("proj", decision.Text);
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("vscode://file/Users/me/deep/proj", url);
+    }
+
+    [Fact]
+    public void Directory_OpenWithVsCode_SpaceInPath_IsPercentEncoded()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/my proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("vscode://file/Users/me/my%20proj", url);
+    }
+
+    [Fact]
+    public void VsCode_BraceInPath_LinkIsNotSuppressed()
+    {
+        var input = new StatusInput { Cwd = "/tmp/{build}" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.NotNull(url);
+        Assert.Contains("%7Bbuild%7D", url);
+    }
+
+    [Fact]
+    public void VsCode_ColonInDirectoryName_StaysEncoded()
+    {
+        var input = new StatusInput { Cwd = "/tmp/build:12" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.NotNull(url);
+        Assert.Contains("build%3A12", url);
+        Assert.DoesNotContain("build:12", url);
+    }
+
+    [Fact]
+    public void VsCode_WindowsStylePath_KeepsDriveLetterColon()
+    {
+        var uri = DirectoryLink.ForVsCode(@"C:\Users\me\proj");
+
+        Assert.Equal("vscode://file/C:/Users/me/proj", uri);
+    }
+
+    [Fact]
+    public void VsCode_NullCwd_Suppressed()
+    {
+        var input = new StatusInput { Cwd = null };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+
+        Assert.Null(resolved.Value);
+        Assert.Null(resolved.Display);
+    }
+
+    [Fact]
+    public void VsCode_EmptyCwd_Suppressed()
+    {
+        var input = new StatusInput { Cwd = "" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+
+        Assert.Null(resolved.Value);
+        Assert.Null(resolved.Display);
+    }
+
+    // directory-openwith.md §9.2: the dispatcher.
+
+    [Fact]
+    public void Directory_OpenWithAbsent_UsesFileUri()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_OpenWithFiles_UsesFileUri()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "files" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_OpenWithUnknownToken_FallsBackToFileUri()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "sublime" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_OpenWithWrongCase_FallsBackToFileUri()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "VSCode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null);
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("file:///Users/me/proj/", url);
+    }
+
+    [Fact]
+    public void Directory_OpenWithVsCode_PlacementLinkStillWins()
+    {
+        var input = new StatusInput { Cwd = "/Users/me/proj" };
+        var itemSettings = new ItemSettingsJsonConfig { Directory = new DirectoryItemSettings { OpenWith = "vscode" } };
+        var ctx = new ItemContext(input, gitBranch: null, engram: null, remoteUrlProbe: () => null, itemSettings);
+
+        var item = new PaneItem("directory", null, null, null, Link: "https://other.example/{}");
+        var values = new Dictionary<string, string?> { ["directory"] = ItemRegistry.Find("directory")!.ResolveValue(ctx) };
+        var resolved = LeafItems.Resolve(new[] { item }, values, ctx, new Dictionary<string, Segment>()).Single();
+        var decision = LeafContent.Decide(resolved, values, new Dictionary<string, Segment>());
+
+        Assert.True(OscHyperlink.TryUnwrap(decision.Markup, out var url, out _));
+        Assert.Equal("https://other.example/proj", url);
+    }
 }

@@ -578,6 +578,8 @@ public static class ConfigChecker
 
     private static readonly string[] RateLimitsWindowsAcceptedTokens = { "5h", "7d", "both" };
 
+    private static readonly string[] DirectoryOpenWithAcceptedTokens = { "files", "vscode" };
+
     // §3.3 of item-specific-config.md: enum/range validation for itemSettings values that
     // WalkRawObjects' unknown-key pass cannot catch, since a legal-but-unrecognized string is a
     // known key with a bad value, not an unknown key.
@@ -593,6 +595,12 @@ public static class ConfigChecker
         {
             yield return new Diagnostic("/itemSettings/directory/depth", DiagnosticSeverity.Error, "invalid-depth",
                 $"depth ({depth}) must be a positive integer");
+        }
+
+        if (config?.ItemSettings?.Directory?.OpenWith is { } openWith
+            && !DirectoryOpenWithAcceptedTokens.Contains(openWith, StringComparer.Ordinal))
+        {
+            yield return UnknownEnumValue("/itemSettings/directory/openWith", openWith, "openWith", DirectoryOpenWithAcceptedTokens);
         }
     }
 

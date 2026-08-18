@@ -72,6 +72,11 @@ public sealed class DirectoryItemSettings
     [JsonPropertyName("depth")]
     public int? Depth { get; set; }
 
+    /// <summary>Where the default hyperlink points: "files" (the OS file browser, the
+    /// default) or "vscode" (open the directory in VS Code).</summary>
+    [JsonPropertyName("openWith")]
+    public string? OpenWith { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 }

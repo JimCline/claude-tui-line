@@ -479,6 +479,19 @@ pipeline, this means the default statusline now probes the git remote on every r
 roughly one subprocess every 30 seconds by that same cache, local only, no network. Your own `link`
 config on either item still overrides its default.
 
+`directory`'s default link target is configurable via `itemSettings.directory.openWith`: `"files"`
+(the default) keeps the `file://` link above, and `"vscode"` links to `vscode://file/<path>`
+instead, opening the directory in VS Code:
+
+```json
+{ "itemSettings": { "directory": { "openWith": "vscode" } } }
+```
+
+Whether either link actually does anything depends on your terminal: only some terminals forward
+a clicked OSC 8 link's URI to the OS at all, and among those, some only do so for `http(s)` links.
+A terminal that ignores custom schemes will make `openWith: "vscode"` look inert — that's the
+terminal's OSC-8 handling, not a bug in this project.
+
 To make your repo item clickable, `repo-host` is a cheaper link base than `{remote-url}` above:
 it reads the host straight from the session payload instead of shelling out to git, and it composes
 with `repo`'s own `owner/name` rather than duplicating it:

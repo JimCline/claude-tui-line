@@ -11,6 +11,25 @@ internal static class FileUri
     /// </summary>
     internal static string? ForDirectory(string? absolutePath)
     {
+        if (Segments(absolutePath) is not { } segments)
+        {
+            return null;
+        }
+
+        var escaped = segments.Select(s =>
+            Uri.EscapeDataString(s).Replace("%3A", ":", StringComparison.Ordinal));
+
+        // A trailing slash marks the target as a directory rather than a file.
+        return "file:///" + string.Join('/', escaped) + "/";
+    }
+
+    /// <summary>
+    /// The path segments of <paramref name="absolutePath"/> with separators normalized, or
+    /// null when it is null or empty. Shared with <see cref="DirectoryLink"/>, which escapes
+    /// them under different rules.
+    /// </summary>
+    internal static string[]? Segments(string? absolutePath)
+    {
         if (string.IsNullOrEmpty(absolutePath))
         {
             return null;
@@ -25,11 +44,6 @@ internal static class FileUri
             path = "/" + path;
         }
 
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var escaped = segments.Select(s =>
-            Uri.EscapeDataString(s).Replace("%3A", ":", StringComparison.Ordinal));
-
-        // A trailing slash marks the target as a directory rather than a file.
-        return "file:///" + string.Join('/', escaped) + "/";
+        return path.Split('/', StringSplitOptions.RemoveEmptyEntries);
     }
 }

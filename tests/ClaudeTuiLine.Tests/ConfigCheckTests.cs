@@ -2619,6 +2619,38 @@ public class ConfigCheckTests
     }
 
     [Fact]
+    public void Check_DirectoryOpenWithUnknownToken_ReportsDiagnostic()
+    {
+        var config = Parse("""{"itemSettings":{"directory":{"openWith":"sublime"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var diagnostic = Assert.Single(diagnostics.Where(d => d.Path == "/itemSettings/directory/openWith" && d.Code == "unknown-enum-value"));
+        Assert.Contains("files", diagnostic.Message);
+        Assert.Contains("vscode", diagnostic.Message);
+    }
+
+    [Fact]
+    public void Check_DirectoryOpenWithValidToken_NoDiagnostic()
+    {
+        var vscode = Parse("""{"itemSettings":{"directory":{"openWith":"vscode"}}}""");
+        var files = Parse("""{"itemSettings":{"directory":{"openWith":"files"}}}""");
+
+        Assert.DoesNotContain(ConfigChecker.Check(vscode), d => d.Path == "/itemSettings/directory/openWith");
+        Assert.DoesNotContain(ConfigChecker.Check(files), d => d.Path == "/itemSettings/directory/openWith");
+    }
+
+    [Fact]
+    public void Check_DirectoryOpenWith_NoLongerReportedAsUnknownKey()
+    {
+        var config = Parse("""{"itemSettings":{"directory":{"openWith":"vscode"}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "unknown-key" && d.Path.Contains("openWith"));
+    }
+
+    [Fact]
     public void DirectoryDepth_Positive_ProducesNoValidationError()
     {
         var config = Parse("""{"itemSettings":{"directory":{"depth":2}}}""");

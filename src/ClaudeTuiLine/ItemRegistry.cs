@@ -56,7 +56,9 @@ public static class ItemRegistry
             ctx => SegmentBuilder.ResolveDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory),
             ctx => SegmentBuilder.BuildDirectory(ctx.Input.Cwd, ctx.ItemSettings?.Directory),
             ItemColorKind.Decorative,
-            DefaultLinkTemplate: ctx => FileUri.ForDirectory(ctx.Input.Cwd)),
+            DefaultLinkTemplate: ctx => DirectoryLink.Build(
+                ctx.Input.Cwd,
+                ctx.ItemSettings?.Directory?.OpenWith)),
         new("git-branch", "the current branch, or nothing outside a repo",
             ctx => SegmentBuilder.ResolveGitBranch(ctx.GitBranch),
             ctx => SegmentBuilder.BuildGitBranch(ctx.GitBranch),

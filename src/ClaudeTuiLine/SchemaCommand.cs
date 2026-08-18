@@ -366,10 +366,11 @@ public static class SchemaCommand
             "DirectoryItemSettings",
             "Settings for the directory item.",
             Array.Empty<string>(),
-            new[] { "depth" },
+            new[] { "depth", "openWith" },
             new[]
             {
                 Field("depth", "integer", "How many trailing path segments to show. 1 = basename (the default)."),
+                Field("openWith", "string", "Where the default hyperlink points: \"files\" (the OS file browser, the default) or \"vscode\" (open the directory in VS Code)."),
             },
             Array.Empty<string>(),
             Parse("""{"depth":2}""")),
