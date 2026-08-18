@@ -207,17 +207,21 @@ public static class SegmentBuilder
 
     internal const string WorktreeFormat = "worktree:{}";
 
-    internal static Segment? BuildWorktree(WorktreeInfo? worktree) =>
-        ResolveWorktree(worktree) is { } raw ? SingleColor("purple", LeafItems.ApplyFormat(WorktreeFormat, raw)) : null;
+    internal static Segment? BuildWorktree(WorktreeInfo? worktree, WorktreeItemSettings? settings = null) =>
+        ResolveWorktree(worktree, settings) is { } raw ? SingleColor("purple", LeafItems.ApplyFormat(WorktreeFormat, raw)) : null;
 
-    internal static string? ResolveWorktree(WorktreeInfo? worktree)
+    internal static string? ResolveWorktree(WorktreeInfo? worktree, WorktreeItemSettings? settings = null)
     {
         if (worktree is null || string.IsNullOrEmpty(worktree.Name))
         {
             return null;
         }
 
-        return string.IsNullOrEmpty(worktree.Branch) ? worktree.Name : $"{worktree.Name}({worktree.Branch})";
+        var showBranch = settings?.ShowBranch ?? false;
+
+        return !showBranch || string.IsNullOrEmpty(worktree.Branch)
+            ? worktree.Name
+            : $"{worktree.Name}({worktree.Branch})";
     }
 
     internal const string PullRequestFormat = "PR {}";

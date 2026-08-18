@@ -349,7 +349,7 @@ public static class SchemaCommand
             "ItemSettingsJsonConfig",
             "Per-item settings, keyed by builtin item id.",
             Array.Empty<string>(),
-            new[] { "directory", "context", "rateLimits", "pr", "linear" },
+            new[] { "directory", "context", "rateLimits", "pr", "linear", "worktree" },
             new[]
             {
                 Field("directory", "directoryItemSettings", "Settings for the directory item."),
@@ -357,6 +357,7 @@ public static class SchemaCommand
                 Field("rateLimits", "rateLimitsItemSettings", "Settings for the rate-limits item."),
                 Field("pr", "prItemSettings", "Settings for the pr item."),
                 Field("linear", "linearItemSettings", "Settings for the linear item."),
+                Field("worktree", "worktreeItemSettings", "Settings for the worktree item."),
             },
             Array.Empty<string>(),
             Parse("{}")),
@@ -387,6 +388,19 @@ public static class SchemaCommand
             },
             Array.Empty<string>(),
             Parse("""{"showDetail":false}""")),
+
+        new StructureEntryJson(
+            "worktreeItemSettings",
+            "WorktreeItemSettings",
+            "Settings for the worktree item.",
+            Array.Empty<string>(),
+            new[] { "showBranch" },
+            new[]
+            {
+                Field("showBranch", "boolean", "Whether the branch renders in parentheses after the worktree name. Default false."),
+            },
+            Array.Empty<string>(),
+            Parse("""{"showBranch":true}""")),
 
         new StructureEntryJson(
             "rateLimitsItemSettings",

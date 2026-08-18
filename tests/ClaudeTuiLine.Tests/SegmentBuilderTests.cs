@@ -214,7 +214,7 @@ public class SegmentBuilderTests
     }
 
     [Fact]
-    public void Worktree_NameAndBranch()
+    public void Worktree_NameAndBranch_DefaultOmitsBranch()
     {
         var input = Empty();
         input.Worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" };
@@ -222,8 +222,81 @@ public class SegmentBuilderTests
         var segments = SegmentBuilder.Build(Ctx(input));
 
         var seg = Assert.Single(Others(segments));
+        Assert.Equal("worktree:feature-x", seg.Plain);
+        Assert.Equal(Expect("purple", "worktree:feature-x"), seg.Markup);
+    }
+
+    [Fact]
+    public void Worktree_ShowBranchFalse_OmitsBranch()
+    {
+        var input = Empty();
+        input.Worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" };
+        var ctx = CtxWithSettings(input, new ItemSettingsJsonConfig { Worktree = new WorktreeItemSettings { ShowBranch = false } });
+
+        var segments = SegmentBuilder.Build(ctx);
+
+        var seg = Assert.Single(Others(segments));
+        Assert.Equal("worktree:feature-x", seg.Plain);
+        Assert.Equal(Expect("purple", "worktree:feature-x"), seg.Markup);
+    }
+
+    [Fact]
+    public void Worktree_ShowBranchTrue_RendersBranch()
+    {
+        var input = Empty();
+        input.Worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" };
+        var ctx = CtxWithSettings(input, new ItemSettingsJsonConfig { Worktree = new WorktreeItemSettings { ShowBranch = true } });
+
+        var segments = SegmentBuilder.Build(ctx);
+
+        var seg = Assert.Single(Others(segments));
         Assert.Equal("worktree:feature-x(main)", seg.Plain);
         Assert.Equal(Expect("purple", "worktree:feature-x(main)"), seg.Markup);
+    }
+
+    [Fact]
+    public void Worktree_ShowBranchNull_OmitsBranch()
+    {
+        var input = Empty();
+        input.Worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" };
+        var ctx = CtxWithSettings(input, new ItemSettingsJsonConfig { Worktree = new WorktreeItemSettings() });
+
+        var segments = SegmentBuilder.Build(ctx);
+
+        var seg = Assert.Single(Others(segments));
+        Assert.Equal("worktree:feature-x", seg.Plain);
+        Assert.Equal(Expect("purple", "worktree:feature-x"), seg.Markup);
+    }
+
+    [Fact]
+    public void Worktree_ShowBranchFalse_NameOnly_Unchanged()
+    {
+        var input = Empty();
+        input.Worktree = new WorktreeInfo { Name = "feature-x" };
+        var ctx = CtxWithSettings(input, new ItemSettingsJsonConfig { Worktree = new WorktreeItemSettings { ShowBranch = false } });
+
+        var segments = SegmentBuilder.Build(ctx);
+
+        var seg = Assert.Single(Others(segments));
+        Assert.Equal("worktree:feature-x", seg.Plain);
+        Assert.Equal(Expect("purple", "worktree:feature-x"), seg.Markup);
+    }
+
+    [Fact]
+    public void Worktree_ShowBranchFalse_ResolvedValueOmitsBranch()
+    {
+        var worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" };
+        var settings = new WorktreeItemSettings { ShowBranch = false };
+
+        Assert.Equal("feature-x", SegmentBuilder.ResolveWorktree(worktree, settings));
+    }
+
+    [Fact]
+    public void Worktree_DefaultResolvedValueOmitsBranch()
+    {
+        var worktree = new WorktreeInfo { Name = "feature-x", Branch = "main" };
+
+        Assert.Equal("feature-x", SegmentBuilder.ResolveWorktree(worktree));
     }
 
     // --- Segment 5: PR ---

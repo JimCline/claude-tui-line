@@ -297,7 +297,7 @@ everything else is in the **default set** — the list you get when a pane omits
 | `directory` | the current working directory |
 | `git-branch` | current branch |
 | `repo` | the workspace repo, as `owner/name` |
-| `worktree` | worktree name and branch |
+| `worktree` | worktree name, plus branch when `showBranch` is set |
 | `pr` | pull request number and review state |
 | `model` | model display name |
 | `model-short` | abbreviated model name *(opt-in)* |
@@ -341,13 +341,15 @@ A handful of builtins take their own settings, keyed by item id under a top-leve
     "context": { "showDetail": false },
     "rateLimits": { "windows": "5h" },
     "pr": { "reviewStateLabels": { "approved": "✓" } },
-    "linear": { "workspace": "acme-corp" }
+    "linear": { "workspace": "acme-corp" },
+    "worktree": { "showBranch": true }
   }
 }
 ```
 
 `directory.depth` shows that many trailing path segments instead of just the basename.
-`context.showDetail` toggles the token-count parenthetical. `rateLimits.windows` narrows
+`context.showDetail` toggles the token-count parenthetical. `worktree.showBranch` adds the
+`(branch)` suffix after the worktree name; it is off by default. `rateLimits.windows` narrows
 which of the five-hour/seven-day windows render — `"5h"`, `"7d"`, or `"both"` (the default).
 `pr.reviewStateLabels` overrides the built-in review-state labels, keyed by the lowercase review
 state token (`"approved"`, `"changes_requested"`, `"draft"`). `linear.workspace`

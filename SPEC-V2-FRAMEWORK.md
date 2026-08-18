@@ -5542,7 +5542,7 @@ here, and the eighteen strings are:
 | `directory` | the working directory |
 | `git-branch` | the current branch, or nothing outside a repo |
 | `repo` | the workspace repo as `owner/name` |
-| `worktree` | the worktree's name and branch, when the session is in one |
+| `worktree` | the worktree's name when the session is in one, plus its branch when showBranch is enabled |
 | `pr` | the pull request number and its review state |
 | `model` | the model's display name |
 | `model-short` | an abbreviated model name, for panes too narrow for the full one |

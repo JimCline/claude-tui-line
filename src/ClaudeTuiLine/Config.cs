@@ -62,6 +62,9 @@ public sealed class ItemSettingsJsonConfig
     [JsonPropertyName("linear")]
     public LinearItemSettings? Linear { get; set; }
 
+    [JsonPropertyName("worktree")]
+    public WorktreeItemSettings? Worktree { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 }
@@ -86,6 +89,16 @@ public sealed class ContextItemSettings
     /// <summary>Whether the token-count parenthetical renders beside the percentage. Default true.</summary>
     [JsonPropertyName("showDetail")]
     public bool? ShowDetail { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+public sealed class WorktreeItemSettings
+{
+    /// <summary>Whether the branch renders in parentheses after the worktree name. Default false.</summary>
+    [JsonPropertyName("showBranch")]
+    public bool? ShowBranch { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
@@ -628,6 +641,7 @@ internal sealed class BorderConfigConverter : JsonConverter<BorderConfig?>
 [JsonSerializable(typeof(RateLimitsItemSettings))]
 [JsonSerializable(typeof(PrItemSettings))]
 [JsonSerializable(typeof(LinearItemSettings))]
+[JsonSerializable(typeof(WorktreeItemSettings))]
 public partial class ConfigJsonContext : JsonSerializerContext
 {
 }

@@ -1296,6 +1296,12 @@ public static class ConfigChecker
                 yield return (linearSettings.Extra, ConfigJsonContext.Default.LinearItemSettings,
                     "the linear item's settings", "/itemSettings/linear");
             }
+
+            if (itemSettings.Worktree is { } worktreeSettings)
+            {
+                yield return (worktreeSettings.Extra, ConfigJsonContext.Default.WorktreeItemSettings,
+                    "the worktree item's settings", "/itemSettings/worktree");
+            }
         }
 
         if (config.Surface is { } surface)

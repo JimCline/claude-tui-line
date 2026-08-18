@@ -2578,6 +2578,27 @@ public class ConfigCheckTests
     }
 
     [Fact]
+    public void Check_UnknownKeyInWorktreeSettings_IsReported()
+    {
+        var config = Parse("""{"itemSettings":{"worktree":{"showBranchh":true}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        var matches = diagnostics.Where(d => d.Code == "unknown-key" && d.Path == "/itemSettings/worktree/showBranchh").ToList();
+        Assert.Single(matches);
+    }
+
+    [Fact]
+    public void Check_WorktreeShowBranch_NotReportedAsUnknownKey()
+    {
+        var config = Parse("""{"itemSettings":{"worktree":{"showBranch":false}}}""");
+
+        var diagnostics = ConfigChecker.Check(config);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == "unknown-key" && d.Path.Contains("worktree"));
+    }
+
+    [Fact]
     public void UnknownKeyOnItemSettings_ReportsWithSuggestion()
     {
         var config = Parse("""{"itemSettings":{"drectory":{}}}""");

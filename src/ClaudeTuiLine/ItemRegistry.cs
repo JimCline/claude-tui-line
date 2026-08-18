@@ -65,7 +65,7 @@ public static class ItemRegistry
             ItemColorKind.Decorative,
             DefaultLinkTemplate: GitBranchDefaultLink),
         new("repo", "the workspace repo as owner/name", ctx => SegmentBuilder.ResolveRepo(ctx.Input.Workspace?.Repo), ctx => SegmentBuilder.BuildRepo(ctx.Input.Workspace?.Repo), ItemColorKind.Decorative),
-        new("worktree", "the worktree's name and branch, when the session is in one", ctx => SegmentBuilder.ResolveWorktree(ctx.Input.Worktree), ctx => SegmentBuilder.BuildWorktree(ctx.Input.Worktree), ItemColorKind.Decorative),
+        new("worktree", "the worktree's name when the session is in one, plus its branch when showBranch is enabled", ctx => SegmentBuilder.ResolveWorktree(ctx.Input.Worktree, ctx.ItemSettings?.Worktree), ctx => SegmentBuilder.BuildWorktree(ctx.Input.Worktree, ctx.ItemSettings?.Worktree), ItemColorKind.Decorative),
         new("pr", "the pull request number and its review state", ctx => SegmentBuilder.ResolvePullRequest(ctx.Input.Pr, ctx.ItemSettings?.Pr), ctx => SegmentBuilder.BuildPullRequest(ctx.Input.Pr, ctx.ItemSettings?.Pr), ItemColorKind.Decorative),
         new("model", "the model's display name", ctx => SegmentBuilder.ResolveModel(ctx.Input.Model), ctx => SegmentBuilder.BuildModel(ctx.Input.Model), ItemColorKind.Decorative),
         new("effort", "the reasoning effort level", ctx => SegmentBuilder.ResolveEffort(ctx.Input.Effort), ctx => SegmentBuilder.BuildEffort(ctx.Input.Effort), ItemColorKind.Decorative),

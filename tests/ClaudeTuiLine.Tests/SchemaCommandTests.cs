@@ -19,7 +19,7 @@ public class SchemaCommandTests
         "config", "border", "borderEdges", "layout", "surface", "pane", "item",
         "colorRule", "threshold", "match", "colorExpr", "compoundPart",
         "itemSettings", "directoryItemSettings", "contextItemSettings",
-        "rateLimitsItemSettings", "prItemSettings", "linearItemSettings",
+        "worktreeItemSettings", "rateLimitsItemSettings", "prItemSettings", "linearItemSettings",
     };
 
     [Fact]
@@ -69,7 +69,7 @@ public class SchemaCommandTests
     }
 
     [Fact]
-    public void BuildStructures_EntryNamesAreExactlyTheEighteenRequiredNames()
+    public void BuildStructures_EntryNamesAreExactlyTheNineteenRequiredNames()
     {
         var names = SchemaCommand.Build().Structures.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
 
