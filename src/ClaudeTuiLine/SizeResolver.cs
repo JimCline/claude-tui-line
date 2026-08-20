@@ -193,8 +193,14 @@ public static class SizeResolver
 
         if (effectiveSplit == PaneSplit.Horizontal)
         {
+            // §2.3.5: stacked children share the split's inner width instead of dividing it, so
+            // they are charged no gutters — but the split's OWN border reserve is not theirs to
+            // spend, exactly as BoundaryCost charges it on the vertical side. Granting outerWidth
+            // here made every stacked child overflow its parent's content box by reserve(p) at once
+            // (SPEC-96). Each child is then sized independently against that ceiling (SPEC-97).
+            var stackedAvail = Math.Max(0, outerWidth - OwnBorderReserve(pane));
             var horizontalChildren = pane.Children
-                .Select(c => ResolveNode(c, outerWidth, ctx, values, compounds, measureOverride, rowCountOverride, notes, collapse))
+                .Select((c, i) => ResolveNode(c, StackedWidth(c, stackedAvail, ctx, values, compounds, measureOverride, i + 1, notes), ctx, values, compounds, measureOverride, rowCountOverride, notes, collapse))
                 .ToList();
             return new ResolvedPane(pane, outerWidth, horizontalChildren, EffectiveSplit: PaneSplit.Horizontal);
         }
@@ -455,6 +461,34 @@ public static class SizeResolver
     // statement of the rule rather than two that can drift.
     private static int StackedFloor(Pane p, bool collapse) =>
         p.Children.Max(c => Floor(c, collapse, excludeLeft: false, excludeRight: false));
+
+    // §2.3.5: a stacked child is sized independently against the split's inner width — never a
+    // share of it, because stacked children occupy different rows and cannot contend for a
+    // column. No allocation pass, no contention bookkeeping, and no drop: dropping a stacked
+    // child frees width for nobody. The ceiling always wins over a declared size or minSize, and
+    // the clamp is reported.
+    private static int StackedWidth(Pane child, int avail, ItemContext ctx, IReadOnlyDictionary<string, string?> values, IReadOnlyDictionary<string, Segment> compounds, Func<Pane, int?, int>? measureOverride, int position, RenderNoteCollector notes)
+    {
+        var spec = ClassifySize(child.Size);
+        var raw = spec.Kind switch
+        {
+            SizeKind.Fixed => spec.FixedValue,
+            SizeKind.Percent => (int)Math.Round(spec.Pct * avail, MidpointRounding.AwayFromZero),
+            SizeKind.Content => measureOverride?.Invoke(child, avail) ?? MeasureRequest(child, avail, ctx, values, compounds),
+            _ => avail, // Fill, and the unspecified default — the pre-§2.3.5 behaviour of every stacked child.
+        };
+
+        var lo = child.MinSize ?? 0;
+        var hi = child.MaxSize ?? int.MaxValue;
+        var bounded = Math.Clamp(raw, lo, hi);
+        var granted = Math.Clamp(bounded, 0, avail);
+        if (granted < bounded)
+        {
+            notes.Add($"pane {position}: {bounded} columns requested, clamped to {avail} at {avail} columns");
+        }
+
+        return granted;
+    }
 
     // §2.3/§2.10.2: the value Floor()'s vertical (non-Horizontal) branch computes for a split with
     // children — its children divide the width, so the floor is their sum plus boundary cost, each

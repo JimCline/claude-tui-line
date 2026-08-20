@@ -16,14 +16,17 @@ public class SplitFlexTests
     private static readonly ItemContext Ctx = new(Input, gitBranch: null, engram: null, remoteUrlProbe: () => null);
     private static readonly IReadOnlyDictionary<string, ColorResolution.ColorRule> EmptyColors = new Dictionary<string, ColorResolution.ColorRule>();
 
-    private static Pane Leaf(string size = "fill", int? minSize = null, PaneBorder? border = null) =>
-        new(PaneSplit.None, Array.Empty<Pane>(), size, border ?? NoBorder, null, "…", null, Array.Empty<PaneItem>(), MinSize: minSize);
+    private static Pane Leaf(string size = "fill", int? minSize = null, PaneBorder? border = null, int? maxSize = null) =>
+        new(PaneSplit.None, Array.Empty<Pane>(), size, border ?? NoBorder, null, "…", null, Array.Empty<PaneItem>(), MinSize: minSize, MaxSize: maxSize);
 
     private static Pane FlexSplit(IReadOnlyList<Pane> children, int gutter = 0, PaneDistribute distribute = PaneDistribute.Greedy, PaneBorder? border = null) =>
         new(PaneSplit.Flex, children, "fill", border ?? NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: gutter, Distribute: distribute);
 
     private static Pane VerticalSplit(IReadOnlyList<Pane> children, int gutter = 0, PaneBorder? border = null, string size = "fill") =>
         new(PaneSplit.Vertical, children, size, border ?? NoBorder, null, "…", null, Array.Empty<PaneItem>(), Gutter: gutter);
+
+    private static Pane HorizontalSplit(IReadOnlyList<Pane> children, PaneBorder? border = null, string size = "fill") =>
+        new(PaneSplit.Horizontal, children, size, border ?? NoBorder, null, "…", null, Array.Empty<PaneItem>());
 
     private static string RenderMarkup(SizeResolver.ResolvedPane resolved, IReadOnlyDictionary<string, string?> values) =>
         string.Join('\n', PaneTreeRenderer.Render(resolved, Ctx, values, EmptyColors, new Dictionary<string, Segment>(), new RenderNoteCollector()).Buffer.Rows.Select(r => r.Markup));
@@ -733,7 +736,9 @@ public class SplitFlexTests
 
         Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
         Assert.Equal(2, resolved.Children.Count);
-        Assert.All(resolved.Children, c => Assert.Equal(97, c.OuterWidth));
+        // SPEC-97 §2.3.5: a stacked content leaf is measured and capped at the split's inner width,
+        // not granted the parent's outer width — 60 (the stub measurement) is below the ceiling here.
+        Assert.All(resolved.Children, c => Assert.Equal(60, c.OuterWidth));
     }
 
     // §8.2: the stack note interpolates the real side-by-side need (120), not the stale
@@ -989,5 +994,165 @@ public class SplitFlexTests
         Assert.Equal(3, resolved.Children.Count);
         Assert.All(resolved.Children, c => Assert.True(c.OuterWidth > 0, "declared-vertical min-rows must not fall back to the degenerate lo=0 allocation for content leaves"));
         Assert.DoesNotContain(notes.Notes, n => n.Message.Contains("dropped"));
+    }
+
+    // ---- SPEC-96: a bordered stacked split must charge its own border reserve to every child,
+    // not the full outer width. ----
+
+    [Fact]
+    public void Spec96_T1_StackedBorderedParent_ReservesBorderWidth()
+    {
+        var root = HorizontalSplit(new[] { Leaf(), Leaf() }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
+        Assert.All(resolved.Children, c => Assert.Equal(80 - SizeResolver.OwnBorderReserve(root), c.OuterWidth));
+    }
+
+    [Fact]
+    public void Spec96_T2_StackedUnborderedParent_Unaffected()
+    {
+        var root = HorizontalSplit(new[] { Leaf(), Leaf() }, border: NoBorder);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        Assert.All(resolved.Children, c => Assert.Equal(80, c.OuterWidth));
+    }
+
+    [Fact]
+    public void Spec96_T4_NestedStackedCompounding_BothReservesApply()
+    {
+        var innerChild = HorizontalSplit(new[] { Leaf() }, border: Bordered);
+        var root = HorizontalSplit(new[] { innerChild }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        var resolvedInner = resolved.Children[0];
+        var grandchild = resolvedInner.Children[0];
+        var reserve = SizeResolver.OwnBorderReserve(root);
+        Assert.Equal(80 - reserve, resolvedInner.OuterWidth);
+        Assert.Equal(80 - reserve - reserve, grandchild.OuterWidth);
+    }
+
+    [Fact]
+    public void Spec96_T6_FlexReflow_LongModelStringForcesStack_NoOverflow()
+    {
+        var longModelLeaf = Leaf(minSize: 60);
+        var root = FlexSplit(new[] { longModelLeaf, Leaf(minSize: 10) }, gutter: 1, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+        // sideBySideNeed = 60 + 10 + 1 = 71 (does not fit at 65); stackedFloor = max(60, 10) = 60
+        // (fits at 65) — mirrors the "Opus 5" trigger: a longer segment pushes side-by-side need
+        // past the width, flex flips to stacked, and the latent reserve bug used to overflow here.
+        var resolved = SizeResolver.Resolve(root, 65, Ctx, values, new Dictionary<string, Segment>(), notes);
+
+        Assert.Equal(PaneSplit.Horizontal, resolved.EffectiveSplit);
+        var ceiling = 65 - SizeResolver.OwnBorderReserve(root);
+        Assert.All(resolved.Children, c => Assert.True(c.OuterWidth <= ceiling, $"child granted {c.OuterWidth}, parent's inner width is only {ceiling}"));
+    }
+
+    // ---- SPEC-97: a stacked child honours its own size/minSize/maxSize against the split's
+    // inner width (the ceiling), independently of its siblings. ----
+
+    [Fact]
+    public void Spec97_S1_Fixed_GrantedItsDeclaredWidth()
+    {
+        var root = HorizontalSplit(new[] { Leaf(size: "20"), Leaf() }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        Assert.Equal(20, resolved.Children[0].OuterWidth);
+        Assert.Equal(80 - SizeResolver.OwnBorderReserve(root), resolved.Children[1].OuterWidth);
+    }
+
+    [Fact]
+    public void Spec97_S2_FixedAboveCeiling_GrantedCeiling_ClampNoteEmitted()
+    {
+        var root = HorizontalSplit(new[] { Leaf(size: "200") }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), notes);
+
+        var ceiling = 80 - SizeResolver.OwnBorderReserve(root);
+        Assert.Equal(ceiling, resolved.Children[0].OuterWidth);
+        Assert.Contains(notes.Notes, n => n.Message == $"pane 1: 200 columns requested, clamped to {ceiling} at {ceiling} columns");
+    }
+
+    [Fact]
+    public void Spec97_S3_Percent_HalfOfCeiling_AwayFromZeroRounding()
+    {
+        var root = HorizontalSplit(new[] { Leaf(size: "50%") }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        // outer 81, reserve 2 (NoBorder edges default All -> Bordered's edges are also All per the
+        // shared field above), ceiling odd enough that .5 actually arises.
+        var resolved = SizeResolver.Resolve(root, 81, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        var ceiling = 81 - SizeResolver.OwnBorderReserve(root);
+        var expected = (int)Math.Round(0.5 * ceiling, MidpointRounding.AwayFromZero);
+        Assert.Equal(expected, resolved.Children[0].OuterWidth);
+    }
+
+    [Fact]
+    public void Spec97_S5_MinSizeAboveCeiling_ClampedNotDropped()
+    {
+        var root = HorizontalSplit(new[] { Leaf(minSize: 200) }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var notes = new RenderNoteCollector();
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), notes);
+
+        Assert.Single(resolved.Children);
+        Assert.Equal(80 - SizeResolver.OwnBorderReserve(root), resolved.Children[0].OuterWidth);
+    }
+
+    [Fact]
+    public void Spec97_S6_MaxSize_CapsFillChildBelowCeiling()
+    {
+        var root = HorizontalSplit(new[] { Leaf(maxSize: 10) }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        Assert.Equal(10, resolved.Children[0].OuterWidth);
+    }
+
+    [Fact]
+    public void Spec97_S7_ClampOrder_DeclaredBoundsBeforeCeiling()
+    {
+        var root = HorizontalSplit(new[] { Leaf(size: "10", minSize: 20), Leaf(size: "60", maxSize: 30) }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        Assert.Equal(20, resolved.Children[0].OuterWidth);
+        Assert.Equal(30, resolved.Children[1].OuterWidth);
+    }
+
+    [Fact]
+    public void Spec97_S9_OrientationDecision_UnchangedByStackedSizing()
+    {
+        var withoutSize = FlexSplit(new[] { Leaf(minSize: 30), Leaf(minSize: 30) }, gutter: 1);
+        var withSize = FlexSplit(new[] { Leaf(size: "15", minSize: 30), Leaf(minSize: 30) }, gutter: 1);
+
+        foreach (var width in new[] { 40, 61, 100 })
+        {
+            var v1 = ItemValueResolver.Resolve(withoutSize, Ctx, EmptyColors);
+            var r1 = SizeResolver.Resolve(withoutSize, width, Ctx, v1, new Dictionary<string, Segment>(), new RenderNoteCollector());
+            var v2 = ItemValueResolver.Resolve(withSize, Ctx, EmptyColors);
+            var r2 = SizeResolver.Resolve(withSize, width, Ctx, v2, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+            Assert.Equal(r1.EffectiveSplit, r2.EffectiveSplit);
+        }
+    }
+
+    [Fact]
+    public void Spec97_S14_NoSizeConfigs_ByteIdentical_ToPreChangeBehaviour()
+    {
+        // Every child is "fill" (the default and only size these use) — StackedWidth's Fill arm
+        // is `_ => avail`, exactly the pre-SPEC-97 grant. This is the migration guarantee.
+        var root = HorizontalSplit(new[] { Leaf(), Leaf(), Leaf() }, border: Bordered);
+        var values = ItemValueResolver.Resolve(root, Ctx, EmptyColors);
+        var resolved = SizeResolver.Resolve(root, 80, Ctx, values, new Dictionary<string, Segment>(), new RenderNoteCollector());
+
+        var ceiling = 80 - SizeResolver.OwnBorderReserve(root);
+        Assert.All(resolved.Children, c => Assert.Equal(ceiling, c.OuterWidth));
     }
 }

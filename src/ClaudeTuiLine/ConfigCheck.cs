@@ -947,10 +947,6 @@ public static class ConfigChecker
 
             if (pane.Split == PaneSplit.Vertical)
             {
-                // §2.8 (horizontal width allocation) is out of scope for this phase — SizeResolver
-                // itself doesn't divide width among a horizontal split's children, so summing their
-                // fixed/minSize against the parent would claim a contention that isn't there yet.
-                // Revisit this scoping once §2.8 lands.
                 foreach (var d in CheckSplitBounds(pane, path, collapse))
                 {
                     yield return d;
@@ -1020,9 +1016,10 @@ public static class ConfigChecker
 
     private static IEnumerable<Diagnostic> CheckHorizontalSplitChildren(Pane split, string path)
     {
-        // A horizontal split gives every child the full parent width (§2.8 not yet implemented), so
-        // there is no sum to check — only whether any single child's own fixed size or floor already
-        // exceeds the width it will be given.
+        // A horizontal split's children stack and are sized independently against the parent's inner
+        // width (§2.3.5) — they occupy different rows and never contend for a column, so their fixed
+        // sizes and minSizes are compared against the parent individually and never summed. This is
+        // unlike a vertical split, whose children genuinely divide one budget.
         var parentBound = SizeResolver.FixedSize(split) ?? split.MaxSize;
         if (parentBound is not int bound)
         {

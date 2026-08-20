@@ -768,9 +768,9 @@ Pane
   rendered at exactly that height, its border drawn around the full extent rather than around
   its content. `valign` distributes the leftover inner rows above and below the content; it
   never changes a pane's extent. A box that stops short of its siblings is this rule broken.
-- **`horizontal`** splits top to bottom — children divide the parent's **height**, each
-  spanning the parent's full width. This is nearly free, because rows are already the output
-  unit.
+- **`horizontal`** splits top to bottom — children divide the parent's **height**, each sized
+  independently within the parent's width (§2.3.5). This is nearly free, because rows are
+  already the output unit.
 
 Naming follows tmux/vim convention: a "vertical split" produces a vertical divider.
 
@@ -843,8 +843,9 @@ usable at that size — and it would forbid the very degrade §2.9 depends on.
 
 A split's floor follows its orientation, for the same reason its allocation does: the axis a
 split **divides** sums, the axis it **shares** maxes. A vertical split's children divide width,
-so its width floor is their sum plus gutters; a horizontal split's children each span the full
-width, so its width floor is the largest of theirs. Getting this backwards over-states the floor
+so its width floor is their sum plus gutters; a horizontal split's children are each sized
+independently against the full width (§2.3.5) and impose nothing on one another, so its width
+floor is the largest of theirs. Getting this backwards over-states the floor
 of a nested horizontal split, which caps a `content` sibling harder than the room warrants and
 shows up much later as an unexplained degrade rather than as an arithmetic bug.
 
@@ -1168,9 +1169,11 @@ The seam belongs on both paths.
 #### 2.3.2 Keys that are valid, spelled right, and meaningless where they are written
 
 `distribute` divides extent among siblings that sit side by side. A **horizontal** split does not
-divide extent — its children each span the full width and stack downward — so there is nothing for
-the policy to choose. `{"split": "horizontal", "distribute": "min-rows"}` is read, is a legal value
-of a legal key, and does nothing whatsoever. The resolver never reaches the branch.
+divide extent — its children stack downward and are each sized independently within the split's
+inner width (§2.3.5) — so there is nothing for the policy to choose. Independent sizing is not
+division: two stacked children may each take the whole width, because they occupy different rows
+and never contend for the same cell. `{"split": "horizontal", "distribute": "min-rows"}` is read, is
+a legal value of a legal key, and does nothing whatsoever. The resolver never reaches the branch.
 
 `gutter` is the same shape: §2.3 defines it as blank **cells between siblings in a vertical split**,
 subtracted from the extent before children are sized. On a horizontal split there is no such extent
@@ -1296,7 +1299,7 @@ drop a sibling competing with it.
 
 **The same rule governs `--check`'s structural-size validation, in dual form: a `flex` pane's
 declaration is reported as over-constrained only when it is over-constrained in BOTH
-arrangements.** A pane whose children cannot share the parent's width but can each take all of it
+arrangements.** A pane whose children cannot share the parent's width but can each fit within it
 is not an error — it is the case `flex` exists for, and reporting it would make `flex` unusable.
 Floors take the minimum over adoptable orientations; impossibility takes the conjunction. These
 are the same statement.
@@ -1317,6 +1320,30 @@ forbids.
 stacked, exactly as §2.3.2 ignores them on a declared horizontal split. They are never diagnosed
 as inapplicable on a `flex` pane, because it can render side by side. Beyond the structural check
 above, `--check` predicts none of this: per §9.8 it is width-independent.
+
+#### 2.3.5 A stacked child is sized independently within its parent's width
+
+A horizontal split's children stack downward, each occupying its own band of rows. They do not
+divide the parent's width and never contend for it, so each child's width is resolved on its own
+against the same ceiling: the split's inner width, `outer − reserve(p)`.
+
+A stacked child's `size` is read with the same vocabulary as a side-by-side child's, resolved
+against that ceiling rather than against a share of it: `fixed` takes its declared cells,
+`percent` takes that fraction of the ceiling, `content` takes its natural width measured at the
+ceiling as cap, and `fill` — the default, and the behaviour of every stacked child before this
+section existed — takes the ceiling. `minSize` and `maxSize` then bound the result.
+
+**The ceiling always wins.** A child whose declared size, or whose `minSize`, exceeds the ceiling
+is granted the ceiling and the clamp is reported as a render note (§9.8.1). It is never dropped:
+dropping a stacked child frees width for nobody, so the over-constrained handling of §2.3 has
+nothing to do here.
+
+A child granted less than the ceiling is positioned within it by its own `selfAlign` (§3.1),
+which is where the leftover width goes. A grant that resolves below `RowLayout.MinUsableWidth`
+(a narrow `percent` or a small `maxSize`) stands as declared — there is no drop, and the
+renderer's existing narrow-width degradation governs; no render note is emitted for it, since a
+clamp note reports the framework overriding the author, and here the author got what they asked
+for.
 
 ### 2.4 Compositing — the part that must not be improvised
 
