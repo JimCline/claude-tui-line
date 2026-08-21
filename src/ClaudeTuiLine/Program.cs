@@ -30,7 +30,7 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         // never sees EPIPE) and before config/git/Engram/item work, none of which a calibration
         // probe needs. Returns and never reaches the surface-sizing root below, so SPEC-V2-
         // FRAMEWORK.md §2.5 ("COLUMNS read exactly once, at the surface-sizing root") still holds.
-        if (CalibrateCommand.TryRunHookProbe() is int probeExitCode)
+        if (CalibrateCommand.TryRunHookProbe(rawInput) is int probeExitCode)
         {
             return probeExitCode;
         }

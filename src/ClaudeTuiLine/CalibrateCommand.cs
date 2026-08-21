@@ -65,9 +65,12 @@ public static class CalibrateCommand
     /// §5.1: called immediately after the stdin read and before ParseInput. Returns an exit code
     /// when a probe row was emitted (the caller must return it immediately, without touching
     /// stdin's parsed contents further), or null when no calibration is active and the caller
-    /// should proceed with the normal render.
+    /// should proceed with the normal render. §13.8: still needs the payload's version despite
+    /// running before ParseInput — <see cref="TryExtractVersion"/> reads it out of rawInput
+    /// independently, so the two original constraints (stdin already drained; still ahead of
+    /// LoadRenderConfig, so a broken config can't block a ruler) stay intact.
     /// </summary>
-    public static int? TryRunHookProbe()
+    public static int? TryRunHookProbe(string? rawInput)
     {
         var state = LoadState();
         if (state is null || IsExpired(state))
@@ -88,8 +91,15 @@ public static class CalibrateCommand
         if (state.Phase == "ruler" && state.ObservedColumns is null)
         {
             state.ObservedColumns = columns;
-            WriteState(state);
         }
+
+        // §5.4/§13.4 fix: the Claude Code version being calibrated against is a fact known only to
+        // the hook (it read the payload), so --confirm must read it back from here rather than
+        // inferring it from the record or the CLI's own environment. Written on every probe render
+        // (ruler and verify), always overwriting, so --confirm reflects whichever pane rendered most
+        // recently. Left null on a malformed/versionless payload rather than guessed.
+        state.ObservedVersion = TryExtractVersion(rawInput);
+        WriteState(state);
 
         var showLabel = columns >= 70;
         var rows = new List<string>();
@@ -120,6 +130,23 @@ public static class CalibrateCommand
         }
 
         return 0;
+    }
+
+    private static string? TryExtractVersion(string? rawInput)
+    {
+        if (string.IsNullOrEmpty(rawInput))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(rawInput, StatusInputJsonContext.Default.StatusInput)?.Version;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -153,7 +180,16 @@ public static class CalibrateCommand
         if (record is null)
         {
             shouldPrompt = true; // rule 3: first run on this machine.
-            WriteRecord(new CalibrationRecord { PromptedForVersion = version, PromptFirstSeen = now });
+            if (version is not null)
+            {
+                WriteRecord(new CalibrationRecord
+                {
+                    Versions = new Dictionary<string, VersionEntry>
+                    {
+                        [version] = new VersionEntry { PromptFirstSeen = now, Dismissed = false },
+                    },
+                });
+            }
         }
         else if (version is null)
         {
@@ -161,28 +197,53 @@ public static class CalibrateCommand
         }
         else if (version == record.CalibratedVersion)
         {
-            shouldPrompt = false; // rule 5: already calibrated for this version.
+            shouldPrompt = false; // rule 5: already calibrated for this exact version. Never
+            // coarsened — this is the only rule that may declare a version "still calibrated".
         }
-        else if (version == record.DismissedVersion)
+        else if (record.Versions is not null && record.Versions.TryGetValue(version, out var dismissEntry) && dismissEntry.Dismissed)
         {
-            shouldPrompt = false; // rule 6: declined for this version.
+            shouldPrompt = false; // rule 6: declined for this exact version.
         }
-        else if (record.PromptedForVersion == version
-                 && record.PromptFirstSeen is DateTimeOffset firstSeen
+        else if (record.Versions is not null
+                 && record.Versions.TryGetValue(version, out var seenEntry)
+                 && seenEntry.PromptFirstSeen is DateTimeOffset firstSeen
                  && now - firstSeen > TimeSpan.FromDays(PromptWindowDays))
         {
-            shouldPrompt = false; // rule 7: ignored for the window; treat as a decline.
+            shouldPrompt = false; // rule 7: ignored for the window on this exact version; treat as a decline.
         }
         else
         {
-            shouldPrompt = true; // rule 8.
-
-            // §12.3: record writes are rare, not per-render — only when the version changed.
-            if (record.PromptedForVersion != version)
+            // Rule 8 (SPEC-101 §13.3/§13.4/§13.8): coarsened ONLY here, at the point of decision —
+            // rules 5-7 above and the record's own keys always use the exact version. The baseline
+            // is calibratedVersion, and ONLY calibratedVersion — a version we have actually
+            // reconciled with. Without one, "has it changed since we calibrated?" is unanswerable,
+            // and unanswerable must mean keep prompting, never suppress: the alternative (falling
+            // back to some other tracked version) makes that version's own entry its baseline on
+            // the very next render of itself, silently killing the first-run nudge after one render
+            // for every user who is prompted but hasn't confirmed. Rules 6/7 are what bound this
+            // case instead.
+            if (record.CalibratedVersion is string calibratedVersion && MajorMinor(version) == MajorMinor(calibratedVersion))
             {
-                record.PromptedForVersion = version;
-                record.PromptFirstSeen = now;
-                WriteRecord(record);
+                shouldPrompt = false; // same major.minor series as the baseline — don't bother the
+                // user again for a patch bump. Accepted loss: a patch that DOES move the chrome
+                // budget produces no automatic nudge; manual --calibrate is still always available.
+                // Rule 5 is unaffected and still compares exact versions, so nothing is ever
+                // declared "still calibrated" that isn't — only the OFFER to recalibrate is lost.
+            }
+            else
+            {
+                shouldPrompt = true;
+
+                // §13.3: write only if this exact version has never been seen, so N concurrent
+                // panes on the same never-before-seen version write once between them, not once
+                // per render.
+                record.Versions ??= new Dictionary<string, VersionEntry>();
+                if (!record.Versions.ContainsKey(version))
+                {
+                    record.Versions[version] = new VersionEntry { PromptFirstSeen = now, Dismissed = false };
+                    record.Prune();
+                    WriteRecord(record);
+                }
             }
         }
 
@@ -199,6 +260,16 @@ public static class CalibrateCommand
         }
 
         Console.Out.WriteLine("calibrate widths: claude-tui-line --calibrate");
+    }
+
+    // SPEC-101 §13.4 addendum: ordinal string equality only — never parse to ints, never order
+    // versions. The only question this answers is "did the major.minor series change". Does not
+    // strip pre-release/build suffixes on purpose: erring toward an extra nudge is the correct
+    // direction, never toward silently suppressing one.
+    public static string MajorMinor(string version)
+    {
+        var parts = version.Split('.');
+        return parts.Length >= 2 ? $"{parts[0]}.{parts[1]}" : version;
     }
 
     public static int RunCli(bool json, string? saw, bool noEllipsis, string? set, bool confirm, bool reject, bool cancel, bool status, bool dismiss)
@@ -289,14 +360,21 @@ public static class CalibrateCommand
         state.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
         WriteState(state);
 
-        Print(
-            json,
-            "verify",
-            $"candidate reserve: {candidate}. Cause another statusline redraw, then check row A (should " +
-            "end in \"A\", no ellipsis) and row B (should end in an ellipsis). Both as expected: " +
-            "claude-tui-line --calibrate --confirm. Otherwise: claude-tui-line --calibrate --reject");
+        Print(json, "verify", VerifyInstructionText(candidate));
         return 0;
     }
+
+    // §13.2 (Amendment 2): must contain the literal phrase "different lengths on purpose" (§8.11
+    // asserts it) and must NOT print the numeric widths of row A/row B — a number the user can't
+    // interpret invites interpretation, and that is exactly what caused a correct reading to be
+    // rejected. Widths belong in --status/--json, not here.
+    private static string VerifyInstructionText(int candidate) =>
+        $"candidate reserve: {candidate}. Two probe rows will appear on your statusline. They are " +
+        "different lengths on purpose — row B is exactly one column wider than row A, and that " +
+        "one-column difference IS the measurement. Ignore the lengths. Look only at how each row " +
+        "ENDS: row A should end in \"A\" (not truncated); row B should end in \"…\" (truncated). " +
+        "Cause a statusline redraw, then: both as expected? claude-tui-line --calibrate --confirm. " +
+        "Anything else? claude-tui-line --calibrate --reject";
 
     private static int RunNoEllipsis(bool json)
     {
@@ -331,11 +409,7 @@ public static class CalibrateCommand
         state.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
         WriteState(state);
 
-        Print(
-            json,
-            "verify",
-            $"candidate reserve: {value} (set manually). Cause a statusline redraw, then check row A/row B " +
-            "as usual: claude-tui-line --calibrate --confirm or claude-tui-line --calibrate --reject");
+        Print(json, "verify", $"(set manually) {VerifyInstructionText(value)}");
         return 0;
     }
 
@@ -355,11 +429,16 @@ public static class CalibrateCommand
 
         ClearState();
 
-        // §12.6: --confirm implicitly dismisses by setting calibratedVersion — copied from the
-        // record's promptedForVersion, never discovered independently (the CLI does not know the
-        // Claude Code version; it only ever arrives on the hook's stdin).
+        // §5.4/§13.4/§13.8: --confirm implicitly dismisses by setting calibratedVersion — read from
+        // the state file's observedVersion (the hook's own record of what it saw), never inferred
+        // from the calibration record or the CLI's environment. Left unchanged if the hook never
+        // saw a version (rather than guessed) — rule 5 simply can't fire for this pane, costing at
+        // most one extra nudge later, never a wrong reserve. §12.6/§13.8: --confirm reads the STATE
+        // file (not the record) because this is about a measurement just taken, which only the hook
+        // that drew the probes saw — contrast RunDismiss below, which reads the RECORD because it's
+        // about prompts already shown, a fact the record already holds.
         var record = LoadRecord() ?? new CalibrationRecord();
-        record.CalibratedVersion = record.PromptedForVersion;
+        record.CalibratedVersion = state.ObservedVersion ?? record.CalibratedVersion;
         record.CalibratedReserve = candidate;
         WriteRecord(record);
 
@@ -385,7 +464,8 @@ public static class CalibrateCommand
             $"claude-tui-line --calibrate --set {candidate + 1}. Row B NOT truncated: the true reserve is " +
             $"smaller — retry with claude-tui-line --calibrate --set {candidate - 1}. Both wrong, or " +
             "neither row visible: the ellipsis may no longer replace the boundary cell, or the statusline " +
-            "did not redraw — see SPEC-98 §2.");
+            "did not redraw — see SPEC-98 §2. If you rejected because the two rows looked like different " +
+            $"lengths: that is expected — rerun with claude-tui-line --calibrate --set {candidate}");
         return 0;
     }
 
@@ -404,18 +484,27 @@ public static class CalibrateCommand
 
     private static int RunDismiss(bool json)
     {
-        // §12.6: --dismiss copies promptedForVersion from the record; it must never attempt to
-        // discover the Claude Code version itself.
+        // §13.3: the CLI can't know which pane's version the user was looking at — with several
+        // concurrent Claude Code versions there may genuinely be more than one — so --dismiss marks
+        // every entry rather than guessing. A user who typed --dismiss wants the nudge to stop, not
+        // to play whack-a-mole across panes. §12.6/§13.8: --dismiss reads the RECORD (not the state
+        // file) because this is about prompts already shown, a fact the record already holds —
+        // contrast RunConfirm above, which reads the STATE file because it's about a measurement
+        // just taken, which only the hook that drew the probes saw.
         var record = LoadRecord();
-        if (record?.PromptedForVersion is not string version)
+        if (record?.Versions is not { Count: > 0 } versions)
         {
             Print(json, "nothing-to-dismiss", "no active prompt to dismiss.");
             return 0;
         }
 
-        record.DismissedVersion = version;
+        foreach (var entry in versions.Values)
+        {
+            entry.Dismissed = true;
+        }
+
         WriteRecord(record);
-        Print(json, "dismissed", $"dismissed the calibration prompt for version {version}.");
+        Print(json, "dismissed", $"dismissed the calibration prompt for {versions.Count} version(s).");
         return 0;
     }
 
@@ -543,10 +632,16 @@ public static class CalibrateCommand
         try
         {
             var bytes = File.ReadAllBytes(path);
-            return JsonSerializer.Deserialize(bytes, CalibrateJsonContext.Default.CalibrationRecord);
+            var record = JsonSerializer.Deserialize(bytes, CalibrateJsonContext.Default.CalibrationRecord);
+            record?.MigrateIfNeeded();
+            return record;
         }
         catch
         {
+            // §13.3: an unparseable record is treated as absent — deliberately the opposite of
+            // §6.4's refuse-to-write rule for the config. The config is user-authored and
+            // overwriting it destroys work; the record is tool-owned and its worst-case loss is
+            // one extra prompt.
             return null;
         }
     }
@@ -601,26 +696,14 @@ public sealed class CalibrationState
     [JsonPropertyName("observedColumns")]
     public int? ObservedColumns { get; set; }
 
+    // §13.8: a payload with no version must leave this key ABSENT from the file, not present-as-null
+    // or present-as-"" — "absent" is the only representation --confirm can trust not to be a guess.
+    [JsonPropertyName("observedVersion")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ObservedVersion { get; set; }
+
     [JsonPropertyName("candidate")]
     public int? Candidate { get; set; }
-}
-
-public sealed class CalibrationRecord
-{
-    [JsonPropertyName("calibratedVersion")]
-    public string? CalibratedVersion { get; set; }
-
-    [JsonPropertyName("calibratedReserve")]
-    public int? CalibratedReserve { get; set; }
-
-    [JsonPropertyName("promptedForVersion")]
-    public string? PromptedForVersion { get; set; }
-
-    [JsonPropertyName("promptFirstSeen")]
-    public DateTimeOffset? PromptFirstSeen { get; set; }
-
-    [JsonPropertyName("dismissedVersion")]
-    public string? DismissedVersion { get; set; }
 }
 
 public sealed record CalibrateResultJson(bool Ok, string Phase, string Message);
@@ -628,6 +711,8 @@ public sealed record CalibrateResultJson(bool Ok, string Phase, string Message);
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(CalibrationState))]
 [JsonSerializable(typeof(CalibrationRecord))]
+[JsonSerializable(typeof(VersionEntry))]
+[JsonSerializable(typeof(Dictionary<string, VersionEntry>))]
 [JsonSerializable(typeof(CalibrateResultJson))]
 public partial class CalibrateJsonContext : JsonSerializerContext
 {

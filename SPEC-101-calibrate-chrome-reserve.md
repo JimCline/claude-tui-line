@@ -1,7 +1,10 @@
 # SPEC-101 — `--calibrate`: measure the real chrome reserve on this machine
 
-Status: **OPEN for implementation.** Design closed. NEEDS-EVIDENCE items in §9
-(E1 blocking) and §12.10 (E4 blocking for the auto-prompt half only).
+Status: **OPEN for implementation.** Design closed. E1 and E4 are **CLOSED —
+both passed live** (see §13.1). §13.8 is applied. **§13.9 is the one outstanding
+change** — a defect in §13.4's baseline rule, found in implementation, affecting
+the first-run path for every user. §13.4's product question has been **answered
+by Jim — option (b)** — and is now binding design, not an open choice.
 
 **Amendment 1** — §10's product question was raised with Jim and answered: he
 wants manual `--calibrate` **plus** a prompt on first run on a machine **plus** a
@@ -9,6 +12,13 @@ prompt when the Claude Code version changes. That scope is designed in **§12**,
 which also **replaces §5.2** and revises §10. §§1–11 below are otherwise
 unchanged from the original. The amendment additionally overturns a fact §12.1
 would have got wrong: Claude Code *does* send its version.
+
+**Amendment 2** — live verification with Jim closed E1 and E4 and turned up two
+things neither the test suite nor the design review could have found. §13
+revises §5.3/§6/§8 (verify-phase wording) and **replaces the record shape and
+rules 5–8 of §12.3** (per-version keying, then major.minor nudging). §13.8 adds
+the version-provenance rule and §13.9 corrects the baseline rule — both gaps that
+only implementation exposed.
 
 Follows SPEC-98 (`SPEC-98-stacked-fill-pane-overflow.md`), which shipped
 `DefaultChromeReserve = 4`. This spec does **not** modify SPEC-98, its constant,
@@ -138,6 +148,10 @@ This reproduces E6's two-sided bracket — the experiment that actually closed
 SPEC-98 — automatically: one width that fits and one that does not, differing by
 a single column, pinning `R` from both sides.
 
+**The two rows being different widths is the measurement, not an artefact.**
+That fact is obvious here and was *not* obvious on screen; §13.2 is the
+consequence and specifies the wording that must accompany this phase.
+
 **Verify is not a nicety and must not be made skippable.** It is the only check
 on two assumptions that the ruler phase takes on faith:
 
@@ -175,12 +189,12 @@ reserve — the ruler's whole premise is that it is emitted at full `COLUMNS`.
 | --- | --- |
 | `src/ClaudeTuiLine/Program.cs` | new `--calibrate` mode + sub-flags in `RunCli`'s switch (lines 489–557) and mode dispatch (lines 613–654); probe branch on the hook path in `RunAsync` (§5.1); nudge append (§12.4) |
 | `src/ClaudeTuiLine/CalibrateCommand.cs` | **new.** All calibration logic: state I/O, ruler/probe row generation, digit→reserve arithmetic, phase transitions, config write |
-| `src/ClaudeTuiLine/CalibrationRecord.cs` | **new.** §12.2 durable record I/O and trigger evaluation |
+| `src/ClaudeTuiLine/CalibrationRecord.cs` | **new.** §12.2 durable record I/O and trigger evaluation — shape and rules revised by §13.3, §13.4, §13.9 |
 | `src/ClaudeTuiLine/StatusInput.cs` | add `Version` property (§12.1) |
 | `src/ClaudeTuiLineShared/ConfigPath.cs` | add `ResolveCalibrationStatePath()` and `ResolveCalibrationRecordPath()` (§6.1, §12.2) |
 | `src/ClaudeTuiLineShared/` (writer location) | see §6.3 — conditional |
 | `src/ClaudeTuiLine/Config.cs` | add `layout.calibrationPrompt` (§12.7) |
-| test project containing `ConfigTests.cs` | **new** `CalibrateTests.cs` (§8) and `CalibrationPromptTests.cs` (§12.9) |
+| test project containing `ConfigTests.cs` | **new** `CalibrateTests.cs` (§8) and `CalibrationPromptTests.cs` (§12.9, §13.5) |
 | `SPEC.md`, `README.md` | document the `--calibrate` flow and the prompt |
 | `src/ClaudeTuiLine/SchemaCommand.cs` | mention `--calibrate` in the `chromeReserve` description (§7) |
 
@@ -219,6 +233,12 @@ flag it.
 If `COLUMNS` is unset or unparseable, the branch emits a single row reading
 `claude-tui-line: calibration needs COLUMNS` and returns 0.
 
+> **§13.8 note.** The branch needs the payload's `version` in order to record
+> `observedVersion`, so it takes `rawInput` and extracts the version itself
+> (malformed or absent → `null`, never guessed). The three ordering constraints
+> above are unaffected: stdin is already drained, and the branch still precedes
+> `LoadRenderConfig`.
+
 ### 5.2 Cost and output when calibration is not running
 
 > **Amendment 1: this section is superseded by §12.5.** It survives here only so
@@ -246,11 +266,15 @@ uncorrupted ruler.
 - **verify phase:** label row (`ctl calibrate: does row A end in "A", row B in "…"?`),
   then row A, then row B, per §3.4.
 
+> **Amendment 2:** the verify label above is correct and stays — it already asks
+> about the row *endings* rather than their lengths. The defect was in the
+> **CLI-side instruction text** that accompanies it; see §13.2.
+
 Both phases are multi-row throughout. This is deliberate: multi-row is the case
 that actually bit in SPEC-98 and the case the uniform reserve was chosen for. See
 §9 E3 for the single-row question this leaves open.
 
-### 5.4 The hook writes `COLUMNS` back into the state
+### 5.4 The hook writes what only it knows back into the state
 
 In ruler phase the hook records the `COLUMNS` value it actually saw into the
 state file.
@@ -261,11 +285,27 @@ own `COLUMNS` may differ from the one Claude Code passed the hook. Deriving
 `COLUMNS` from the calibrating terminal instead would be a silent
 wrong-answer bug. Take it from the state file, never from the CLI's environment.
 
-**This rule generalises**, and §12.6 applies it a second time: *any* fact known
-only to the hook must reach the CLI through a file, never through the CLI's own
-environment. The hook and the CLI are different processes in different contexts,
-and every quantity that differs between them is a silent-wrong-answer bug
-waiting to happen.
+**This rule generalises, and it is the most-violated rule in this spec's
+history — three instances so far:** *any* fact known only to the hook must reach
+the CLI through a file, never through the CLI's own environment **and never by
+inference from some other file**. The hook and the CLI are different processes in
+different contexts, and every quantity that differs between them is a
+silent-wrong-answer bug waiting to happen.
+
+The three instances, so the pattern is recognisable rather than re-derived:
+
+1. `COLUMNS` — this section.
+2. The Claude Code version, for `--dismiss` — §12.6.
+3. The Claude Code version, for `--confirm` — §13.8. Found during
+   implementation, when an inference from the durable record was substituted for
+   the hook's own report of it. Inference is a *third* variant of the same
+   mistake, not an exception to the rule.
+
+### 5.5 `observedVersion`
+
+Alongside `observedColumns`, the hook records the payload's `version` into the
+state file as `observedVersion`, on **every probe render — ruler and verify
+both**. Full specification, including the null case, is §13.8.
 
 ---
 
@@ -280,14 +320,14 @@ output.
 | invocation | precondition | effect |
 | --- | --- | --- |
 | `--calibrate` | — | write state `phase=ruler`; print instructions. Restarts/overwrites any calibration in progress |
-| `--calibrate --saw <0-9>` | `phase=ruler` **and** state has `observedColumns` | compute `R` (§3.2–3.3); write state `phase=verify, candidate=R`; print instructions |
+| `--calibrate --saw <0-9>` | `phase=ruler` **and** state has `observedColumns` | compute `R` (§3.2–3.3); write state `phase=verify, candidate=R`; print §13.2's instructions |
 | `--calibrate --no-ellipsis` | `phase=ruler` | the ruler was not truncated at all → report reserve `0`, **write nothing**, clear state. §6.5 |
 | `--calibrate --set <0-9>` | any | manual escape hatch: set `candidate` and go to `phase=verify` without a ruler reading |
-| `--calibrate --confirm` | `phase=verify` | write `layout.chromeReserve = candidate` to config; clear state; update the §12.2 record; print `old → new` |
+| `--calibrate --confirm` | `phase=verify` | write `layout.chromeReserve = candidate` to config; set `calibratedVersion` from **`state.observedVersion`** (§13.8); clear state; print `old → new` |
 | `--calibrate --reject` | `phase=verify` | verify failed: print §6.6 diagnosis; clear state; **write nothing** |
 | `--calibrate --cancel` | any | clear state; write nothing |
 | `--calibrate --status` | any | print current phase/candidate, or "no calibration in progress" |
-| `--calibrate --dismiss` | any | §12.6 — suppress the prompt for the current Claude Code version |
+| `--calibrate --dismiss` | any | §12.6 / §13.3 — suppress the prompt for every version currently recorded |
 
 Between every step the user must **cause a statusline redraw** in a live Claude
 Code session — the statusline updates on activity, not on file change. Every
@@ -304,12 +344,15 @@ no-override form), filename `claude-tui-line.calibration.json`.
   "phase": "ruler",
   "expiresAt": "2026-08-20T18:31:00Z",
   "observedColumns": 90,
+  "observedVersion": "2.1.238",
   "candidate": 4
 }
 ```
 
 `observedColumns` is absent until the hook has rendered a ruler at least once;
-`candidate` is absent until `phase=verify`.
+`observedVersion` is absent until the hook has rendered any probe at least once
+**and** the payload carried a version (§13.8); `candidate` is absent until
+`phase=verify`.
 
 ### 6.2 `--calibrate` rejects `--config`
 
@@ -347,14 +390,17 @@ record — go through that one writer.
 
 Read-modify-write preserving everything else in the file:
 
-- Parse the existing config as a **`JsonNode`**, not a typed model. This is how
-  `ConfigTools.SetConfig` preserves unrecognized keys
-  (`src/ClaudeTuiLineMcp/ConfigTools.cs:88`), and calibration must preserve them
-  identically. Deserializing to `Config` and re-serializing would silently drop
-  every key the typed model does not know.
-- Set `layout.chromeReserve`, creating the `layout` object if absent.
-- Serialize with `WriteIndented = true` (matching `ConfigTools.cs:88`) and write
-  atomically per §6.3.
+- Parse the existing config as a **`JsonNode`**, not a typed model, and perform
+  the merge on that untyped DOM: get-or-create the `layout` object, set
+  `chromeReserve` on it, serialize the whole node back. Deserializing to `Config`
+  and re-serializing would silently drop every key the typed model does not know.
+  (`ConfigTools.SetConfig` at `src/ClaudeTuiLineMcp/ConfigTools.cs:88`
+  demonstrates the *principle* — unknown keys survive an untyped DOM — but takes
+  an already-`JsonNode`-typed parameter and so does not demonstrate the
+  read-modify-write *procedure*. Amendment 2 note: the original wording cited it
+  as the pattern to copy, which was imprecise; the bullets here are the
+  requirement.)
+- Serialize with `WriteIndented = true` and write atomically per §6.3.
 - **If the config file exists but does not parse, refuse to write** and tell the
   user to fix it first. Never overwrite a file we could not read — that would
   destroy a config whose only problem was a typo.
@@ -388,6 +434,16 @@ Never auto-advance the candidate on failure. A failing verify means an
 assumption broke, and silently stepping ±1 would paper over exactly the signal
 the phase exists to produce.
 
+**Amendment 2 addition.** The reject path must also print the recovery line:
+
+```
+If you rejected because the two rows looked like different lengths:
+that is expected — rerun with  claude-tui-line --calibrate --set <R>
+```
+
+A wrongly-rejected verify is cheap to recover from and the user should be told
+how, at the moment they are most likely to have made that mistake. See §13.2.
+
 ### 6.7 Expiry
 
 `expiresAt` = 30 minutes from `--calibrate`. An expired state file is ignored by
@@ -404,6 +460,11 @@ nobody knew — which is why E6 was cheap once found and expensive to find.
 Extend `SchemaCommand.cs`'s `chromeReserve` description to name `--calibrate`
 as the way to determine the right value. Keep it free of any hardcoded number,
 per the change already made for SPEC-98.
+
+**Amendment 2 raises the stakes on this section.** Under §13.4's option (b) a
+patch-release chrome change produces no nudge at all, so discoverability of the
+manual command is the *only* remaining path for that case. Treat §7 as
+load-bearing rather than a nicety.
 
 ---
 
@@ -436,20 +497,27 @@ New `CalibrateTests.cs`:
 10. **Phase preconditions** — `--saw` without `phase=ruler`, `--confirm` without
     `phase=verify`, `--saw` before the hook has recorded `observedColumns`, and
     any sub-flag without `--calibrate` all produce usage errors, not writes.
+11. **Amendment 2 — verify instruction text** (§13.2). The text printed on entry
+    to verify phase contains the literal substring `different lengths on purpose`
+    (case-insensitively), and does **not** contain the numeric widths of row A or
+    row B. Assert the second half by computing both widths for the test's
+    `COLUMNS`/`R` and asserting neither decimal string appears in the output.
+    This is a regression guard for a defect that cost a correct measurement.
 
 **What these tests cannot do**, and what the test file's own comment must say:
 they verify the *arithmetic and the plumbing*, never that the resulting number
 is correct. The boundary being measured is outside this process. That is the
-whole reason `--calibrate` exists, and it is why E1 below is blocking.
+whole reason `--calibrate` exists, and it is why E1 below was blocking.
 
 ---
 
 ## 9. NEEDS-EVIDENCE
 
-**E1 (BLOCKING — implementation is not complete without it).** Does Claude Code
-render a probe row verbatim? Specifically: are pure-ASCII digit rows passed
-through without markdown interpretation, whitespace collapsing, or re-wrapping;
-and does the `─` (U+2500) in the verify rows render single-width?
+**E1 — CLOSED, PASS.** See §13.1. Retained below as written for the record.
+
+Does Claude Code render a probe row verbatim? Specifically: are pure-ASCII digit
+rows passed through without markdown interpretation, whitespace collapsing, or
+re-wrapping; and does the `─` (U+2500) in the verify rows render single-width?
 
 *Run:* start a calibration, cause a redraw in a live Claude Code session, look
 at the statusline.
@@ -462,9 +530,9 @@ This requires a human looking at a real pane. **Do not attempt to satisfy it
 from inside the process** — that is SPEC-98's withdrawn E2 and it is
 unrunnable. Route it as a smoke observation with Jim watching.
 
-**E2 (non-blocking).** Is the chrome reserve constant in columns across terminal
-widths, or does it scale? SPEC-98 assumed constant (a symmetric two-column
-margin either side) and measured at exactly one width.
+**E2 (non-blocking, still open).** Is the chrome reserve constant in columns
+across terminal widths, or does it scale? SPEC-98 assumed constant (a symmetric
+two-column margin either side) and measured at exactly one width.
 
 *Run:* calibrate at two clearly different widths, e.g. `COLUMNS` 90 and 140, and
 compare.
@@ -483,7 +551,7 @@ question production no longer depends on.
 
 ---
 
-## 10. Decisions made here, and the one that was not mine
+## 10. Decisions made here, and the ones that were not mine
 
 **Made:**
 
@@ -499,20 +567,31 @@ question production no longer depends on.
 - `--calibrate` rejects `--config` (§6.2) — eliminates a silent-failure class
   rather than handling it.
 - Multi-row probes only (§9 E3).
+- **Amendment 2:** the prompt record is keyed by version rather than holding a
+  single "last version prompted for" (§13.3), and rule 5 is **not** loosened to
+  a major.minor comparison.
+- **Amendment 2 / §13.8:** `calibratedVersion` comes from the hook's own report
+  in the state file, never from inference over the durable record.
+- **Amendment 2 / §13.9:** the nudge baseline is `calibratedVersion` **or
+  nothing** — an absent baseline means prompt, never suppress.
 
-**Was not mine — now answered (Amendment 1):**
+**Were not mine — both now answered:**
 
-Whether calibration should ever prompt on its own initiative. Originally specced
-manual-only and flagged for Jim, because it is a product-behaviour call: it
-means the tool putting something on the user's statusline that the user did not
-ask for.
+1. *(Amendment 1)* Whether calibration should ever prompt on its own initiative.
+   Originally specced manual-only and flagged for Jim, because it is a
+   product-behaviour call: it means the tool putting something on the user's
+   statusline that the user did not ask for. **Jim's answer: do all three** —
+   manual `--calibrate`, a prompt on first run on a machine, and a prompt when
+   the Claude Code version changes. Designed in §12.
+2. *(Amendment 2)* How often a version-change nudge should fire on a machine that
+   auto-updates weekly. **Jim's answer: option (b)** — nudge only on a
+   `major.minor` change, with the record still keyed by the exact full version.
+   Designed in §13.4.
 
-**Jim's answer: do all three** — manual `--calibrate`, a prompt on first run on a
-machine, and a prompt when the Claude Code version changes. Designed in §12.
-
-One number inside that design is still worth his eye rather than mine: the
-**prompt window** (§12.3), currently 7 days. It is a one-line change and it
-governs how long a user who ignores the prompt keeps seeing it.
+One number remains a tunable rather than a decision: the **prompt window**
+(§12.3, currently 7 days). It is a one-line change and governs how long a user
+who ignores the prompt keeps seeing it. §13.9 makes it load-bearing for the
+first-run case rather than only the version-change case.
 
 ---
 
@@ -524,13 +603,24 @@ governs how long a user who ignores the prompt keeps seeing it.
   measuring, so a whitespace-terminated row measures the wrong quantity —
   this is the exact mechanism that hid the original bug in the `content` pane.
 - **Count characters, not bytes**, in every width assertion. §8.4.
-- **Take `COLUMNS` from the state file, not the calibrating terminal.** §5.4 —
-  and the same rule again for the version, §12.6.
+- **Never let the CLI source a hook-only fact from anywhere but the state file.**
+  §5.4, and its three instances: `COLUMNS` (§5.4), the version for `--dismiss`
+  (§12.6), the version for `--confirm` (§13.8). Inference from another file is
+  the same bug as reading the CLI's own environment.
 - **Do not deserialize the config to a typed model to write it.** §6.4 — it
   drops unknown keys silently.
 - **Do not auto-advance the candidate when verify fails.** §6.6 — a failed
   verify is a broken assumption, and stepping ±1 hides the signal.
 - The quiet hook path must stay cheap and must not perturb rendered rows. §12.5.
+- **Amendment 2:** the record is *tool-owned* state, so an unparseable record is
+  treated as absent rather than refused — the exact opposite of §6.4's rule for
+  the *user-owned* config. §13.3 explains why the two must differ.
+- **Amendment 2:** `MajorMinor` coarsening applies to the **nudge decision only**
+  (§13.4). It must never touch rule 5, and it must never be used to order or
+  compare versions for anything but equality. §13.4 states why.
+- **Amendment 2 / §13.9:** never let a version stand in as its own baseline. A
+  baseline must be a version the user actually *reconciled with*, which means
+  `calibratedVersion` and nothing else.
 
 ---
 
@@ -564,6 +654,8 @@ capture and all also discarded.
 The absence of a field from `StatusInput` is evidence about *this tool*, not
 about Claude Code. Do not treat the model as a description of the payload.
 
+(Amendment 2: confirmed live — E4 passed, §13.1.)
+
 **Change required:** add to `StatusInput`
 
 ```csharp
@@ -594,6 +686,10 @@ Record lives **beside the config**, per §6.1's directory — **not** in
 a cache must not re-nag the user or lose a dismissal. Durable state belongs with
 the config.
 
+> **Amendment 2 replaces the record shape below.** The original single-slot
+> shape is retained here only so §13.3's migration is legible. **Implement
+> §13.3's shape**, not this one.
+
 ```json
 {
   "calibratedVersion": "2.1.233",
@@ -606,11 +702,14 @@ the config.
 
 Every field is optional. An **absent file means "first run on this machine"** —
 that is the entire first-run detection mechanism, and it needs no separate
-marker.
+marker. (That remains true under §13.3.)
 
 ## 12.3 When the prompt shows
 
 Evaluate in this order; the first rule that fires decides.
+
+> **Amendment 2 replaces rules 5–8 and the write-frequency paragraph.** Rules
+> 1–4 are unchanged. Implement §13.3's table as revised by §13.4 and §13.9.
 
 1. `layout.calibrationPrompt == false`, or `CLAUDE_TUI_LINE_NO_NUDGE` is set →
    **no prompt**, and **no record file is read or written** (§12.7).
@@ -635,6 +734,10 @@ is the tunable §10 flags for Jim.
 change, or the first render ever. Every subsequent render reads and writes
 nothing new. Two panes redrawing simultaneously can race that write; the atomic
 writer of §6.3 makes the loser harmless, since both write the same content.
+
+> **That last sentence is false in practice and §13.3 is why.** Two panes on
+> *different* Claude Code versions do not write the same content, so the race is
+> not harmless — it is perpetual. This was found live, not in review.
 
 ## 12.4 How the prompt renders: one appended row
 
@@ -669,6 +772,15 @@ That length cap is not cosmetic. **The nudge exists because the reserve may be
 wrong, so it can be truncated by the very condition it is reporting.** Keeping it
 far shorter than any plausible miscalibration is what stops it from failing
 exactly when it is needed. A truncated nudge is worse than no nudge.
+
+**The nudge is a persistent footer, not a one-shot.** While the §12.3 rules say
+prompt, the row appears on **every** render — only the record *write* is deduped
+(§13.3), never the visible row. Rule 7's 7-day window is the sole thing that
+bounds it, and dismissal is the sole thing that ends it early. This is
+deliberate: a statusline has no notification history, so a row the user happened
+not to look at once would otherwise be lost entirely. Do not "fix" this into a
+show-once toast. **§13.9 exists because an implementation accidentally did
+exactly that**, for the first-run case, and nothing failed.
 
 **Insertion point:** unlike the §5.1 probe branch, this is *late* — after rows
 have been produced by the pipeline and immediately before they are written to
@@ -710,15 +822,28 @@ row is a bug by definition, not a judgement call.
 *hook*, in a different process. A terminal invocation of `--dismiss` has no
 payload and no way to obtain it.
 
-Therefore: **`--dismiss` copies `promptedForVersion` from the record into
-`dismissedVersion`.** It must never attempt to discover the version itself —
-not from an environment variable, not by shelling out to `claude --version`, not
-from a PATH lookup. This is §5.4's rule applied a second time, and it is the same
-failure mode: a value that differs between the hook's context and the terminal's
-is a silent wrong answer.
+Therefore: **`--dismiss` takes the version(s) from the record**, never from its
+own context. It must never attempt to discover the version itself — not from an
+environment variable, not by shelling out to `claude --version`, not from a PATH
+lookup. This is §5.4's rule applied a second time, and it is the same failure
+mode: a value that differs between the hook's context and the terminal's is a
+silent wrong answer.
 
-If the record has no `promptedForVersion`, `--dismiss` reports that there is
-nothing to dismiss and writes nothing.
+*(Amendment 2: the original text said "copies `promptedForVersion` into
+`dismissedVersion`". With the record keyed by version there is no single such
+slot; §13.3 specifies what `--dismiss` now marks. The rule above — take it from
+the record, never from the CLI's context — is unchanged and is the load-bearing
+part.)*
+
+**`--dismiss` and `--confirm` differ, and the difference is not an
+inconsistency.** `--dismiss` reads the *record* because it is a statement about
+prompts already shown, which is exactly what the record holds. `--confirm` reads
+the *state file* (§13.8) because it is a statement about a measurement just
+taken, which only the hook that rendered the probes observed. Same rule — take
+the fact from wherever the hook actually recorded it — applied to two different
+facts.
+
+If the record has nothing to dismiss, `--dismiss` says so and writes nothing.
 
 ## 12.7 Opt-out
 
@@ -738,6 +863,9 @@ Either one short-circuits at rule 1 of §12.3, before any record file is touched
 Every existing user has no record file, so **rule 3 fires for all of them**:
 everyone sees the prompt once, for up to the 7-day window, on upgrade.
 
+**"Once" there means one prompting *episode*, spanning days — not one render.**
+§13.9 exists because that was read the other way in implementation.
+
 This is deliberate and correct — a user calibrated against an old Claude Code is
 precisely who the feature is for — but it is a user-visible change to every
 installation, and it should be a release-note line, not a surprise. It is also
@@ -749,9 +877,9 @@ the reason the window length (§12.3 rule 7) is worth Jim's eye.
    `tests/ClaudeTuiLine.Tests/fixtures/real_captured_workspace.json` and assert
    `Version == "2.1.233"`. Use the real capture, not a synthetic payload; the
    whole point is that the real shape carries a field the synthetic one does not.
-2. **Trigger table** — one case per rule in §12.3, each asserting prompt/no-prompt.
-   Include `version == null` explicitly (rule 4) and assert `null` never matches
-   a recorded version.
+2. **Trigger table** — one case per rule in **§13.3 as revised by §13.4 and
+   §13.9**, each asserting prompt/no-prompt. Include `version == null` explicitly
+   (rule 4) and assert `null` never matches a recorded version.
 3. **Invariant 1** — no state, prompt disabled → rows byte-identical to the
    existing goldens.
 4. **Invariant 2** — prompt active → row count is exactly `quiet + 1`, and rows
@@ -760,10 +888,9 @@ the reason the window length (§12.3 rule 7) is worth Jim's eye.
    another row's change compensates for.
 5. **Nudge width** — ≤ 48 characters, counted as characters not bytes; suppressed
    below surface width 50; does not end in whitespace (§3.5 applies to it too).
-6. **Record write frequency** — two consecutive renders at the same version
-   produce exactly one record write, not two.
-7. **`--dismiss`** — copies `promptedForVersion`; suppresses on the next render;
-   a *later* version re-prompts; with no `promptedForVersion` it writes nothing.
+6. **Record write frequency** — superseded by §13.5's stronger multi-version
+   form.
+7. **`--dismiss`** — see §13.5.
 8. **Prompt window** — a `promptFirstSeen` older than the window suppresses the
    prompt (rule 7).
 9. **Cache dir independence** — deleting `ItemCache.ResolveCacheDir()` does not
@@ -772,30 +899,533 @@ the reason the window length (§12.3 rule 7) is worth Jim's eye.
 
 ## 12.10 NEEDS-EVIDENCE for the auto-prompt
 
-**E4 (BLOCKING for the auto-prompt half only — §§1–11 can ship without it).**
+**E4 — CLOSED, PASS.** See §13.1. Retained below as written.
+
 Is `version` present in **every** real payload, or only some? The finding in
-§12.1 rests on **one** captured fixture. SPEC-98's E4 captured **9 real payloads
-across two payload shapes**; that capture set can answer this directly, and
-whoever holds it should grep it rather than re-capturing.
+§12.1 rests on **one** captured fixture.
 
 *Decides:* present in all → §12.3's rules 4–6 work as written. Present in only
 some → rule 4 (`null` = unknown) already handles it safely, but the prompt will
-be flaky across shapes and §12.3 needs a note saying so. Absent from the shape
-Jim's setup actually sends → the version-change half does not function for him
-and this must go back to Jim before implementation, because he asked for it
-specifically.
+be flaky across shapes and §12.3 needs a note saying so.
 
 Note the asymmetry: the design is **already safe** under every outcome, because
 rule 4 refuses to guess. E4 decides whether the feature *works*, not whether it
 is *safe*.
 
-**E5 (non-blocking).** Does Claude Code cap the number of statusline rows it
-renders? SPEC-98 observed 6 rows rendering fine, so the cap is ≥ 6 if it exists.
-The appended nudge row takes a user from N to N+1.
+**E5 — folded into E1's session; see §13.1.** Does Claude Code cap the number of
+statusline rows it renders? The appended nudge row takes a user from N to N+1.
 
-*Run:* with the prompt active on an already-tall statusline, confirm the nudge
-row is visible and nothing was dropped off the bottom.
-*Decides:* visible → fine. A row is dropped → appending is the wrong mechanism
-for tall statuslines and §12.4 needs a height guard (suppress the nudge above
-some row count). Fold this into E1's observation session; it costs one extra
-glance.
+---
+
+# 13. Amendment 2 — what live verification changed
+
+Live E1/E4 verification with Jim, plus the two follow-up checks flagged after
+automated review was skipped, closed both blocking evidence items and surfaced
+two defects. Neither was findable by the test suite: one needed a human's eyes,
+the other needed a machine with sixteen concurrent Claude Code processes on it.
+Two further gaps (§13.8, §13.9) surfaced only when the amendment was implemented.
+
+## 13.1 Evidence closed
+
+- **E1 — PASS.** Probe rows render verbatim; the arithmetic reproduced the §3.3
+  anchor exactly (digit `5` → reserve `4`) on Jim's real pane. No glyph fallback
+  needed; `─` renders single-width. **§3.1 and §3.4 ship as specced.**
+- **E4 — PASS, closed.** Top-level `version` is present in the real live payload
+  and is read correctly (`2.1.237` at the time of the run). §12.3's rules 4–6
+  function; no flakiness note needed.
+- **E5 — no row loss observed.** The nudge row appended without anything
+  dropping off the bottom. No height guard needed.
+- **Point A (write-frequency guard) — the guard is correct in isolation**, proven
+  twice: same version × 3 renders → 0 extra writes; one version change → exactly
+  1 write. But it does not hold on a real multi-pane machine; §13.3.
+- **Point B (version-change simulation) — not needed.** Real transitions were
+  observed live (`2.1.233 → 2.1.234 → 2.1.237 → 2.1.238`, a client auto-update in
+  progress) and rules 5/7/8 fired as the table predicts. The hand-edited
+  simulation is superseded by better evidence.
+
+Jim's config now holds `layout.chromeReserve: 4`, set manually after §13.2's
+defect caused a correct reading to be rejected.
+
+## 13.2 Spec-defect: the verify prompt let a correct answer be rejected
+
+**What happened.** The ruler produced the correct candidate, `R = 4`. Row A
+rendered clean, row B truncated — the textbook confirm signal. Jim noticed that
+the two rows were visibly different lengths (86 and 87 columns, exactly as §3.4
+requires), read that as evidence the comparison was invalid, and hit `--reject`.
+The result was a functional but wasteful reserve of `5` instead of the correct
+`4`.
+
+**Classification: spec-defect, not impl-defect.** The code did precisely what
+§3.4 specifies. The specified *wording* is what lost the measurement.
+
+**Root cause, stated generally so it is reusable.** When you ask a human to
+report an observation, every *other* salient difference they can see and cannot
+explain becomes a competing hypothesis about what they are looking at. The
+one-column width difference is the entire measurement, and to anyone who has not
+read §3.4 it looks like a botched comparison. An instruction that names the
+observable but not the confound leaves the confound to be interpreted, and it
+will be interpreted as an error.
+
+**Fix — required text.** On entry to verify phase (`--saw`, `--set`), the CLI
+must print, before telling the user to redraw:
+
+```
+Two probe rows will appear on your statusline. They are DIFFERENT LENGTHS
+ON PURPOSE — row B is exactly one column wider than row A, and that
+one-column difference IS the measurement.
+
+Ignore the lengths. Look only at how each row ENDS:
+
+  row A should end in   A    (not truncated)
+  row B should end in   …    (truncated)
+
+Both true?   claude-tui-line --calibrate --confirm
+Anything else?   claude-tui-line --calibrate --reject
+```
+
+Three binding requirements on that text, beyond the wording:
+
+1. It must contain the phrase **"different lengths on purpose"** — §8.11 asserts
+   it, so the explanation cannot be quietly dropped in a later edit.
+2. It must **not print the numeric widths** of row A or row B. A number the user
+   cannot interpret invites interpretation. Widths belong in `--calibrate
+   --status` and in `--json` output, where the audience is a debugging user or a
+   machine, not in the confirm prompt, where the audience is being asked a
+   yes/no question about two glyphs.
+3. The instruction to cause a redraw (§6) still applies and still comes after.
+
+**Fix — recovery path.** §6.6 gains the reject-path line quoted there, telling a
+user who rejected for this reason how to get back. The wrongly-rejected case is
+cheap to recover from and expensive to notice, so the recovery must be printed
+at the moment the mistake is most likely.
+
+**Not changed:** the §5.3 verify *label row* already asks about row endings
+rather than lengths, and stays as written. The `--reject` semantics stay as
+written too — §6.6's rule against auto-advancing the candidate is unaffected, and
+this defect is not a reason to weaken it.
+
+## 13.3 Design gap: one version slot, many concurrent versions
+
+**What happened.** On Jim's machine the record file's mtime advanced on every
+redraw, and `promptedForVersion` cycled through three values in minutes, while
+`calibratedVersion` stayed fixed. Cause: **sixteen concurrent Claude Code
+processes mid-auto-update, running genuinely different client versions at the
+same time, all sharing one global record file.** Each pane's version differs from
+`calibratedVersion`, so rule 8 correctly fires for each; each pane then writes
+*its own* version into the single `promptedForVersion` slot; the next pane
+overwrites it. Nothing converges. The nudge appears and disappears per pane at
+what looks like random.
+
+**Classification: spec gap, not impl-defect.** §12.3 implicitly assumed one
+Claude Code version active system-wide. That assumption is false on any machine
+with several panes open during an update, which is the normal state of Jim's
+machine and not an exotic case.
+
+**Diagnosis.** `promptedForVersion` is a **single-valued field modelling a
+multi-valued fact.** There are N concurrently-live versions and one slot for
+them. Every symptom — the mtime churn, the flapping nudge, the racing writes —
+follows from that one mismatch. Fix the shape and all three go away together.
+
+### The fix: key the record by version
+
+**New record shape.** Replaces §12.2's.
+
+```json
+{
+  "calibratedVersion": "2.1.237",
+  "calibratedReserve": 4,
+  "versions": {
+    "2.1.238": { "promptFirstSeen": "2026-08-20T18:00:00Z", "dismissed": false },
+    "2.1.234": { "promptFirstSeen": "2026-08-20T17:41:00Z", "dismissed": true }
+  }
+}
+```
+
+- `versions` replaces `promptedForVersion`, `promptFirstSeen`, and
+  `dismissedVersion`. Each key is a Claude Code version string we have prompted
+  for; each value carries when we first prompted for it and whether it was
+  dismissed.
+- `calibratedVersion` / `calibratedReserve` stay **singular and unchanged.**
+  Calibration produces one config value, so one slot is the correct model there.
+  Do not key those by version. Where `calibratedVersion`'s value comes from is
+  §13.8.
+- An **absent file still means "first run on this machine"** — unchanged.
+
+**Revised trigger table.** Rules 1–4 of §12.3 are unchanged. Rules 5–8 become:
+
+5. `version == calibratedVersion` → **no prompt.** Already calibrated here.
+   **Exact string comparison — never coarsened.** See §13.4.
+6. `versions[version]` exists and `dismissed == true` → **no prompt.**
+7. `versions[version]` exists and its `promptFirstSeen` is more than the prompt
+   window (7 days) ago → **no prompt.**
+8. Otherwise → **prompt**, subject to §13.4's major.minor condition **as
+   corrected by §13.9**. Write the record **only if `versions[version]` is
+   absent**, creating it with `promptFirstSeen = now, dismissed = false`.
+
+**Why that kills the churn.** A write now happens at most **once per distinct
+version ever observed**, regardless of how many panes are open. Sixteen panes
+across three versions produce three writes, total, ever — not one per render per
+pane. The old guard tried to make the write rare by comparing against a slot that
+several writers were fighting over; keying makes it rare by construction, with no
+guard to get wrong. §13.4 lowers it further still.
+
+**Concurrency, and what deliberately is not fixed.** Two panes on different
+versions can still write simultaneously; the atomic rename of §6.3 means the
+whole file is last-writer-wins, so one newly-created key can be lost. The losing
+pane simply recreates it on its next render. That is bounded (a handful of extra
+writes during an update window), self-healing, and costs at most one duplicate
+prompt. **Do not add a lock file, retry loop, or merge-on-write.** The state is
+advisory; the failure mode is one extra nudge; locking a file that four processes
+touch a few times a week is more risk than the bug.
+
+**Pruning.** Cap `versions` at **10 entries.** On insert, if the map would exceed
+10, evict the entry with the oldest `promptFirstSeen`. Without this the map grows
+by one key per Claude Code release forever, and on a weekly-release cadence that
+is a slow leak in a file read on every render. Ten covers any plausible spread of
+concurrent versions with room to spare.
+
+**Unparseable record → treat as absent.** Log nothing, throw nothing, render
+normally, and let rule 3 fire. This is **deliberately the opposite of §6.4's rule
+for the config**, and the distinction is the point: the config is *user-authored*
+and overwriting a file the user typed into destroys their work, whereas the
+record is *tool-owned* and its worst-case loss is one extra prompt. Never refuse
+to function because tool-owned state got corrupted.
+
+**Migration from the old shape.** Jim's machine already has a live old-shape
+record, so this is not hypothetical. On read, if `versions` is absent but
+`promptedForVersion` is present:
+
+- `versions[promptedForVersion] = { promptFirstSeen: <the old promptFirstSeen, or
+  now if absent>, dismissed: (dismissedVersion == promptedForVersion) }`
+- Drop `promptedForVersion`, `promptFirstSeen`, `dismissedVersion`.
+- If `dismissedVersion` is present but differs from `promptedForVersion`, add it
+  as its own entry with `dismissed: true` and `promptFirstSeen = now`.
+- Write the migrated shape once, on the next write the rules call for — do not
+  write purely to migrate.
+
+**`--dismiss` under the new shape.** It sets `dismissed = true` on **every entry
+currently in `versions`**, and prints how many. Rationale: the CLI cannot know
+which version's pane the user was looking at (§12.6 — and with concurrent
+versions there may genuinely be several), and a user who typed `--dismiss` wants
+the unsolicited nudge to stop, not to play whack-a-mole across panes. Erring
+toward more suppression is correct for something the user did not ask for in the
+first place. If `versions` is empty, report that there is nothing to dismiss and
+write nothing.
+
+### Two alternatives, rejected — recorded so they are not revisited
+
+**Rejected: accept the churn as self-resolving.** It does not resolve. Auto-update
+staggers panes continuously rather than converging, and a long-lived pane can
+hold an old client version for days. Even if it did resolve, a disk write on every
+statusline render is precisely the invisible-defect class the Point-A check was
+created to catch — accepting it would be discarding the finding rather than acting
+on it.
+
+**Rejected: loosen rule 5 to compare only `major.minor`.** This trades away the
+detection the entire spec lineage exists to provide, in order to fix a cost
+problem that keying already fixes for free. A statusline chrome change is exactly
+the kind of thing a *patch* release can ship — SPEC-98 exists because Claude
+Code's chrome moved — so coarsening the comparison means a patch bump that breaks
+the reserve is silently treated as "still calibrated". **Never trade the
+correctness of the trigger for the cost of the write. Fix the write.**
+
+> Note the boundary carefully, because §13.4 sits right beside it: what is
+> rejected here is coarsening **rule 5**, which decides whether a calibration is
+> still considered *valid*. §13.4 coarsens only rule 8, which decides whether we
+> *bother the user*. Those are different questions with different failure modes.
+
+## 13.4 RESOLVED — nudge on `major.minor` change; the record stays exact
+
+**Jim's answer to the §13.4 question was option (b).** This section is now
+binding design rather than an open choice.
+
+**The governing principle: store exact, coarsen at the point of decision.** The
+record keeps full version strings; only the nudge decision is coarsened, at the
+moment it is made. Nothing lossy is ever written to disk, so if this policy is
+revisited later the data to support the alternative is still there.
+
+### `MajorMinor(v)`
+
+- Split `v` on `.`. If there are ≥ 2 components, return
+  `components[0] + "." + components[1]`. Otherwise return `v` unchanged.
+- Comparison is **ordinal string equality only.** Never parse to integers, never
+  order versions, never ask "is this newer". The only question this design ever
+  asks is *did it change*. Version-ordering logic is where parsing bugs live and
+  none is needed here — do not add any.
+- **Do not strip pre-release or build suffixes.** `2.1.238-beta.1` → `2.1`.
+  `2.1-rc1` → `2.1-rc1`, which compares unequal to `2.1` and therefore costs one
+  extra nudge. That is the correct direction of error: **err toward nudging,
+  never toward silently suppressing.** A spurious nudge is visible and
+  dismissible; a suppressed one is neither.
+- `null` never reaches this function — rule 4 handles it first.
+
+### The nudge baseline — **corrected by §13.9**
+
+> The original text here read: "`calibratedVersion` if present; else the entry in
+> `versions` with the newest `promptFirstSeen`; else there is no baseline — but
+> rule 3 has already decided, so this case cannot reach rule 8." **All three
+> clauses were wrong in the same way** and are replaced by the rule below. §13.9
+> explains what broke and why.
+
+**The baseline is `calibratedVersion`, or nothing.** There is no fallback.
+
+A baseline must be a version the user has actually **reconciled with** — one
+where they looked at a statusline and accepted the reserve. `calibratedVersion`
+is the only field that means that. "The last version we happened to nag about" is
+not a commitment and must never stand in for one.
+
+### Revised rule 8
+
+Rules 1–7 of §13.3 are unchanged. Rule 8 becomes:
+
+> 8. If `calibratedVersion` is **absent** → **prompt.** There is no baseline, so
+>    "has it changed since we calibrated?" is unanswerable, and unanswerable must
+>    mean keep prompting. Rules 6 and 7 are what bound it.
+>    Otherwise → **prompt iff `MajorMinor(version) != MajorMinor(calibratedVersion)`.**
+>
+> In either case, write the record **only if `versions[version]` is absent**
+> (creating it keyed by the **exact full version**, never by the coarsened form).
+
+### Consequences, stated rather than left to be discovered
+
+- **Write frequency stays bounded.** The write is gated on `versions[version]`
+  being absent, which §13.9's change does not touch. Within one `major.minor`
+  series a calibrated user neither prompts nor writes.
+- **The nudge row itself still appears on every qualifying render**, because only
+  the write is deduped. §12.4's persistent-footer paragraph states this
+  explicitly; it is intended, and rule 7's window is what bounds it.
+- **Rules 6 and 7 are load-bearing, not redundant.** Under the corrected rule 8
+  they are the *only* bound on the first-run prompt, since an uncalibrated user
+  has no baseline and rule 8 always says prompt. The earlier note calling them
+  "largely redundant, keep them anyway" was itself a symptom of the §13.9 bug —
+  they looked redundant only because the broken baseline was silently suppressing
+  the case they exist to bound.
+- **The accepted loss, stated plainly:** a patch release that *does* move the
+  chrome budget produces **no nudge at all** for a calibrated user. The
+  mitigations are that manual `--calibrate` is always available and §7 makes it
+  discoverable — which is why §7 is now flagged as load-bearing.
+- **This is not the thing §13.3 rejected**, and the distinction must survive
+  future edits: rule 5 still compares **exact** versions, so nothing is ever
+  declared *still calibrated* that is not. What option (b) gives up is only the
+  *offer* to recalibrate. **Do not let this reasoning drift into rule 5.** If a
+  later change makes rule 5 use `MajorMinor`, that is a regression against
+  §13.3's rejected alternative, whatever the commit message says.
+
+## 13.5 Verification — additions and replacements
+
+Replaces §12.9 items 6 and 7; adds the rest. All in
+`CalibrationPromptTests.cs` unless noted.
+
+1. **Write frequency, single version** — N consecutive renders at one version →
+   exactly one record write.
+2. **Write frequency across versions — the regression test for §13.3 and
+   §13.4.** Two cases, both asserting on **write count, not file mtime** (a test
+   that watches mtime is a test that watches the clock):
+   - `calibratedVersion = 2.1.237`; render `2.1.233, 2.1.238, 2.1.233, 2.1.238`
+     → **zero** prompts and **zero** writes. Same `major.minor` series.
+   - `calibratedVersion = 2.1.237`; render `2.1.237, 2.2.0, 2.1.237, 2.2.0` →
+     exactly **one** prompt-write, keyed `2.2.0`.
+3. **`MajorMinor` table** — `2.1.238`→`2.1`, `2.1`→`2.1`, `2`→`2`, `dev`→`dev`,
+   `2.1.238-beta.1`→`2.1`, `2.1-rc1`→`2.1-rc1`, `""`→`""`. Assert ordinal
+   equality semantics explicitly.
+4. **§13.9 — the first-run persistence test.** Record **present**,
+   `calibratedVersion` **absent**, `versions` already holds an entry for the
+   rendering version, inside the window, not dismissed → the nudge **appears on
+   the second and third consecutive renders**, not only the first. This is the
+   exact case that passed silently before §13.9, and it is the highest-traffic
+   path in the feature.
+   *(This replaces the former "baseline selection" item, which tested the
+   newest-`promptFirstSeen` fallback that §13.9 removes. Delete that test rather
+   than adapting it.)*
+5. **Keyed shape round-trips** — a record with several `versions` entries
+   serializes and deserializes without loss, and an entry for a version not
+   present does not resurrect a dismissal for a version that is.
+6. **Migration** — an old-shape record with `promptedForVersion` /
+   `promptFirstSeen` / `dismissedVersion` reads as the equivalent keyed shape,
+   including the case where `dismissedVersion != promptedForVersion` (two entries)
+   and the case where `promptFirstSeen` is absent.
+7. **Unparseable record → treated as absent** — garbage bytes in the record file
+   produce a normal render plus a first-run prompt, and throw nothing. Assert the
+   render succeeds; a swallowed exception that also swallows the statusline is the
+   failure this guards.
+8. **Pruning** — inserting an 11th version evicts the entry with the oldest
+   `promptFirstSeen`, and exactly ten remain.
+9. **`--dismiss` marks every entry** — a record with three `versions` entries,
+   after `--dismiss`, has `dismissed == true` on all three; the next render at any
+   of those versions does not prompt; a render at a version in a *new*
+   `major.minor` series does prompt. With `versions` empty, `--dismiss` writes
+   nothing.
+10. **Verify instruction text** — §8.11, in `CalibrateTests.cs`.
+11. **§13.8 — `observedVersion` provenance.** Four cases:
+    - The hook writes `observedVersion` into the state file on a **ruler** render
+      and on a **verify** render, in both cases from the payload.
+    - `--confirm` sets `calibratedVersion` to the state file's `observedVersion`,
+      **not** to anything derived from the record. Construct the discriminating
+      case: a record whose newest `versions` entry is `X` while the state file's
+      `observedVersion` is `Y`, and assert `calibratedVersion == Y`. A test that
+      does not separate those two values proves nothing.
+    - `observedVersion` absent → `--confirm` still writes `chromeReserve` to
+      config, and leaves `calibratedVersion` unchanged.
+    - A payload with `version: null` leaves `observedVersion` absent rather than
+      writing a null or empty string into it.
+
+**A test-authoring rule this amendment earned, worth stating once:** several
+tests here fix `calibratedVersion` explicitly. Do that deliberately, not
+incidentally — a test that leaves it unset is exercising the no-baseline path
+whether or not it means to, and §13.9 is what happens when nobody notices which
+path a test is on.
+
+## 13.6 Files this amendment touches
+
+| file | change |
+| --- | --- |
+| `src/ClaudeTuiLine/CalibrationRecord.cs` | new keyed shape, migration, pruning, revised rules 5–8, unparseable→absent, `MajorMinor` (§13.4); **§13.9: baseline is `calibratedVersion` or nothing — delete `NewestObservedVersion`** |
+| `src/ClaudeTuiLine/CalibrateCommand.cs` | §13.2's verify instruction text; §6.6's reject recovery line; `--dismiss` marks all entries; widths only in `--status`/`--json`; §13.8's `observedVersion` write and `--confirm` read |
+| `src/ClaudeTuiLine/Program.cs` | §13.8 — the probe branch takes `rawInput` to extract the payload's `version` |
+| `tests/ClaudeTuiLine.Tests/CalibrationPromptTests.cs` | §13.5 items 1–9, 11 |
+| `tests/ClaudeTuiLine.Tests/CalibrateTests.cs` | §8.11 / §13.5 item 10 |
+| `src/ClaudeTuiLine/SchemaCommand.cs` | §7 — the `chromeReserve` description is now the only discovery path for a patch-release chrome change |
+| `SPEC.md`, `README.md` | only if either documents the record shape, the `--dismiss` semantics, or when the nudge fires |
+
+**Must not change:** anything in §4's must-not-change list; `calibratedVersion` /
+`calibratedReserve` staying singular; rule 5 staying an exact comparison
+(§13.3, §13.4); §6.4's refuse-to-write rule for the *config* (§13.3's opposite
+rule applies only to the record).
+
+## 13.7 Confidence and risk
+
+Confidence in §13.2 is high — the failure was observed directly and the fix is
+wording plus a regression assertion.
+
+Confidence in §13.3 is **medium-high**, with one caveat stated plainly: the
+sixteen-concurrent-version scenario was observed once, during an auto-update, and
+the fix is reasoned from the shape mismatch rather than measured against a second
+occurrence. The keyed shape is strictly better than the single slot under every
+scenario I can construct, including the single-version one, so the downside risk
+is low even if my model of the update behaviour is imperfect. §13.5 item 2 is the
+test that would fail if it is.
+
+§13.4 is a product decision Jim made, not a design judgement of mine; my role was
+to make its semantics exact and to fence it off from rule 5. The one risk worth
+naming is drift: the §13.3-rejected coarsening and the §13.4-adopted coarsening
+look identical in a diff and differ entirely in consequence. §11's fourth bullet
+and §13.4's closing paragraph exist to make that drift visible to a reviewer.
+
+Confidence in §13.8 is high — it is §5.4's existing rule applied to one more
+fact, through the mechanism that already exists for exactly this purpose.
+
+Confidence in §13.9 is high, and the correction makes the design simpler than
+what it replaces: one fewer helper, one fewer fallback, one fewer branch.
+**Two of Amendment 2's three defects were mine and both were in §13.4's
+supporting rules rather than in the decision Jim made.** That is worth a
+reviewer's attention on the rest of §13.4 specifically.
+
+## 13.8 Spec gap found in implementation: where `calibratedVersion` comes from
+
+**What was missing.** §13.3 replaced the record shape but never said what
+`--confirm` should write into `calibratedVersion` once `promptedForVersion` — the
+field it used to copy — no longer existed. The Implementor flagged this rather
+than shipping it silently, and inferred
+`calibratedVersion = newest entry in versions`.
+
+**That inference is wrong, and the Implementor identified the failure themselves:**
+a pane on an older client version confirming after a newer pane has prompted
+would record a version that pane never verified against.
+
+**Classification: spec-defect, mine.** And it is the *third* instance of §5.4's
+rule, which is why §5.4 now enumerates them. The version a reserve was measured
+against is a fact known **only to the hook** — the hook held the payload and
+rendered the probe rows. Sourcing it from the durable record is not a different
+kind of mistake from sourcing it from the CLI's environment; it is the same
+mistake wearing a different hat. **Inference from another file is not an
+exception to §5.4.**
+
+### The fix
+
+- **§6.1 state file gains `observedVersion`** (string, nullable). The hook writes
+  it from the payload's `version`, alongside the probe render — the same
+  mechanism, at the same moment, for the same reason `observedColumns` is written
+  (§5.4).
+- **Written on every probe render, ruler *and* verify.** Verify also renders
+  through the hook, so recording it in both phases makes the `--set` path — which
+  skips ruler phase entirely — work with no special case. Do **not** extend
+  `observedColumns` to verify phase; leave it ruler-only as specced, because
+  `--saw`'s precondition (§6) depends on its current meaning.
+- **`--confirm` sets `calibratedVersion = state.observedVersion`.** Never from the
+  record, never from the CLI's environment, never by shelling out to
+  `claude --version`.
+- **If `observedVersion` is absent** — the payload's version was null, or the
+  state predates the field — `--confirm` **still writes `chromeReserve` to the
+  config**, which must not be blocked, and leaves `calibratedVersion` unchanged.
+  **Never guess.** The consequence is bounded and safe: rule 5 cannot fire, and
+  under §13.9's corrected rule 8 an absent `calibratedVersion` means *prompt*,
+  which is the correct direction of error.
+
+### Multi-pane: note it, do not engineer for it
+
+Whichever pane most recently rendered a probe wins `observedVersion`, and during
+a staggered auto-update that may not be the pane the user was looking at. The
+consequence is bounded: a wrong `calibratedVersion` costs at most a spurious or a
+missing nudge, **never a wrong reserve** — the reserve itself comes from the
+user's own observation, not from the version. Calibration is inherently
+machine-global because it produces one config value; that is pre-existing and not
+something Amendment 2 introduced. Do not add per-pane state to solve it.
+
+### Why this is not inconsistent with `--dismiss`
+
+`--dismiss` reads the *record*; `--confirm` reads the *state file*. Same rule,
+two different facts: `--dismiss` is a statement about prompts already shown,
+which is what the record holds, while `--confirm` is a statement about a
+measurement just taken, which only the hook that drew the probes observed. Take
+each fact from wherever the hook actually recorded it. §12.6 carries the same
+note.
+
+## 13.9 Defect found in implementation: a version used as its own baseline
+
+**How it surfaced.** While applying §13.8 the Implementor hit a test that behaved
+oddly: with no `calibratedVersion` set, the version being evaluated could be
+returned as its own baseline, so the series comparison was self-comparison, which
+is trivially equal, so no prompt. They classified it as a test-authoring problem
+and fixed the test by pinning a `calibratedVersion`.
+
+**The test fix was right. The classification was not.** The same path is
+reachable in production, on the most common path in the whole feature:
+
+1. Fresh machine, record absent. Render at `2.1.238` → rule 3 prompts, rule 8
+   writes `versions["2.1.238"]`. `calibratedVersion` is still absent, because only
+   `--confirm` ever sets it.
+2. Next render, same version. Rule 3 no longer fires (the record now exists).
+   Rule 5 cannot fire (`calibratedVersion` is null). Rule 6 no (not dismissed).
+   Rule 7 no (inside the window). Rule 8: baseline falls back to the newest
+   `versions` entry, which is `2.1.238` — the very version being evaluated.
+   `MajorMinor` equal → **no prompt.**
+
+So the first-run nudge appeared for exactly **one render** and then never again,
+and rule 7's seven-day window became dead code for the first-run case. That
+contradicts §12.4 (persistent footer) and §12.8 ("once, for up to the 7-day
+window" — one *episode*, not one render), and it fires for **every existing user
+on the release that ships this**.
+
+**Classification: spec-defect, mine.** §13.4's original baseline text said
+"…else the entry in `versions` with the newest `promptFirstSeen`; else there is
+no baseline — but rule 3 has already decided, so this case cannot reach rule 8."
+The final clause is the root error: **an absent `calibratedVersion` does not
+imply an absent record.** The record comes into existence the moment the first
+prompt is written, and from that instant the fallback is live.
+
+**The fix** is §13.4's corrected baseline and rule 8: the baseline is
+`calibratedVersion` or nothing, an absent baseline means prompt, and
+`NewestObservedVersion` is deleted rather than adjusted.
+
+**Two things worth carrying beyond this spec.**
+
+*A value may only serve as a baseline if it represents a commitment.* The bug is
+not arithmetic; it is that "the last version we nagged about" was allowed to
+stand in for "the version the user accepted". Self-comparison is what you always
+get when a proxy is substituted for the thing it proxies, and it always reads as
+"nothing changed".
+
+*A test that leaves a discriminating field unset is silently testing a different
+path.* The test that exposed this passed for a reason unrelated to what it
+claimed to assert, and it passed for months of design review. §13.5 closes with
+the rule that follows from it.

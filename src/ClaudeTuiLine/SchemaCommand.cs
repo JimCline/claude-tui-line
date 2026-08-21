@@ -169,7 +169,7 @@ public static class SchemaCommand
             new[] { "chromeReserve", "calibrationPrompt" },
             new[]
             {
-                Field("chromeReserve", "integer", "Columns reserved for Claude Code's own statusline chrome, subtracted from COLUMNS when sizing the surface. Raise it if rows are being truncated with an ellipsis on your terminal or Claude Code version. Run `claude-tui-line --calibrate` to measure it instead of guessing."),
+                Field("chromeReserve", "integer", "Columns reserved for Claude Code's own statusline chrome, subtracted from COLUMNS when sizing the surface. Raise it if rows are being truncated with an ellipsis on your terminal or Claude Code version. Run `claude-tui-line --calibrate` to measure it instead of guessing. The automatic nudge only fires on a major.minor Claude Code version change, so a patch release that shifts the chrome width will not trigger it — if truncation appears without a version nudge, re-run --calibrate manually."),
                 Field("calibrationPrompt", "boolean", "Whether claude-tui-line may append a one-line nudge to run --calibrate on first use or after a Claude Code version change. Defaults to true; set to false to opt out."),
             },
             Array.Empty<string>(),
