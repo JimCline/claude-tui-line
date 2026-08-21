@@ -28,4 +28,30 @@ public static class ConfigPath
         ResolveConfigPath(
             Environment.GetEnvironmentVariable("CLAUDE_TUI_LINE_CONFIG"),
             Environment.GetEnvironmentVariable("HOME"));
+
+    /// <summary>
+    /// SPEC-101-calibrate-chrome-reserve.md §6.1: transient calibration state (30-minute expiry),
+    /// beside the config, derived from the env-aware no-override form so the hook (no args, no
+    /// <c>--config</c>) and the CLI always agree on where it lives — §6.2 rejects <c>--config</c>
+    /// with <c>--calibrate</c> specifically to keep this path un-overridable.
+    /// </summary>
+    public static string? ResolveCalibrationStatePath()
+    {
+        var configPath = ResolveConfigPath();
+        return configPath is null ? null : Path.Combine(Path.GetDirectoryName(configPath)!, "claude-tui-line.calibration.json");
+    }
+
+    /// <summary>
+    /// SPEC-101-calibrate-chrome-reserve.md §12.1/§12.2: the durable first-run/version-nudge
+    /// record. Deliberately a separate file from the transient state above — a corrupt state file
+    /// should cost only a re-run of `--calibrate`, while losing this record resurrects the
+    /// first-run prompt and forgets any dismissal. Lives beside the config, NOT under
+    /// ItemCache.ResolveCacheDir(), which is disposable by design (falls back to $TMPDIR with no
+    /// HOME) — clearing a cache directory must not re-nag the user.
+    /// </summary>
+    public static string? ResolveCalibrationRecordPath()
+    {
+        var configPath = ResolveConfigPath();
+        return configPath is null ? null : Path.Combine(Path.GetDirectoryName(configPath)!, "claude-tui-line.calibration-record.json");
+    }
 }

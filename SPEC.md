@@ -204,9 +204,9 @@ Consequences:
   why bash has looked fine for a long time at `COLUMNS - 1`.
 
 **The fix shipped**, and it changed the width budget rather than the border: `chromeReserve`
-(default 3) is subtracted once in `SurfaceLayout`, `borderReserve` (4) applies to the box, and
-`panel.Width` is the surface width. Verified at `COLUMNS=112`: every rendered row measures
-exactly 109 characters ANSI-stripped, against 111 before the fix.
+(default 4, see SPEC-98 below) is subtracted once in `SurfaceLayout`, `borderReserve` (4) applies
+to the box, and `panel.Width` is the surface width. Verified at `COLUMNS=112`: every rendered row
+measures exactly 109 characters ANSI-stripped, against 111 before the fix.
 
 This **breaks byte-parity with bash** at widths where the extra 2 columns change the packing.
 That is intended and permanent: bash is the captured baseline, but on this measurement bash is
@@ -217,6 +217,35 @@ that must still pass are pinned to `chromeReserve: 1` explicitly.
 where both used the same wrong constant and agreed perfectly. Nothing exercised what Claude
 Code does with the output in a real terminal. A pipe-based parity suite cannot detect a
 shared misunderstanding of the render surface.
+
+### MEASURED (SPEC-98, 2026-08-20): a stacked, titled `fill` pane needs `COLUMNS - 4`, not `COLUMNS - 3`
+
+The measurement above was single-row and untitled. A stacked flex layout with a bordered,
+titled `size:"fill"` pane (rows fully painted with border glyphs edge to edge, no trailing
+whitespace for Claude Code to trim) overflowed and was truncated with `…`, even though the
+tool's own emitted rows were provably exactly `COLUMNS - chromeReserve` wide with zero
+internal overflow (captured directly from stdout).
+
+Root cause: Claude Code adds a 2-column left indent to the statusline it displays, and its own
+printable budget is 2 columns short of `COLUMNS` — a `2 + 2 = 4` reserve, not `3`. Confirmed
+empirically both ways at `COLUMNS=90`: `chromeReserve: 3` truncated (measured broken-render
+width 88, i.e. an 89-column display against an 88-column budget); `chromeReserve: 4` rendered
+clean. `…` was confirmed to *replace* the boundary cell, not append past it, so this is an exact
+measurement, not a range.
+
+`DefaultChromeReserve` is now **4**, applied uniformly regardless of row count — a single-row
+render pays one column it doesn't strictly need, deliberately, to avoid a second reserve value
+and the row-count-dependent sizing that would require. `chromeReserve` remains overridable via
+`layout.chromeReserve` in the user config. This value is measured on one machine and one Claude
+Code version; it may need re-measuring after a Claude Code UI change.
+
+Re-measuring is `claude-tui-line --calibrate` (SPEC-101-calibrate-chrome-reserve.md): a ruler/verify
+protocol run against a live Claude Code pane rather than a guess, since this process can never read
+back its own rendered, truncated output. `--calibrate` starts a ruler-phase probe; `--calibrate --saw
+<digit>` resolves the reported digit to a candidate reserve and enters a verify phase; `--calibrate
+--confirm`/`--reject` accepts or discards the candidate, writing `layout.chromeReserve` on confirm.
+`layout.calibrationPrompt` (default `true`) controls whether claude-tui-line appends a one-line nudge
+to the rendered statusline on first run on a machine and after a Claude Code version change.
 
 ## 6b. Border (new feature — beyond CAPTURE.md parity)
 

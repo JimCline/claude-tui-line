@@ -211,6 +211,10 @@ public sealed class LayoutConfig
     [JsonPropertyName("chromeReserve")]
     public int? ChromeReserve { get; set; }
 
+    /// <summary>SPEC-101-calibrate-chrome-reserve.md §12.7: default true; false suppresses the calibration nudge row entirely.</summary>
+    [JsonPropertyName("calibrationPrompt")]
+    public bool? CalibrationPrompt { get; set; }
+
     /// <summary>
     /// SPEC-V2-FRAMEWORK.md §9.4.2: keys present in the JSON that this type does not define.
     /// Populated by the deserializer so <c>ConfigChecker</c>'s <c>unknown-key</c> diagnostic gets
@@ -666,15 +670,21 @@ public sealed record ResolvedConfig(
     IReadOnlyDictionary<string, ColorResolution.ColorRule> Colors,
     int SurfaceMaxRows = ConfigLoader.DefaultSurfaceMaxRows,
     bool Collapse = false,
-    ItemSettingsJsonConfig? ItemSettings = null);
+    ItemSettingsJsonConfig? ItemSettings = null,
+    bool CalibrationPrompt = true);
 
 public static class ConfigLoader
 {
     private static readonly ColorResolution.ColorExpr DefaultColorExpr = new ColorResolution.ColorExpr.Literal("grey");
     private static readonly BoxBorder DefaultBoxBorder = BoxBorder.Rounded;
 
-    // SPEC.md §6 "MEASURED": the real Claude Code truncation boundary is COLUMNS - 3.
-    public const int DefaultChromeReserve = 3;
+    // SPEC.md §6 "MEASURED", SPEC-98 (2026-08-20): 4, measured on an indented multi-row
+    // bordered surface at COLUMNS=90 — Claude Code adds a 2-column left indent and trims
+    // its own display to 2 columns short of COLUMNS, so 2+2=4 is required regardless of
+    // row count (this repo deliberately reserves the multi-row figure uniformly rather
+    // than varying by row count). One user's terminal, one Claude Code version; override
+    // via layout.chromeReserve if yours differs.
+    public const int DefaultChromeReserve = 4;
 
     // SPEC-V2-FRAMEWORK.md §2.8.1: the whole surface's default row budget.
     public const int DefaultSurfaceMaxRows = 8;
@@ -712,8 +722,9 @@ public static class ConfigLoader
         var colors = ParseColorTable(config?.Colors);
         var surfaceMaxRows = config?.Surface?.MaxRows ?? DefaultSurfaceMaxRows;
         var collapse = config?.Surface?.Border?.Collapse ?? false;
+        var calibrationPrompt = config?.Layout?.CalibrationPrompt ?? true;
 
-        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows, collapse, config?.ItemSettings);
+        return new ResolvedConfig(resolvedBorder.Color, resolvedBorder.Style, resolvedBorder.Edges, chromeReserve, colorSystem, colors, surfaceMaxRows, collapse, config?.ItemSettings, calibrationPrompt);
     }
 
     private static readonly (string Token, ColorSystemSupport Value)[] ColorSystemAccepted =

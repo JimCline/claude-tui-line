@@ -26,6 +26,15 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
             rawInput = null;
         }
 
+        // SPEC-101-calibrate-chrome-reserve.md §5.1: after stdin drains (so Claude Code's pipe
+        // never sees EPIPE) and before config/git/Engram/item work, none of which a calibration
+        // probe needs. Returns and never reaches the surface-sizing root below, so SPEC-V2-
+        // FRAMEWORK.md §2.5 ("COLUMNS read exactly once, at the surface-sizing root") still holds.
+        if (CalibrateCommand.TryRunHookProbe() is int probeExitCode)
+        {
+            return probeExitCode;
+        }
+
         var input = ParseInput(rawInput);
 
         // Fired as soon as cwd is known (i.e. right after stdin is parsed), not awaited yet —
@@ -118,6 +127,10 @@ static async Task<int> RunAsync(string? explicitConfigPath = null)
         var (rows, renderingPanel, boxBorder, borderColor) =
             ComputeRows(pane, surfaceWidth, ctx, values, tokens, compounds, notes, input.Cwd, widthsDir, unavailableIds, topLevel.SurfaceMaxRows, topLevel.Collapse);
         DrawRows(console, rows, renderingPanel, boxBorder, borderColor, surfaceWidth);
+
+        // SPEC-101 §12.4: opposite end of RunAsync from the §5.1 probe branch above; §12.3 rule 2
+        // makes the two mutually exclusive (an in-progress calibration suppresses the nudge).
+        CalibrateCommand.MaybeAppendNudge(input.Version, topLevel.CalibrationPrompt, surfaceWidth);
 
         return 0;
     }
@@ -497,6 +510,15 @@ static async Task<int> RunCli(string[] args)
     var accepted = false;
     var fixture = false;
     var schema = false;
+    var calibrate = false;
+    string? calibrateSaw = null;
+    var calibrateNoEllipsis = false;
+    string? calibrateSet = null;
+    var calibrateConfirm = false;
+    var calibrateReject = false;
+    var calibrateCancel = false;
+    var calibrateStatus = false;
+    var calibrateDismiss = false;
     string? configPath = null;
     int? columns = null;
 
@@ -527,6 +549,43 @@ static async Task<int> RunCli(string[] args)
                 break;
             case "--schema":
                 schema = true;
+                break;
+            case "--calibrate":
+                calibrate = true;
+                break;
+            case "--saw":
+                if (i + 1 >= args.Length)
+                {
+                    return WriteUsageError(json, "--saw requires a digit argument");
+                }
+
+                calibrateSaw = args[++i];
+                break;
+            case "--no-ellipsis":
+                calibrateNoEllipsis = true;
+                break;
+            case "--set":
+                if (i + 1 >= args.Length)
+                {
+                    return WriteUsageError(json, "--set requires a digit argument");
+                }
+
+                calibrateSet = args[++i];
+                break;
+            case "--confirm":
+                calibrateConfirm = true;
+                break;
+            case "--reject":
+                calibrateReject = true;
+                break;
+            case "--cancel":
+                calibrateCancel = true;
+                break;
+            case "--status":
+                calibrateStatus = true;
+                break;
+            case "--dismiss":
+                calibrateDismiss = true;
                 break;
             case "--json":
                 break;
@@ -560,10 +619,26 @@ static async Task<int> RunCli(string[] args)
     // are modes — exactly zero or one may appear in argv. This replaces the old pairwise mutual-
     // exclusion table (unmaintainable past four commands: six pairs become ten on a fifth), so the
     // rule holds for an eighth command without being edited.
-    var modeCount = new[] { check, version, items, colors, preview, accepted, fixture, schema }.Count(selected => selected);
+    var modeCount = new[] { check, version, items, colors, preview, accepted, fixture, schema, calibrate }.Count(selected => selected);
     if (modeCount > 1)
     {
-        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, --accepted, --fixture, and --schema are mutually exclusive");
+        return WriteUsageError(json, "--check, --version, --items, --colors, --preview, --accepted, --fixture, --schema, and --calibrate are mutually exclusive");
+    }
+
+    // SPEC-101 §12.9: the --calibrate sub-flags only mean anything alongside --calibrate itself —
+    // stated as its own usage error rather than left to fall out of acceptedModifiers, since these
+    // take arguments and there are eight of them.
+    var calibrateSubFlagUsed = calibrateSaw is not null || calibrateNoEllipsis || calibrateSet is not null
+        || calibrateConfirm || calibrateReject || calibrateCancel || calibrateStatus || calibrateDismiss;
+    if (calibrateSubFlagUsed && !calibrate)
+    {
+        return WriteUsageError(json, "--saw, --no-ellipsis, --set, --confirm, --reject, --cancel, --status, and --dismiss require --calibrate");
+    }
+
+    var calibrateSubFlagCount = new[] { calibrateSaw is not null, calibrateNoEllipsis, calibrateSet is not null, calibrateConfirm, calibrateReject, calibrateCancel, calibrateStatus, calibrateDismiss }.Count(selected => selected);
+    if (calibrateSubFlagCount > 1)
+    {
+        return WriteUsageError(json, "--saw, --no-ellipsis, --set, --confirm, --reject, --cancel, --status, and --dismiss are mutually exclusive");
     }
 
     // §9.4.4: --json, --columns, and --config are modifiers, not modes — each mode's accepted set
@@ -578,6 +653,11 @@ static async Task<int> RunCli(string[] args)
         : accepted ? ("--accepted", new[] { "json" })
         : fixture ? ("--fixture", Array.Empty<string>())
         : schema ? ("--schema", new[] { "json" })
+        // SPEC-101 §6.2: --config is deliberately absent here — the hook can never receive
+        // --config, so letting the CLI accept it would let the two silently disagree about where
+        // the calibration state/record files live. The generic --config check below turns this
+        // omission into the named usage error.
+        : calibrate ? ("--calibrate", new[] { "json" })
         : ("rendering", new[] { "config" });
 
     if (json && !acceptedModifiers.Contains("json"))
@@ -649,6 +729,11 @@ static async Task<int> RunCli(string[] args)
     if (schema)
     {
         return RunSchema();
+    }
+
+    if (calibrate)
+    {
+        return CalibrateCommand.RunCli(json, calibrateSaw, calibrateNoEllipsis, calibrateSet, calibrateConfirm, calibrateReject, calibrateCancel, calibrateStatus, calibrateDismiss);
     }
 
     return RunCheck(json, configPath);

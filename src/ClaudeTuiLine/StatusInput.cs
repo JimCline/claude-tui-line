@@ -42,6 +42,14 @@ public sealed class StatusInput
 
     [JsonPropertyName("session_id")]
     public string? SessionId { get; set; }
+
+    // SPEC-101-calibrate-chrome-reserve.md §12.1: absence of a field from this model is evidence
+    // about this tool, not about the payload — "version" is a real top-level key Claude Code sends
+    // (tests/ClaudeTuiLine.Tests/fixtures/real_captured_workspace.json:13) that was simply never
+    // modelled before. Nullable; null means UNKNOWN, never a value, never equal to a recorded
+    // version.
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
 }
 
 public sealed class WorkspaceInfo

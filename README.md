@@ -587,11 +587,27 @@ A newly installed or updated plugin's MCP registration is picked up at the next 
 ## Layout, briefly
 
 Width is the hard constraint. The usable surface is `COLUMNS` minus a small reserve for Claude
-Code's own chrome — 3 columns, adjustable with a top-level `"layout": { "chromeReserve": 3 }` if
-your terminal or Claude Code version reserves a different amount. Every sizing decision follows
-from that number, so raising it shrinks everything uniformly rather than clipping one pane. Panes are measured, not guessed:
+Code's own chrome — 4 columns by default (2 for its left indent, 2 for the right margin it
+truncates at), adjustable with a top-level `"layout": { "chromeReserve": 4 }` if your terminal or
+Claude Code version reserves a different amount. Every sizing decision follows from that number,
+so raising it shrinks everything uniformly rather than clipping one pane. Panes are measured, not guessed:
 an item's *plain* text determines its width, and colour markup never does — so adding colour can
 never change the layout.
+
+Don't guess `chromeReserve` — measure it with `claude-tui-line --calibrate`. It walks you through a
+short digit-ruler check inside a live Claude Code session and writes the measured value straight to
+your config:
+
+```bash
+claude-tui-line --calibrate            # start: renders a ruler row on the next statusline redraw
+claude-tui-line --calibrate --saw 5    # report the last digit you could read before it was cut off
+claude-tui-line --calibrate --confirm  # after checking the verify rows, writes chromeReserve
+```
+
+`--calibrate --status` shows an in-progress calibration; `--calibrate --cancel` abandons it without
+writing anything. claude-tui-line also appends a one-line nudge to the statusline itself the first
+time it runs on a machine, and again after a Claude Code version change, unless you set
+`"layout": { "calibrationPrompt": false }`.
 
 When content genuinely doesn't fit, it degrades in a defined order rather than overflowing: wrap,
 then truncate, then drop.

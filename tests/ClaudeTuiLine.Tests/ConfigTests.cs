@@ -4,6 +4,9 @@ using Spectre.Console;
 
 namespace ClaudeTuiLine.Tests;
 
+// Shares CalibrationEnvVarCollection with CalibrateTests/CalibrationPromptTests: all three mutate
+// the process-wide CLAUDE_TUI_LINE_CONFIG/HOME env vars, so they must never run concurrently.
+[Collection(nameof(CalibrationEnvVarCollection))]
 public class ConfigTests
 {
     private static string WriteTempConfig(string json)
@@ -133,16 +136,16 @@ public class ConfigTests
         }
     }
 
-    // SPEC.md §6 "MEASURED": layout.chromeReserve, default 3.
+    // SPEC-98: layout.chromeReserve, default 4.
 
     [Fact]
-    public void ChromeReserve_Absent_DefaultsToThree()
+    public void ChromeReserve_Absent_DefaultsToFour()
     {
         var path = WriteTempConfig("""{ "border": { "enabled": false } }""");
         try
         {
             var resolved = ConfigLoader.LoadBorderConfig(path);
-            Assert.Equal(3, resolved.ChromeReserve);
+            Assert.Equal(4, resolved.ChromeReserve);
         }
         finally
         {
@@ -166,10 +169,10 @@ public class ConfigTests
     }
 
     [Fact]
-    public void ChromeReserve_MissingFile_DefaultsToThree()
+    public void ChromeReserve_MissingFile_DefaultsToFour()
     {
         var resolved = ConfigLoader.LoadBorderConfig("/nonexistent/claude-tui-line.json");
-        Assert.Equal(3, resolved.ChromeReserve);
+        Assert.Equal(4, resolved.ChromeReserve);
     }
 
     // SPEC.md §6b "Config path resolution": ConfigLoader.ResolveConfigPath owns the rule for

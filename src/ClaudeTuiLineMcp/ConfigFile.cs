@@ -1,12 +1,14 @@
 using System.Security.Cryptography;
+using ClaudeTuiLineShared;
 
 namespace ClaudeTuiLineMcp;
 
 /// <summary>
 /// SPEC-12.6-mcp-tools.md §1.4: reading the config file and hashing its bytes for <c>revision</c>
-/// is the server's own file I/O, not behaviour there is anything to duplicate — §7.1's core
-/// allow-list stays at <c>ConfigPath.ResolveConfigPath()</c> only (E1: the core exposes no
-/// reusable SHA-256 helper or atomic writer to extend it with).
+/// is the server's own file I/O. The atomic writer lives in ClaudeTuiLineShared's
+/// <see cref="ClaudeTuiLineShared.ConfigWriter"/> (SPEC-101 §6.3) and is delegated to below; the
+/// SHA-256 revision hash below remains MCP-only, since the CLI's calibration writer has no
+/// revision concept to preserve.
 /// </summary>
 internal static class ConfigFile
 {
@@ -25,17 +27,5 @@ internal static class ConfigFile
     /// This is the opposite discipline from the ledger append (§9.4) — the two must not be
     /// unified.
     /// </summary>
-    public static void WriteAtomic(string path, byte[] bytes)
-    {
-        var dir = Path.GetDirectoryName(Path.GetFullPath(path));
-        if (string.IsNullOrEmpty(dir))
-        {
-            throw new InvalidOperationException($"could not determine a directory for '{path}'");
-        }
-
-        Directory.CreateDirectory(dir);
-        var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        File.WriteAllBytes(tempPath, bytes);
-        File.Move(tempPath, path, overwrite: true);
-    }
+    public static void WriteAtomic(string path, byte[] bytes) => ConfigWriter.WriteAtomic(path, bytes);
 }
